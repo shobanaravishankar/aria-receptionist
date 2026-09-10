@@ -10,3 +10,7 @@ Thumbs.db
 # local dev server logs
 .serve.out
 .serve.err
+
+# build output for deploy
+dist/
+*.zip
