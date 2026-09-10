@@ -1,31 +1,37 @@
-/* Aria voice assistant wiring for the Glamour Day Spa demo.
+/* Aria voice assistant for the Glamour Day Spa demo.
  *
- * Route: Retell's official public-key WEBSITE WIDGET (no backend, no private key).
- * Docs: https://docs.retellai.com/deploy/chat-widget
- *       https://docs.retellai.com/accounts/public-keys
+ * ONE CLICK on any "Speak to an agent" button starts the real call.
+ * Route: Retell Web SDK (retell-client-js-sdk v3) with a BROWSER PUBLIC KEY —
+ * no backend, no access token. Docs: https://docs.retellai.com/deploy/web-call
  *
- * This script:
- *   - opens a small panel from any "Speak to an agent" button
- *   - loads the Retell widget on first use, from demo-config.js values
- *     (or from a full embed snippet you pasted into demo-config.js / index.html)
- *   - reports real states; it never fakes a successful call or a canned answer
+ *   new RetellClient({ key: publicKey }).createWebCall({ agent_id, hooks })
+ *
+ * The call is created from the user's click (never on page load). The browser's
+ * own microphone prompt still applies. Real states only — no simulated success,
+ * no canned greeting; Aria greets from the connected agent.
  */
 
-const WIDGET_SRC = "https://dashboard.retellai.com/retell-widget-v2.js";
+const SDK_URL = "https://cdn.jsdelivr.net/npm/retell-client-js-sdk@3.0.1/+esm";
 const cfg = (typeof window !== "undefined" && window.RETELL_DEMO) || {};
 
 const panel = document.getElementById("voice-panel");
 const statusText = panel.querySelector(".voice-status__text");
 const statusRing = panel.querySelector(".voice-status__ring");
-const primaryBtn = document.getElementById("voice-primary");
 const endBtn = document.getElementById("voice-end");
+const retryBtn = document.getElementById("voice-retry");
+const closeBtn = panel.querySelector("[data-voice-close]");
 const configBox = document.getElementById("voice-config");
+const micNote = panel.querySelector(".voice-panel__mic");
 const toastEl = document.getElementById("toast");
 
-let widgetRequested = false;
-let widgetReady = false;
+let sdkPromise = null;   // memoized dynamic import
+let client = null;       // RetellClient (created once)
+let call = null;         // active WebCallSession, or null
+let starting = false;    // request in flight, not yet "live"
+let everLive = false;    // did this call reach "live" before ending?
 let lastFocus = null;
 
+/* ---------------- helpers ---------------- */
 function setStatus(state, message) {
   statusRing.dataset.state = state;
   statusText.textContent = message;
@@ -35,35 +41,43 @@ function toast(message) {
   toastEl.textContent = message;
   toastEl.hidden = false;
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => { toastEl.hidden = true; }, 3200);
+  toast._t = setTimeout(() => { toastEl.hidden = true; }, 3600);
 }
 
 function isConfigured() {
-  return Boolean((cfg.publicKey && cfg.agentId) || cfg.widgetEmbed || document.getElementById("retell-widget"));
+  return Boolean(cfg.publicKey && cfg.agentId);
 }
 
-/* ---------- panel open / close ---------- */
-function openPanel() {
-  lastFocus = document.activeElement;
-  panel.hidden = false;
-  document.body.style.overflow = "hidden";
+function loadSdk() {
+  if (!sdkPromise) sdkPromise = import(SDK_URL);
+  return sdkPromise;
+}
 
+function friendlyError(err) {
+  const raw = (err && (err.message || String(err))) || "Unknown error";
+  if (/denied|permission|notallowed|not allowed/i.test(raw))
+    return "Microphone blocked. Allow it for this site in your browser, then press “Speak to an agent” again.";
+  if (/origin|domain|allowed|403|forbidden|unauthorized|401/i.test(raw))
+    return "This web address isn’t on the Retell key’s allowed domains yet — add it in Retell → API Keys → Public Keys, then try again. (" + raw + ")";
+  if (/network|failed to fetch|load|timeout/i.test(raw))
+    return "Network problem reaching Aria. Check the connection and try again. (" + raw + ")";
+  return "Couldn’t start the call: " + raw;
+}
+
+/* ---------------- panel open / close ---------------- */
+function openPanel() {
+  if (panel.hidden) {
+    lastFocus = document.activeElement;
+    panel.hidden = false;
+    document.body.style.overflow = "hidden";
+  }
   if (!isConfigured()) {
     setStatus("error", "Voice isn’t configured yet.");
-    primaryBtn.disabled = true;
     configBox.open = true;
-    primaryBtn.focus();
-    return;
+    endBtn.hidden = true;
+    retryBtn.hidden = true;
+    closeBtn.hidden = false;
   }
-
-  primaryBtn.disabled = false;
-  if (widgetReady) {
-    setStatus("idle", "Aria is ready. Press start to talk.");
-  } else {
-    setStatus("connecting", "Connecting you to Aria…");
-    injectWidget(); // start loading right away so it's one click, not two
-  }
-  primaryBtn.focus();
 }
 
 function closePanel() {
@@ -72,194 +86,143 @@ function closePanel() {
   if (lastFocus && lastFocus.focus) lastFocus.focus();
 }
 
-/* ---------- widget loading ---------- */
-function injectWidget() {
-  if (widgetRequested) return;
-  widgetRequested = true;
-  setStatus("connecting", "Loading Aria…");
+/* ---------------- call lifecycle ---------------- */
+async function startCall() {
+  openPanel();
+  if (!isConfigured()) return;
+  if (call || starting) { toast("A call is already connecting."); return; }
 
-  // 1) Full embed snippet pasted into config: use it verbatim.
-  if (cfg.widgetEmbed && cfg.widgetEmbed.trim()) {
-    const holder = document.createElement("div");
-    holder.innerHTML = cfg.widgetEmbed.trim();
-    const node = holder.querySelector("script") || holder.firstElementChild;
-    if (node) {
-      const s = document.createElement("script");
-      for (const a of node.attributes) s.setAttribute(a.name, a.value);
-      s.textContent = node.textContent || "";
-      attachLoadHandlers(s);
-      document.body.appendChild(s);
-      return;
-    }
-  }
-
-  // 2) An embed already present in index.html.
-  const existing = document.getElementById("retell-widget");
-  if (existing) { onWidgetReady(); return; }
-
-  // 3) Build the widget tag from config values.
-  const s = document.createElement("script");
-  s.id = "retell-widget";
-  s.src = WIDGET_SRC;
-  s.type = "module";
-  s.setAttribute("data-voice-public-key", cfg.publicKey);
-  s.setAttribute("data-voice-agent-id", cfg.agentId);
-  if (cfg.agentVersion != null) s.setAttribute("data-agent-version", String(cfg.agentVersion));
-  if (cfg.recaptchaSiteKey) s.setAttribute("data-recaptcha-key", cfg.recaptchaSiteKey);
-  s.setAttribute("data-fab-text", "Speak to an agent");
-  s.setAttribute("data-color", "#0e3b35");
-  s.setAttribute("data-theme-color", "#c0863c");
-  attachLoadHandlers(s);
-  document.body.appendChild(s);
-}
-
-function attachLoadHandlers(scriptEl) {
-  scriptEl.addEventListener("load", () => onWidgetReady());
-  scriptEl.addEventListener("error", () => {
-    setStatus("error", "Could not load the voice assistant. Check your connection and try again.");
-    primaryBtn.disabled = false;
-    primaryBtn.textContent = "Try again";
-  });
-  // Fallback: the widget script may be a module that resolves without a load event we catch.
-  setTimeout(() => { if (!widgetReady) onWidgetReady(true); }, 4000);
-}
-
-function onWidgetReady(soft) {
-  if (widgetReady) return;
-  widgetReady = true;
-  setStatus("idle", "Aria is ready. Press start to talk.");
-  primaryBtn.disabled = false;
-  primaryBtn.innerHTML = '<span class="btn-voice__dot" aria-hidden="true"></span> Start voice call';
-  if (!soft) tryOpenWidget();
-}
-
-/* ---------- open the widget's own call UI ---------- */
-const FAB_SELECTORS = [
-  'button[aria-label="Open Assistant"]',
-  'button[aria-label*="assistant" i]',
-  'button[aria-label*="agent" i]',
-  'button[class*="_fabBase" i]',
-  'button[class*="fab" i]',
-  "#retell-widget-fab", ".retell-widget__fab", ".retell-widget-launcher",
-  '[class*="retell"][class*="fab"]',
-];
-const END_SELECTORS = [
-  'button[aria-label*="end" i]', 'button[aria-label*="hang" i]',
-  'button[aria-label*="stop" i]', 'button[aria-label*="close" i]',
-  '[class*="end" i] button', 'button[class*="end" i]', 'button[class*="hangup" i]',
-];
-
-function deepQuery(selectors, root = document, depth = 0) {
-  for (const sel of selectors) {
-    try {
-      const hit = root.querySelector && root.querySelector(sel);
-      if (hit) return hit;
-    } catch (_) { /* invalid selector in this root */ }
-  }
-  if (depth > 8) return null;
-  const els = root.querySelectorAll ? root.querySelectorAll("*") : [];
-  for (const el of els) {
-    if (el.shadowRoot) {
-      const hit = deepQuery(selectors, el.shadowRoot, depth + 1);
-      if (hit) return hit;
-    }
-  }
-  return null;
-}
-
-function deepFindByText(re, root = document, depth = 0) {
-  const nodes = root.querySelectorAll ? root.querySelectorAll("button,[role=button],a") : [];
-  for (const n of nodes) {
-    if (re.test((n.getAttribute("aria-label") || "") + " " + (n.textContent || ""))) return n;
-  }
-  if (depth > 8) return null;
-  for (const el of (root.querySelectorAll ? root.querySelectorAll("*") : [])) {
-    if (el.shadowRoot) {
-      const hit = deepFindByText(re, el.shadowRoot, depth + 1);
-      if (hit) return hit;
-    }
-  }
-  return null;
-}
-
-function tryOpenWidget() {
-  setStatus("connecting", "Opening Aria…");
-
-  const api = window.RetellWidget || window.retellWidget || window.RetellAIWidget;
-  if (api && typeof api.open === "function") {
-    try { api.open(); startedHint(); return; } catch (_) { /* fall through */ }
-  }
-
-  const launcher =
-    deepQuery(FAB_SELECTORS) ||
-    deepFindByText(/open assistant|speak to an agent|talk to|start (voice )?call/i);
-
-  if (launcher) {
-    try {
-      launcher.click();
-      startedHint();
-      return;
-    } catch (_) { /* fall through */ }
-  }
-
-  // Could not drive it programmatically — point the user at the widget's own button.
-  setStatus("live", "Aria is loaded. Tap the round “Speak to an agent” button at the bottom-right to start, then allow the microphone.");
-  spotlightCorner();
-}
-
-function startedHint() {
-  setStatus("live", "Connecting you to Aria — allow microphone access when asked.");
-  endBtn.hidden = false;
-  toast("Aria is starting. Allow the microphone to talk.");
-  // hand over to the widget's own call UI
-  setTimeout(() => { if (!panel.hidden) closePanel(); }, 900);
-}
-
-function spotlightCorner() {
-  const dot = document.createElement("div");
-  dot.setAttribute("aria-hidden", "true");
-  Object.assign(dot.style, {
-    position: "fixed", right: "18px", bottom: "18px", width: "72px", height: "72px",
-    borderRadius: "50%", border: "3px solid #c0863c", pointerEvents: "none", zIndex: 199,
-    boxShadow: "0 0 0 0 rgba(192,134,60,.6)", animation: "pulse 1.6s 4",
-  });
-  document.body.appendChild(dot);
-  setTimeout(() => dot.remove(), 7000);
-}
-
-/* ---------- events ---------- */
-document.querySelectorAll("[data-voice-start]").forEach((b) =>
-  b.addEventListener("click", openPanel)
-);
-document.querySelectorAll("[data-voice-close]").forEach((b) =>
-  b.addEventListener("click", closePanel)
-);
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !panel.hidden) closePanel();
-});
-
-primaryBtn.addEventListener("click", () => {
-  if (!isConfigured()) { configBox.open = true; return; }
-  if (!widgetRequested) injectWidget();
-  else if (widgetReady) tryOpenWidget();
-});
-
-endBtn.addEventListener("click", () => {
-  const api = window.RetellWidget || window.retellWidget;
-  if (api && typeof api.close === "function") { try { api.close(); } catch (_) {} }
-  const closeBtn = deepQuery(END_SELECTORS) || deepFindByText(/end call|hang up|stop/i);
-  if (closeBtn) { try { closeBtn.click(); } catch (_) {} }
+  starting = true;
   endBtn.hidden = true;
-  setStatus("ended", "Call ended. Press start to talk again.");
+  retryBtn.hidden = true;
+  closeBtn.hidden = true;          // no accidental dismiss mid-connect
+  setStatus("connecting", "Connecting to Aria…");
+  micNote.textContent = "Your browser will ask for microphone access. Nothing is recorded by this page.";
+
+  try {
+    const mod = await loadSdk();
+    const RetellClient = mod.RetellClient || (mod.default && mod.default.RetellClient);
+    if (!RetellClient) throw new Error("Retell SDK failed to load");
+    if (!client) client = new RetellClient({ key: cfg.publicKey });
+
+    const options = {
+      agent_id: cfg.agentId,
+      hooks: {
+        onStatus: onStatus,
+        onEnd: onEnd,
+        onError: onError,
+        onAgentStartTalking: () => { if (call) setStatus("live", "Aria is speaking…"); },
+        onAgentStopTalking: () => { if (call) setStatus("live", "Listening…"); },
+      },
+    };
+    if (Number.isFinite(cfg.agentVersion)) options.agent_version = cfg.agentVersion;
+    if (cfg.recaptchaToken) options.recaptchaToken = cfg.recaptchaToken;
+
+    call = client.createWebCall(options);   // returns immediately; progress via hooks
+  } catch (err) {
+    fail(err);
+  }
+}
+
+function onStatus(status) {
+  if (!call) return;
+  if (status === "connecting") {
+    setStatus("connecting", "Connecting to Aria…");
+  } else if (status === "live") {
+    starting = false;
+    everLive = true;
+    setStatus("live", "Connected — say hello to Aria.");
+    endBtn.hidden = false;
+    retryBtn.hidden = true;
+    closeBtn.hidden = false;
+    micNote.textContent = "Aria is an AI assistant. Speak normally; press End call when you’re done.";
+    try { call.startAudioPlayback && call.startAudioPlayback(); } catch (_) {}
+    toast("You’re connected to Aria.");
+  }
+  // "ended" is handled by onEnd
+}
+
+function onEnd() {
+  const connected = everLive;
+  reset();
+  if (connected) {
+    setStatus("ended", "Call ended. Press “Speak to an agent” to talk to Aria again.");
+    retryBtn.textContent = "Talk to Aria again";
+  } else {
+    setStatus("error", "The call didn’t connect. This is usually the microphone being blocked, or this site’s address not being on the Retell public key’s allowed domains. Check both, then try again.");
+    retryBtn.textContent = "Try again";
+  }
+  retryBtn.hidden = false;
+  closeBtn.hidden = false;
+}
+
+function onError(err) {
+  fail(err);
+}
+
+function fail(err) {
+  const message = friendlyError(err);
+  reset();
+  setStatus("error", message);
+  retryBtn.hidden = false;
+  retryBtn.textContent = "Try again";
+  closeBtn.hidden = false;
+}
+
+function reset() {
+  starting = false;
+  everLive = false;
+  call = null;
+  endBtn.hidden = true;
+}
+
+async function endCall() {
+  if (!call) { onEnd(); return; }
+  endBtn.disabled = true;
+  setStatus("connecting", "Ending the call…");
+  try { await call.end(); } catch (_) { /* onEnd/onError will still fire */ }
+  endBtn.disabled = false;
+  // Safety net if no event arrives:
+  setTimeout(() => { if (call) onEnd(); }, 1500);
+}
+
+/* ---------------- wire up ---------------- */
+document.querySelectorAll("[data-voice-start]").forEach((b) =>
+  b.addEventListener("click", startCall)
+);
+
+closeBtn.addEventListener("click", async () => {
+  if (call || starting) { await endCall(); }
+  closePanel();
 });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !panel.hidden && !call && !starting) closePanel();
+});
+
+endBtn.addEventListener("click", endCall);
+retryBtn.addEventListener("click", startCall);
 
 document.querySelectorAll("[data-demo-booking]").forEach((b) =>
-  b.addEventListener("click", () => toast("Online booking isn’t part of this demo — ask Aria about services instead."))
+  b.addEventListener("click", () =>
+    toast("Online booking isn’t part of this demo — ask Aria about services instead.")
+  )
 );
 
-/* initial state */
+// livekit surfaces a denied-mic as an unhandled rejection; route it to the visible error path
+window.addEventListener("unhandledrejection", (e) => {
+  const r = e && e.reason;
+  const text = ((r && r.name) || "") + " " + ((r && r.message) || String(r || ""));
+  if ((call || starting) && /notallowed|permission|denied/i.test(text)) {
+    e.preventDefault();
+    fail(r);
+    try { call && call.end(); } catch (_) {}
+  }
+});
+
+window.addEventListener("beforeunload", () => { try { call && call.end(); } catch (_) {} });
+
 if (!isConfigured()) {
   document.querySelectorAll("[data-voice-start]").forEach((b) => {
-    b.title = "Add your Retell keys in demo-config.js to enable voice";
+    b.title = "Add your Retell public key + Aria agent id in demo-config.js to enable voice";
   });
 }

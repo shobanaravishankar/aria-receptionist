@@ -173,15 +173,13 @@
       </p>
 
       <div class="voice-status" id="voice-status" aria-live="polite">
-        <span class="voice-status__ring" data-state="idle" aria-hidden="true"></span>
-        <span class="voice-status__text">Ready when you are.</span>
+        <span class="voice-status__ring" data-state="connecting" aria-hidden="true"></span>
+        <span class="voice-status__text">Connecting to Aria&hellip;</span>
       </div>
 
       <div class="voice-panel__actions">
-        <button type="button" class="btn btn-voice btn-lg" id="voice-primary" data-voice-launch>
-          <span class="btn-voice__dot" aria-hidden="true"></span> Start voice call
-        </button>
-        <button type="button" class="btn btn-ghost" id="voice-end" data-voice-end hidden>End call</button>
+        <button type="button" class="btn btn-voice btn-lg" id="voice-end" data-voice-end hidden>End call</button>
+        <button type="button" class="btn btn-ghost" id="voice-retry" hidden>Try again</button>
       </div>
 
       <p class="voice-panel__mic">Your browser will ask for microphone access. Nothing is recorded by this page.</p>
