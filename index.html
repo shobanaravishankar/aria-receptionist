@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Glamour Day Spa — Voice Assistant Demo</title>
+  <meta name="description" content="Demonstration site recreating Glamour Day Spa (Warren, NJ) with a browser voice assistant powered by Retell (Aria). Not the official website." />
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <div class="demo-bar" role="note">
+    <strong>Demonstration site.</strong> A recreation of Glamour Day Spa built to show a browser voice assistant.
+    This is <strong>not</strong> the official website and takes no real bookings or payments.
+  </div>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="#top" aria-label="Glamour Day Spa home">
+        <span class="brand-kicker">Warren</span>
+        <span class="brand-name">Glamour<span class="brand-dot">&#10022;</span>Day&nbsp;Spa</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="#services">Spa Services</a>
+        <a href="#book">Book Online</a>
+        <a href="#memberships">Memberships</a>
+        <a href="#giftcard">Gift Card</a>
+        <a href="#contact">Contact</a>
+        <button type="button" class="btn btn-voice btn-voice--nav" data-voice-start>
+          <span class="btn-voice__dot" aria-hidden="true"></span> Speak to an agent
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <a id="top"></a>
+
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero__overlay"></div>
+      <div class="wrap hero__inner">
+        <div class="hero__card">
+          <p class="eyebrow">Warren, New Jersey</p>
+          <h1 id="hero-title">Revitalize your body.<br />Renew your mind.</h1>
+          <p class="hero__lede">
+            Escape to Glamour Day Spa, your serene retreat for relaxation and renewal.
+            Enjoy soothing massages, rejuvenating facials, and luxurious treatments
+            designed to melt away stress and leave you refreshed and revitalized.
+          </p>
+          <div class="hero__actions">
+            <button type="button" class="btn btn-voice btn-lg" data-voice-start>
+              <span class="btn-voice__dot" aria-hidden="true"></span> Speak to an agent
+            </button>
+            <button type="button" class="btn btn-ghost btn-lg" data-demo-booking>Book Online</button>
+          </div>
+          <p class="hero__hint">Talk to <strong>Aria</strong>, our AI voice assistant, about treatments and hours — right in your browser.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="services" class="section services" aria-labelledby="services-title">
+      <div class="wrap">
+        <p class="eyebrow eyebrow--center">Spa Services</p>
+        <h2 id="services-title" class="section-title">Treatments crafted around you</h2>
+        <p class="section-intro">
+          Our experienced therapists tailor every treatment to your individual needs. Here is a
+          sample of what Glamour Day Spa offers.
+        </p>
+        <ul class="service-grid">
+          <li class="service-card"><span class="service-card__icon" aria-hidden="true">&#128704;</span><h3>Spa Packages</h3><p>Curated half-day and full-day journeys that combine our most-loved treatments.</p></li>
+          <li class="service-card"><span class="service-card__icon" aria-hidden="true">&#10024;</span><h3>Facials</h3><p>Customized facials to cleanse, brighten, and restore a healthy glow.</p></li>
+          <li class="service-card"><span class="service-card__icon" aria-hidden="true">&#127807;</span><h3>Body Scrubs</h3><p>Exfoliating rituals that leave skin smooth, soft, and deeply hydrated.</p></li>
+          <li class="service-card"><span class="service-card__icon" aria-hidden="true">&#128134;</span><h3>Massages</h3><p>Swedish, deep tissue, and hot stone massage to release tension and calm the mind.</p></li>
+          <li class="service-card"><span class="service-card__icon" aria-hidden="true">&#128064;</span><h3>Eyelash Extensions</h3><p>Natural-to-dramatic lash sets applied by trained lash artists.</p></li>
+          <li class="service-card"><span class="service-card__icon" aria-hidden="true">&#129530;</span><h3>Head Spa &amp; Scalp</h3><p>Japanese-style head spa treatments for a healthy scalp and total relaxation.</p></li>
+          <li class="service-card"><span class="service-card__icon" aria-hidden="true">&#127820;</span><h3>Waxing</h3><p>Gentle, precise waxing services for face and body.</p></li>
+          <li class="service-card"><span class="service-card__icon" aria-hidden="true">&#128132;</span><h3>Permanent Makeup</h3><p>Microblading and permanent makeup for brows, lips, and eyeliner.</p></li>
+          <li class="service-card"><span class="service-card__icon" aria-hidden="true">&#128149;</span><h3>Couple Packages</h3><p>Side-by-side treatments to relax and reconnect together.</p></li>
+        </ul>
+        <p class="section-note">Pricing and availability are confirmed at the spa. Ask Aria for current details.</p>
+      </div>
+    </section>
+
+    <section id="about" class="section about" aria-labelledby="about-title">
+      <div class="wrap about__inner">
+        <div>
+          <p class="eyebrow">About</p>
+          <h2 id="about-title" class="section-title">Personalized care, every visit</h2>
+          <p>
+            At Glamour Day Spa, we believe true wellness begins with personalized care. Our
+            experienced therapists tailor every treatment to your individual needs, in a calm
+            space designed for you to slow down and breathe.
+          </p>
+          <p>
+            Open seven days a week, 9:30&nbsp;AM&ndash;8:00&nbsp;PM, we make it easy to fit
+            restoration into a busy life.
+          </p>
+        </div>
+        <aside class="about__hours" aria-label="Opening hours">
+          <h3>Hours</h3>
+          <p class="about__hours-line">Monday &ndash; Sunday</p>
+          <p class="about__hours-time">9:30 AM &ndash; 8:00 PM</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="book" class="section band" aria-labelledby="book-title">
+      <div class="wrap band__inner">
+        <div>
+          <h2 id="book-title" class="section-title section-title--light">Have a question first?</h2>
+          <p class="band__text">
+            Aria can tell you about our services, hours, and what to expect &mdash; a real spoken
+            conversation, right here in your browser.
+          </p>
+        </div>
+        <button type="button" class="btn btn-voice btn-lg" data-voice-start>
+          <span class="btn-voice__dot" aria-hidden="true"></span> Speak to an agent
+        </button>
+      </div>
+    </section>
+
+    <section id="memberships" class="section mini" aria-labelledby="memberships-title">
+      <div class="wrap">
+        <h2 id="memberships-title" class="section-title">Memberships &amp; Gift Cards</h2>
+        <div class="mini-grid">
+          <article><h3>Memberships</h3><p>Monthly wellness memberships with member pricing on treatments and products. Details available at the spa.</p></article>
+          <article id="giftcard"><h3>Gift Cards</h3><p>Give the gift of relaxation. Gift cards are available in any amount and never expire.</p></article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer id="contact" class="site-footer">
+    <div class="wrap footer-inner">
+      <div class="footer-col">
+        <span class="brand-name brand-name--footer">Glamour<span class="brand-dot">&#10022;</span>Day&nbsp;Spa</span>
+        <p class="footer-demo">Recreation for a voice-assistant demonstration. Not affiliated with the business shown.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Visit</h4>
+        <p>24 Mountain Blvd<br />Warren, NJ 07059</p>
+      </div>
+      <div class="footer-col">
+        <h4>Contact</h4>
+        <p>
+          <a href="tel:+19086688828">(908) 668-8828</a><br />
+          <a href="tel:+19086368199">(908) 636-8199</a><br />
+          <a href="mailto:Warrenglamourdayspa@gmail.com">Warrenglamourdayspa@gmail.com</a>
+        </p>
+      </div>
+      <div class="footer-col">
+        <h4>Hours</h4>
+        <p>Daily<br />9:30 AM &ndash; 8:00 PM</p>
+      </div>
+    </div>
+    <p class="footer-bottom">Demo build &middot; content and layout adapted from a public spa website for demonstration only.</p>
+  </footer>
+
+  <!-- ================= Aria voice assistant (Retell) ================= -->
+  <div class="voice-panel" id="voice-panel" hidden role="dialog" aria-modal="true" aria-labelledby="voice-panel-title" aria-describedby="voice-status">
+    <div class="voice-panel__card">
+      <button type="button" class="voice-panel__close" data-voice-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Voice assistant</p>
+      <h2 id="voice-panel-title">Speak to Aria</h2>
+      <p class="voice-panel__sub">
+        Aria is an <strong>AI voice assistant</strong>. She can answer questions about services and
+        hours. She does <strong>not</strong> book appointments, transfer calls, or take messages in this demo.
+      </p>
+
+      <div class="voice-status" id="voice-status" aria-live="polite">
+        <span class="voice-status__ring" data-state="idle" aria-hidden="true"></span>
+        <span class="voice-status__text">Ready when you are.</span>
+      </div>
+
+      <div class="voice-panel__actions">
+        <button type="button" class="btn btn-voice btn-lg" id="voice-primary" data-voice-launch>
+          <span class="btn-voice__dot" aria-hidden="true"></span> Start voice call
+        </button>
+        <button type="button" class="btn btn-ghost" id="voice-end" data-voice-end hidden>End call</button>
+      </div>
+
+      <p class="voice-panel__mic">Your browser will ask for microphone access. Nothing is recorded by this page.</p>
+
+      <details class="voice-config" id="voice-config">
+        <summary>Setup (for the site owner)</summary>
+        <p>Add your Retell values in <code>demo-config.js</code>:</p>
+        <pre><code>window.RETELL_DEMO = {
+  publicKey: "YOUR_RETELL_PUBLIC_KEY",   // API Keys &rarr; Public Keys
+  agentId:   "YOUR_ARIA_VOICE_AGENT_ID", // Aria's agent id
+  agentVersion: null                     // optional
+};</code></pre>
+        <p>Then allow <code>localhost</code> (and later your deployed hostname) on that public key in the Retell dashboard.</p>
+      </details>
+    </div>
+    <button type="button" class="voice-panel__scrim" data-voice-close tabindex="-1" aria-hidden="true"></button>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <!-- load local config fresh so edits to demo-config.js take effect on a normal reload -->
+  <script>document.write('<script src="demo-config.js?t=' + Date.now() + '"><\/script>');</script>
+  <script src="retell-voice.js" type="module"></script>
+</body>
+</html>

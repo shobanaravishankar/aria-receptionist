@@ -1,0 +1,8 @@
+# local config with account values (public key is browser-safe, but keep it out of git)
+demo-config.js
+
+# os / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
