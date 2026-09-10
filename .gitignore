@@ -6,3 +6,7 @@ demo-config.js
 Thumbs.db
 .vscode/
 .idea/
+
+# local dev server logs
+.serve.out
+.serve.err
