@@ -91,8 +91,10 @@ async function startCall() {
   openPanel();
   if (!isConfigured()) return;
   if (call || starting) { toast("A call is already connecting."); return; }
+  if (typeof window.__closeAvatarPanel === "function") window.__closeAvatarPanel();
 
   starting = true;
+  document.documentElement.dataset.ariaCall = "1";
   endBtn.hidden = true;
   retryBtn.hidden = true;
   closeBtn.hidden = true;          // no accidental dismiss mid-connect
@@ -174,6 +176,7 @@ function reset() {
   everLive = false;
   call = null;
   endBtn.hidden = true;
+  delete document.documentElement.dataset.ariaCall;
 }
 
 async function endCall() {

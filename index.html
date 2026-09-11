@@ -56,9 +56,10 @@
             <button type="button" class="btn btn-voice btn-lg" data-voice-start>
               <span class="btn-voice__dot" aria-hidden="true"></span> Speak to an agent
             </button>
+            <button type="button" class="btn btn-ghost btn-lg" data-avatar-start>Talk to the avatar</button>
             <button type="button" class="btn btn-ghost btn-lg" data-demo-booking>Book Online</button>
           </div>
-          <p class="hero__hint">Talk to <strong>Aria</strong>, our AI voice assistant, about treatments and hours — right in your browser.</p>
+          <p class="hero__hint">Talk to <strong>Aria</strong>, our AI voice assistant, about treatments and hours — right in your browser. Prefer a face? Try the avatar option.</p>
         </div>
       </div>
     </section>
@@ -118,9 +119,12 @@
             conversation, right here in your browser.
           </p>
         </div>
-        <button type="button" class="btn btn-voice btn-lg" data-voice-start>
-          <span class="btn-voice__dot" aria-hidden="true"></span> Speak to an agent
-        </button>
+        <div class="band__buttons">
+          <button type="button" class="btn btn-voice btn-lg" data-voice-start>
+            <span class="btn-voice__dot" aria-hidden="true"></span> Speak to an agent
+          </button>
+          <button type="button" class="btn btn-ghost btn-lg" data-avatar-start>Talk to the avatar</button>
+        </div>
       </div>
     </section>
 
@@ -198,10 +202,29 @@
     <button type="button" class="voice-panel__scrim" data-voice-close tabindex="-1" aria-hidden="true"></button>
   </div>
 
+  <!-- ================= Avatar option (LiveAvatar, separate from Aria/Retell) ================= -->
+  <div class="avatar-panel" id="avatar-panel" hidden role="dialog" aria-modal="true" aria-labelledby="avatar-panel-title">
+    <div class="avatar-panel__card">
+      <button type="button" class="voice-panel__close" data-avatar-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Avatar option</p>
+      <h2 id="avatar-panel-title">Talk to the avatar</h2>
+      <p class="voice-panel__sub">
+        A separate <strong>AI avatar</strong> demo (LiveAvatar), shown here as an alternative to the
+        voice-only Aria assistant above. Allow the microphone when your browser asks.
+      </p>
+      <div class="avatar-embed" id="avatar-embed" aria-live="polite">
+        <p class="avatar-embed__placeholder">Loading the avatar&hellip;</p>
+      </div>
+      <p class="voice-panel__mic">Third-party embed (embed.liveavatar.com). Close this panel to end the session.</p>
+    </div>
+    <button type="button" class="voice-panel__scrim" data-avatar-close tabindex="-1" aria-hidden="true"></button>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <!-- load local config fresh so edits to demo-config.js take effect on a normal reload -->
   <script>document.write('<script src="demo-config.js?t=' + Date.now() + '"><\/script>');</script>
   <script src="retell-voice.js" type="module"></script>
+  <script src="avatar.js" defer></script>
 </body>
 </html>
