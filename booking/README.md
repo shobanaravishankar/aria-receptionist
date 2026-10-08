@@ -18,8 +18,8 @@ account** and nothing else.
 | Structural discovery, including approval-gated click-through steps | **run live**, read-only; nothing was ever saved |
 | Dress rehearsal of the New Appointment form (everything except Save) | **run live** for one slot; every value read back matched; the draft was discarded; the page ended identical to how it began |
 | **Calendar reader** (parse a day: working hours, appointments, time off) | implemented; tested on **real captured pages** and 19 deliberate corruptions; **run live, read-only**: 7 consecutive days parsed as predicted (the busy day showed no slots, the six empty days showed starts 10:00-16:30), no day came back unknown |
-| Create an appointment (the Save click and what follows) | **Written and tested offline only; NEVER RUN against the real site.** The form up to Save is proven live (rehearsal). The prompt after Save and the saved state have never been seen, so the code handles only NOT NOW and stops, leaving the window open, on anything else |
-| Read a saved appointment's internal note back for verification | **Written and tested offline only; NEVER RUN live** (the note is under the details view's Notes & Info tab; the live selectors for the details view's note are a best guess until one real booking has been read back) |
+| Create an appointment (the Save click and what follows) | **Run live ONCE (2026-10-08): created exactly one fictional ARIA TEST appointment, Mon 12 Oct 2026 11:00 AM-1:30 PM.** After Save the new-client prompt appeared and NOT NOW was clicked. The run then stopped on a false alarm of the dialog detector (the calendar's always-present 'confirmed'/'unconfirmed' labels were mistaken for a dialog; fixed and tested) and left the window open, as designed. The appointment was confirmed by a person looking at the calendar. Only this one path has been run live |
+| Read a saved appointment's internal note back for verification | **Run live (read-only `verify`): found the saved appointment by its reference, and the time, duration and service matched.** The ledger entry went from uncertain to verified |
 | Reschedule, cancel, expired-sign-in recovery against the real site | **NOT implemented / NOT run** |
 
 **No real appointment has ever been created by this prototype.** The tests prove the logic and the parser's
@@ -144,9 +144,10 @@ Discard click is a narrow, separately approved exception for an unsaved draft.
 
 1. ~~Run the reader live and read-only~~ **done**: it parsed seven live days as predicted.
 2. ~~Verify the staff identity properly~~ **done**: the reader now checks the Staff page itself.
-3. ~~Implement creation~~ **written and tested offline**. Run it once for a named, explicitly approved slot with a person
-   watching; it stops at anything unexpected and verifies by reopening the card and reading the note back. Until that run,
-   treat the post-Save handling and the note read-back as unproven.
+3. ~~Implement creation~~ **done and run once live.** One caveat: the real booking run itself ended in 'needs review'
+   because of the detector false alarm, so the end-to-end `book` path has not yet completed cleanly in one run; its
+   pieces (save, prompt, verify) have each been seen live. Run `verify` for any slot recorded in the ledger. Do NOT
+   re-run `book` for the same slot.
 4. Later scenarios — near-closing rejection, reschedule, cancellation, expired sign-in — are **not** considered passed
    until actually run.
 
