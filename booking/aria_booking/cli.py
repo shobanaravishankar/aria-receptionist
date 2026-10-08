@@ -24,6 +24,11 @@ from .availability import describe
 from .config import Config, ConfigError
 from .discover import write_report
 from .discover_interactive import ALLOWED_STEPS, parse_allow, run_interactive_discovery
+from .discover_interactive import RunStopped
+from .form_rehearsal import run_rehearsal
+from .ledger import ref_from_key, request_key
+from .models import AppointmentSpec
+from .safety import SafetyViolation, build_note, check_request
 from .driver import DriverError
 from .ledger import Ledger, LedgerError
 from .selenium_driver import SeleniumBooksyDriver
@@ -50,6 +55,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--date", default="today")
     p = sub.add_parser("discover-steps", help="click-through discovery; every click type must be approved with --allow")
     p.add_argument("--allow", default="", help="comma list of approved steps: " + ", ".join(ALLOWED_STEPS))
+    p = sub.add_parser("rehearse", help="fill the New Appointment form completely, NEVER save, then discard the draft")
+    p.add_argument("--start", required=True, help='local start, e.g. "2026-10-12 11:00"')
+    p.add_argument("--confirm-business-id", required=True)
+    p.add_argument("--approve-note-typing", action="store_true", help="allow typing the ARIA TEST note into the unsaved form")
+    p.add_argument("--approve-draft-discard", action="store_true", help="allow clicking Discard on the unsaved draft")
+    p.add_argument("--approve-tour-popups", action="store_true", help="allow closing product-tour popups that cover the form")
     p = sub.add_parser("find")
     p.add_argument("--from", dest="first", default="today")
     p.add_argument("--days", type=int, default=7)
@@ -95,6 +106,28 @@ def main(
             out('refused: --start must look like "2026-10-12 10:00" (local time).')
             return EXIT_REFUSED
 
+    if args.command == "rehearse":
+        approvals = (
+            ("--approve-note-typing", args.approve_note_typing),
+            ("--approve-draft-discard", args.approve_draft_discard),
+            ("--approve-tour-popups", args.approve_tour_popups),
+        )
+        missing = [flag for flag, given in approvals if not given]
+        if not _truthy(env.get("ARIA_LIVE_BOOKSY")):
+            out("refused: the rehearsal needs ARIA_LIVE_BOOKSY=1 in the environment.")
+            return EXIT_REFUSED
+        if not cfg.business_id or args.confirm_business_id != cfg.business_id:
+            out("refused: --confirm-business-id must equal the configured ARIA_BOOKSY_BUSINESS_ID.")
+            return EXIT_REFUSED
+        if missing:
+            out("refused: the rehearsal types a note and discards a draft, so it needs: " + ", ".join(missing))
+            return EXIT_REFUSED
+        try:
+            args.start_dt = datetime.strptime(args.start, "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+        except ValueError:
+            out('refused: --start must look like "2026-10-12 11:00" (local time).')
+            return EXIT_REFUSED
+
     if args.command == "discover-steps":
         try:
             args.allowed_steps = parse_allow(args.allow)
@@ -130,6 +163,26 @@ def _run(args, cfg: Config, tz: ZoneInfo, now_fn, driver, out) -> int:
         if not report.get("page_ready", True):
             out("WARNING: the page was still loading when captured, so the structure is partial.")
         return EXIT_OK
+
+    if args.command == "rehearse":
+        key = request_key(cfg.business_id, cfg.staff_name, cfg.service_name, args.start_dt, cfg.service_duration_minutes)
+        spec = AppointmentSpec(
+            cfg.staff_name, cfg.service_name, args.start_dt, cfg.service_duration_minutes, build_note(ref_from_key(key))
+        )
+        try:  # the same guards as a real booking: right business, test service, future slot, ARIA TEST note
+            check_request(cfg, spec, now=now_fn(), observed_business_id=observed, bookings_this_run=0)
+        except SafetyViolation as violation:
+            out("refused by safety checks: " + "; ".join(violation.reasons))
+            return EXIT_REFUSED
+        try:
+            result = run_rehearsal(driver, cfg, spec, out=out)
+        except RunStopped:
+            return EXIT_REVIEW
+        out("RESULT: " + ("everything matched the plan." if not result.problems else "DIFFERENCES FOUND:"))
+        for problem in result.problems:
+            out(f"  - {problem}")
+        out(f"draft discarded: {result.discarded}. Nothing was saved.")
+        return EXIT_OK if (not result.problems and result.discarded) else EXIT_REVIEW
 
     if args.command == "discover-steps":
         paths = run_interactive_discovery(driver, cfg, allow=args.allowed_steps, out=out)
