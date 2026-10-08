@@ -170,6 +170,8 @@ class SeleniumBooksyDriver:
     def read_day(self, day: date, include_notes: bool = False) -> DaySnapshot:
         """Load that day's calendar and parse it. Anything not understood raises (never 'free').
         include_notes opens each appointment's details (read-only) to fill in its internal note."""
+        if include_notes and "note-readback" not in self.approvals:
+            raise DriverError("opening appointment details to read notes needs the note-readback approval")
         self._require_not_frozen()
         self.verify_single_staff()  # may raise; once per session
         browser = self._browser()

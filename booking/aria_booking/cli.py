@@ -4,6 +4,8 @@
     python -m aria_booking login                       open the test browser; a PERSON signs in; verify the business
     python -m aria_booking discover [--date today]     dump the calendar page STRUCTURE (redacted) for review
     python -m aria_booking find [--from D] [--days N]  list free slots (unknown days are reported, never "free")
+    python -m aria_booking verify --start "YYYY-MM-DD HH:MM" --confirm-business-id ID --approve-tour-popups --approve-note-readback
+                                                       READ-ONLY: find a recorded booking by its reference; creates nothing
     python -m aria_booking book --start "YYYY-MM-DD HH:MM" --confirm-business-id ID --approve-save --approve-note-typing
            --approve-tour-popups --approve-not-now --approve-note-readback
                                                        create ONE fictional test booking (needs ARIA_LIVE_BOOKSY=1)
@@ -74,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("find")
     p.add_argument("--from", dest="first", default="today")
     p.add_argument("--days", type=int, default=7)
+    p = sub.add_parser("verify", help="READ-ONLY: find a previously booked slot by its reference and check it; creates nothing")
+    p.add_argument("--start", required=True, help='local start of the recorded booking, e.g. "2026-10-12 11:00"')
+    p.add_argument("--confirm-business-id", required=True)
+    p.add_argument("--approve-tour-popups", action="store_true", help="allow closing product-tour popups that cover the page")
+    p.add_argument("--approve-note-readback", action="store_true", help="allow opening appointment details (read-only) to read notes")
     p = sub.add_parser("book", help="create ONE real (fictional, ARIA TEST) appointment; every approval flag is required")
     p.add_argument("--start", required=True, help='local start, e.g. "2026-10-12 10:00"')
     p.add_argument("--confirm-business-id", required=True)
@@ -122,6 +129,20 @@ def main(
         except ValueError:
             out('refused: --start must look like "2026-10-12 10:00" (local time).')
             return EXIT_REFUSED
+
+    if args.command == "verify":
+        if not cfg.business_id or args.confirm_business_id != cfg.business_id:
+            out("refused: --confirm-business-id must equal the configured ARIA_BOOKSY_BUSINESS_ID.")
+            return EXIT_REFUSED
+        if not (args.approve_tour_popups and args.approve_note_readback):
+            out("refused: verify opens appointment details, so it needs --approve-tour-popups and --approve-note-readback")
+            return EXIT_REFUSED
+        try:
+            args.start_dt = datetime.strptime(args.start, "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+        except ValueError:
+            out('refused: --start must look like "2026-10-12 11:00" (local time).')
+            return EXIT_REFUSED
+        args.approvals = frozenset({"tour-popups", "note-readback"})
 
     if args.command == "rehearse":
         approvals = (
@@ -214,8 +235,10 @@ def _run(args, cfg: Config, tz: ZoneInfo, now_fn, driver, out) -> int:
             out(f"{item.day}: {describe(item.search)}")
         return EXIT_OK
 
-    # book
-    result = service.book(args.start_dt)
+    if args.command == "verify":
+        result = service.verify(args.start_dt)
+    else:  # book
+        result = service.book(args.start_dt)
     out(f"{result.status.value}: {result.message}")
     for detail in result.details:
         out(f"  - {detail}")

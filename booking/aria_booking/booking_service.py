@@ -219,6 +219,43 @@ class BookingService:
             # 5. Read back and verify.
             return self._read_back(spec, ref, key, note="")
 
+    def verify(self, start: datetime) -> BookingResult:
+        """READ-ONLY: find the appointment recorded for this slot on the calendar by its reference and check it.
+        Creates nothing. Never marks anything failed: an absent entry is reported, and a person decides."""
+        cfg = self.cfg
+        key = request_key(cfg.business_id, cfg.staff_name, cfg.service_name, start, cfg.service_duration_minutes)
+        ref = ref_from_key(key)
+        spec = self._spec(start, ref)
+        with self.ledger.locked():
+            entry = self.ledger.get(key)
+            if entry is None:
+                return BookingResult(Status.UNCERTAIN_NEEDS_REVIEW, "the ledger has no record of this slot; nothing to verify", ref)
+            try:
+                snapshot = self.driver.read_day(start.date(), include_notes=True)
+            except SignInRequired as exc:
+                return BookingResult(Status.SIGN_IN_REQUIRED, f"sign-in required: {exc}", ref)
+            except DriverError as exc:
+                return BookingResult(Status.UNCERTAIN_NEEDS_REVIEW, f"calendar unreadable: {exc}", ref)
+            found, readable = self._find_by_ref(snapshot, spec.staff, ref)
+            if not readable:
+                return BookingResult(Status.UNCERTAIN_NEEDS_REVIEW, "the day's appointments could not be read", ref)
+            if found is None:
+                return BookingResult(
+                    Status.UNCERTAIN_NEEDS_REVIEW,
+                    "no appointment with this reference was found. Its note may be unreadable, or it may not exist; "
+                    "the ledger was left unchanged and nothing was retried.",
+                    ref,
+                )
+            problems = self._mismatch(found, spec)
+            if problems:
+                self.ledger.set_state(key, State.UNCERTAIN, "verify: calendar entry differs: " + "; ".join(problems))
+                return BookingResult(Status.VERIFY_MISMATCH, "an entry with this reference exists but differs", ref, tuple(problems))
+            self.ledger.set_state(key, State.VERIFIED, "verified by reading the saved note back (verify command)")
+            clashes = self._overlaps_with_others(snapshot, spec.staff, found, ref)
+            if clashes:
+                return BookingResult(Status.BOOKED_CONFLICT_DETECTED, "found and matching, BUT it overlaps another appointment", ref, tuple(clashes))
+            return BookingResult(Status.BOOKED_VERIFIED, "found on the calendar by its reference and it matches the request", ref)
+
     # ---- internals -----------------------------------------------------------------------
     def _handle_existing(self, entry, spec: AppointmentSpec, ref: str, key: str) -> Optional[BookingResult]:
         """Decide what a previous ledger entry for the same slot means. None = safe to proceed."""

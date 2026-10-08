@@ -378,7 +378,7 @@ class Card:
 class ReaderHarness(NoteReader):
     def __init__(self, cards, **kw):
         self.clock = Clock()
-        self.opened, self.open_card, self.lines = [], None, []
+        self.opened, self.open_card, self.lines, self.snapshots = [], None, [], []
         self.cards_ = [Card(self, t) for t in cards]
         self.dialog_after_close = kw.pop("dialog_after_close", False)
         super().__init__(browser=self, cfg=Config(business_id="1234567"), sleep=self.clock.sleep, monotonic=self.clock.monotonic, out=self.lines.append)
@@ -392,6 +392,9 @@ class ReaderHarness(NoteReader):
 
     def _stable(self, *a, **k):
         pass
+
+    def _snapshot(self, label):
+        self.snapshots.append(label)
 
     def _dismiss_tour_popups(self, ok):
         pass
@@ -589,3 +592,123 @@ def test_the_real_driver_gets_the_approvals_that_were_given(monkeypatch):
     lines = []
     cli.main(BOOK + FLAGS, environ=ENV, clock=lambda: datetime(2026, 10, 8, 12, 0, tzinfo=TZ), out=lines.append)
     assert seen["approvals"] == REQUIRED_APPROVALS
+
+
+# ---------------------------------------------------------------- the dialog detector and the read-only verify command
+
+def test_the_calendars_own_status_labels_are_not_mistaken_for_a_dialog():
+    """A live booking was stopped because 'confirmed' / 'unconfirmed' labels matched the confirm-dialog selector."""
+    from aria_booking.discover_interactive import NOT_STATUS_LABELS
+
+    fixtures = Path(__file__).parent / "fixtures"
+    import json
+
+    labels = set()
+    for name in ("empty_day_mon_12_oct.json", "busy_day_thu_8_oct.json"):
+        for n in json.loads((fixtures / name).read_text(encoding="utf-8"))["nodes"]:
+            tid = (n["testid"] or "").casefold()
+            if "confirm" in tid or "modal" in tid:
+                labels.add(tid)
+    assert labels == {"confirmed", "unconfirmed"}, labels  # exactly the labels the live page always shows
+    confirm_selector = next(d for d in DIALOG_SELECTORS if "confirm" in d)
+    for label in labels:
+        assert f':not([data-testid="{label}"])' in confirm_selector
+    assert NOT_STATUS_LABELS in confirm_selector
+
+
+def test_real_dialogs_are_still_recognised():
+    assert '[role="dialog"]' in DIALOG_SELECTORS and any("modal" in d for d in DIALOG_SELECTORS)
+    assert any("confirm" in d for d in DIALOG_SELECTORS)
+
+
+def test_reading_notes_through_the_driver_needs_the_note_readback_approval(drv):
+    drv.approvals = frozenset({"tour-popups"})
+    with pytest.raises(DriverError, match="note-readback"):
+        drv.read_day(date(2026, 10, 12), include_notes=True)
+    assert drv._driver is None, "the check happens before the browser is even started"
+
+
+def _slot(calendar):
+    return calendar.at(date(2026, 10, 12), 11, 0)
+
+
+def _add_booked(service, calendar, *, late_minutes=0):
+    """Record a booking the way book() would, but leave the ledger entry UNCERTAIN, as after the live run."""
+    from aria_booking.ledger import ref_from_key, request_key
+
+    cfg = service.cfg
+    start = _slot(calendar)
+    key = request_key(cfg.business_id, cfg.staff_name, cfg.service_name, start, cfg.service_duration_minutes)
+    ref = ref_from_key(key)
+    service.ledger.create(key, ref, cfg.staff_name, cfg.service_name, start.isoformat(), (start.replace(hour=13, minute=30)).isoformat(), "saving")
+    service.ledger.set_state(key, "uncertain", "not confirmed by read-back")
+    start_m, end_m = 11 * 60 + late_minutes, 13 * 60 + 30 + late_minutes
+    day = date(2026, 10, 12)
+    calendar.appointments.append(Appointment(
+        cfg.staff_name, Interval(calendar.at(day, *divmod(start_m, 60)), calendar.at(day, *divmod(end_m, 60))), cfg.service_name, build_note(ref)))
+    return key, ref
+
+
+def test_verify_finds_the_booking_by_its_reference_and_marks_the_ledger_verified(service, calendar):
+    from aria_booking.booking_service import Status
+    from aria_booking.ledger import State
+
+    calendar.notes_need_include_flag = True
+    key, ref = _add_booked(service, calendar)
+    result = service.verify(_slot(calendar))
+    assert result.status is Status.BOOKED_VERIFIED and result.ref == ref
+    assert service.ledger.get(key).state == State.VERIFIED
+    assert calendar.create_calls == [], "verify never creates anything"
+
+
+def test_verify_does_not_mark_anything_failed_when_the_reference_is_not_found(service, calendar):
+    from aria_booking.booking_service import Status
+    from aria_booking.ledger import State
+
+    key, _ = _add_booked(service, calendar)
+    calendar.appointments.clear()
+    result = service.verify(_slot(calendar))
+    assert result.status is Status.UNCERTAIN_NEEDS_REVIEW
+    assert service.ledger.get(key).state == State.UNCERTAIN, "absence is reported, never turned into 'failed'"
+    assert calendar.create_calls == []
+
+
+def test_verify_reports_a_mismatch(service, calendar):
+    from aria_booking.booking_service import Status
+
+    key, _ = _add_booked(service, calendar, late_minutes=30)  # saved 30 minutes late
+    result = service.verify(_slot(calendar))
+    assert result.status is Status.VERIFY_MISMATCH and calendar.create_calls == []
+
+
+def test_verify_with_no_ledger_record_refuses_to_guess(service, calendar):
+    from aria_booking.booking_service import Status
+
+    assert service.verify(_slot(calendar)).status is Status.UNCERTAIN_NEEDS_REVIEW
+
+
+def test_verify_survives_an_unreadable_calendar(service, calendar):
+    from aria_booking.booking_service import Status
+
+    key, _ = _add_booked(service, calendar)
+    calendar.read_failures = 1
+    assert service.verify(_slot(calendar)).status is Status.UNCERTAIN_NEEDS_REVIEW
+
+
+VERIFY = ["verify", "--start", "2026-10-12 11:00", "--confirm-business-id", "1234567", "--approve-tour-popups", "--approve-note-readback"]
+
+
+@pytest.mark.parametrize("drop", ["--approve-tour-popups", "--approve-note-readback"])
+def test_verify_needs_both_approvals_and_opens_no_browser_without_them(drop):
+    Spy.created = 0
+    code, text = run([a for a in VERIFY if a != drop])
+    assert code == cli.EXIT_REFUSED and Spy.created == 0
+
+
+def test_verify_cannot_create_anything_by_construction():
+    """verify() contains no call that creates or saves."""
+    from aria_booking.booking_service import BookingService
+
+    source = inspect.getsource(BookingService.verify)
+    assert "create_appointment" not in source and ".book(" not in source
+    assert "State.FAILED" not in source

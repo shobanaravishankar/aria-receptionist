@@ -40,7 +40,10 @@ CLOSE_SELECTORS = (
 )
 NOT_IN_TOUR = ':not([data-testid="step-0"] *)'
 TOUR = '[data-testid="step-0"]'
-DIALOG_SELECTORS = ('[role="dialog"]', '[role="alertdialog"]', '[data-testid*="modal" i]', '[data-testid*="confirm" i]')
+# The calendar always carries "confirmed" / "unconfirmed" status labels. They are not dialogs (a live booking was once
+# stopped by mistaking them for one), so they are excluded from the "looks like a confirm dialog" selector.
+NOT_STATUS_LABELS = ':not([data-testid="confirmed"]):not([data-testid="unconfirmed"])'
+DIALOG_SELECTORS = ('[role="dialog"]', '[role="alertdialog"]', '[data-testid*="modal" i]', '[data-testid*="confirm" i]' + NOT_STATUS_LABELS)
 
 
 class ClickRefused(DriverError):

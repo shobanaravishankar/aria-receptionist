@@ -212,6 +212,7 @@ class NoteReader(FormRehearsal):
             self._dismiss_tour_popups(tour_ok)
             value = ""
             if self._click_testid("notes-and-info", "view the Notes & Info tab (read-only)"):
+                self._snapshot(f"30-details-notes-{index}")  # structure for review; also shows what the note looked like
                 value = str(self.browser.execute_script(NOTE_JS) or "")
             self._dismiss("the appointment details")
             if self._dialog_showing():
