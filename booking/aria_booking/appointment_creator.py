@@ -199,21 +199,28 @@ class NoteReader(FormRehearsal):
             raise DriverError(f"could not open an appointment card: {type(exc).__name__}") from exc
 
     def read_notes(self, *, tour_ok: bool) -> dict[tuple[tuple[int, int], tuple[int, int]], str]:
+        """One note per card, keyed by its (start, end). Raises, rather than returning something partial, when the
+        read cannot be trusted: a card whose times are unreadable, two cards with the same times (the key could not
+        tell them apart), or a card whose Notes & Info tab could not be opened. A missing note is never 'no note'."""
         notes: dict[tuple[tuple[int, int], tuple[int, int]], str] = {}
         for index in range(len(self._all(CARDS))):
             cards = self._all(CARDS)  # re-found each time: the page may re-render after a drawer closes
             if index >= len(cards):
-                break
+                raise DriverError("the number of appointment cards changed while reading notes; the read is incomplete")
             key = self._times_of(cards[index])
             if key is None:
-                continue
+                raise DriverError("an appointment card's times could not be read, so its note cannot be matched to it")
+            if key in notes:
+                raise DriverError(
+                    "two appointment cards share the same start and end, so their notes cannot be told apart; refusing to guess"
+                )
             self._open_card(cards[index])
             self._stable()
             self._dismiss_tour_popups(tour_ok)
-            value = ""
-            if self._click_testid("notes-and-info", "view the Notes & Info tab (read-only)"):
-                self._snapshot(f"30-details-notes-{index}")  # structure for review; also shows what the note looked like
-                value = str(self.browser.execute_script(NOTE_JS) or "")
+            if not self._click_testid("notes-and-info", "view the Notes & Info tab (read-only)"):
+                raise DriverError("an appointment's Notes & Info tab could not be opened, so its note is unknown")
+            self._snapshot(f"30-details-notes-{index}")  # structure for review; also shows what the note looked like
+            value = str(self.browser.execute_script(NOTE_JS) or "")
             self._dismiss("the appointment details")
             if self._dialog_showing():
                 raise RunStopped("a dialog appeared after closing an appointment's details; not clicking it")
@@ -222,15 +229,21 @@ class NoteReader(FormRehearsal):
 
 
 def attach_notes(snapshot: DaySnapshot, notes: dict[tuple[tuple[int, int], tuple[int, int]], str]) -> DaySnapshot:
-    """Fill each appointment's note from the notes read by time. Unreadable appointments stay unknown."""
+    """Fill each appointment's note from the notes read by time. Refuses (DriverError) anything ambiguous or incomplete:
+    two appointments with the same times, an appointment with no note read, or a note with no appointment.
+    Appointments that were already unknown stay unknown."""
     days = []
     for staff_day in snapshot.staff_days:
         if staff_day.appointments is None:
             days.append(staff_day)
             continue
-        appointments = []
-        for appt in staff_day.appointments:
-            key = ((appt.interval.start.hour, appt.interval.start.minute), (appt.interval.end.hour, appt.interval.end.minute))
-            appointments.append(replace(appt, note=notes.get(key, appt.note)))
-        days.append(replace(staff_day, appointments=tuple(appointments)))
+        keys = [((a.interval.start.hour, a.interval.start.minute), (a.interval.end.hour, a.interval.end.minute)) for a in staff_day.appointments]
+        if len(set(keys)) != len(keys):
+            raise DriverError("two appointments share the same start and end, so their notes cannot be matched; refusing to guess")
+        if set(keys) != set(notes):
+            raise DriverError(
+                f"the notes read ({len(notes)}) do not match the appointments on the page ({len(keys)}); the read is incomplete"
+            )
+        appointments = tuple(replace(a, note=notes[key]) for a, key in zip(staff_day.appointments, keys))
+        days.append(replace(staff_day, appointments=appointments))
     return replace(snapshot, staff_days=tuple(days))

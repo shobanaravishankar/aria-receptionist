@@ -429,9 +429,25 @@ def test_a_card_whose_accessibility_label_looks_like_an_action_is_not_opened():
     assert reader.opened == []
 
 
-def test_a_card_with_unreadable_times_is_skipped_not_guessed():
-    reader = ReaderHarness([("sometime", "later")])
-    assert reader.read_notes(tour_ok=True) == {}
+def test_a_card_with_unreadable_times_makes_the_read_incomplete_not_skipped():
+    reader = ReaderHarness([("11:00 AM", "1:30 PM"), ("sometime", "later")])
+    with pytest.raises(DriverError, match="times could not be read"):
+        reader.read_notes(tour_ok=True)
+
+
+def test_two_cards_with_the_same_times_are_refused_not_overwritten():
+    reader = ReaderHarness([("11:00 AM", "1:30 PM"), ("11:00 AM", "1:30 PM")])
+    with pytest.raises(DriverError, match="share the same start and end"):
+        reader.read_notes(tour_ok=True)
+
+
+def test_a_notes_tab_that_cannot_be_opened_means_the_note_is_unknown_not_empty():
+    class NoTab(ReaderHarness):
+        def _click_testid(self, testid, why):
+            return False
+
+    with pytest.raises(DriverError, match="Notes & Info tab could not be opened"):
+        NoTab([("11:00 AM", "1:30 PM")]).read_notes(tour_ok=True)
 
 
 def snapshot_with(*times):
@@ -443,14 +459,17 @@ def snapshot_with(*times):
 
 
 def test_attached_notes_make_the_reference_findable_by_the_booking_service():
-    snap = attach_notes(snapshot_with(((11, 0), (13, 30)), ((15, 15), (17, 45))), {((11, 0), (13, 30)): CARD_TEXTS[("11:00 AM", "1:30 PM")]})
+    snap = attach_notes(
+        snapshot_with(((11, 0), (13, 30)), ((15, 15), (17, 45))),
+        {((11, 0), (13, 30)): CARD_TEXTS[("11:00 AM", "1:30 PM")], ((15, 15), (17, 45)): "walk-in note"},
+    )
     first, second = snap.staff_days[0].appointments
-    assert extract_ref(first.note) == REF and second.note == ""
+    assert extract_ref(first.note) == REF and second.note == "walk-in note"
 
 
 def test_notes_never_attach_to_an_appointment_at_a_different_time():
-    snap = attach_notes(snapshot_with(((12, 0), (14, 30))), {((11, 0), (13, 30)): CARD_TEXTS[("11:00 AM", "1:30 PM")]})
-    assert extract_ref(snap.staff_days[0].appointments[0].note) is None
+    with pytest.raises(DriverError, match="incomplete"):
+        attach_notes(snapshot_with(((12, 0), (14, 30))), {((11, 0), (13, 30)): CARD_TEXTS[("11:00 AM", "1:30 PM")]})
 
 
 def test_unknown_appointments_stay_unknown_when_notes_are_attached():

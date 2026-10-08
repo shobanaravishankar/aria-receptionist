@@ -79,9 +79,12 @@ def _conflicts(staff_day: StaffDay, blocked: Interval) -> list[str]:
 
 
 def _ceil_to_grid(moment: datetime, grid_minutes: int) -> datetime:
-    minute_of_day = moment.hour * 60 + moment.minute + (1 if (moment.second or moment.microsecond) else 0)
-    delta = (-minute_of_day) % grid_minutes
-    return add_minutes(moment.replace(second=0, microsecond=0), delta)
+    """The first grid time (by the wall clock) at or after ``moment``; never earlier, so a lead time is never shortened."""
+    base = moment.replace(second=0, microsecond=0)
+    if moment.second or moment.microsecond:
+        base = add_minutes(base, 1)  # round up to the next whole minute FIRST, then onto the grid
+    minute_of_day = base.hour * 60 + base.minute
+    return add_minutes(base, (-minute_of_day) % grid_minutes)
 
 
 def validate_slot(
