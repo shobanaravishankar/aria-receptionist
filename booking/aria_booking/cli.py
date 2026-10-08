@@ -117,6 +117,8 @@ def _run(args, cfg: Config, tz: ZoneInfo, now_fn, driver, out) -> int:
         report = driver.discover(args.date)
         path = write_report(cfg.evidence_dir, report)
         out(f"wrote {report['node_count']} redacted structure nodes to {path} (local, git-ignored)")
+        if not report.get("page_ready", True):
+            out("WARNING: the page was still loading when captured, so the structure is partial.")
         return EXIT_OK
 
     service = BookingService(cfg, driver, Ledger(cfg.ledger_path, clock=now_fn), clock=now_fn)

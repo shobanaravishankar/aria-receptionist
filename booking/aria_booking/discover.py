@@ -105,6 +105,9 @@ def write_report(evidence_dir: Path, report: dict[str, Any]) -> Path:
     return path
 
 
+# True once the app's full-screen loading overlay is gone (the calendar grid renders after it).
+LOADER_GONE_JS = "return !document.querySelector('[data-testid=\"app-loader\"]');"
+
 # Collected in the page. Returns raw text, which Python redacts before anything is stored.
 DISCOVERY_JS = r"""
 const out = [];

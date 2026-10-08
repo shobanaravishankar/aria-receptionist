@@ -7,7 +7,7 @@ import pytest
 
 from aria_booking import cli
 from aria_booking.config import Config
-from aria_booking.discover import build_report, mask_url, redact_text, sanitize_nodes, write_report
+from aria_booking.discover import DISCOVERY_JS, LOADER_GONE_JS, build_report, mask_url, redact_text, sanitize_nodes, write_report
 from aria_booking.driver import BeforeSaveError, DriverError, DriverUnavailable, SignInRequired
 from aria_booking.selenium_driver import DiscoveryRequired, SeleniumBooksyDriver, build_chrome
 from aria_booking.models import AppointmentSpec
@@ -81,7 +81,18 @@ class FakeBrowser:
     def quit(self):
         self.quit_called = True
 
+    loader_polls = 0  # how many readiness checks report "still loading" before the overlay clears
+    scripts = None
+
     def execute_script(self, js):
+        if self.scripts is None:
+            self.scripts = []
+        self.scripts.append("loader" if js == LOADER_GONE_JS else "discovery" if js == DISCOVERY_JS else "other")
+        if js == LOADER_GONE_JS:
+            if self.loader_polls > 0:
+                self.loader_polls -= 1
+                return False
+            return True
         return []
 
 
@@ -150,6 +161,22 @@ def test_unverified_operations_refuse_instead_of_guessing():
         drv.create_appointment(spec)
     assert isinstance(err.value, BeforeSaveError), "must be classified as definitely-not-saved"
     assert browser.visited == [], "refusing must not even navigate"
+
+
+def test_discover_waits_for_the_loading_overlay_before_capturing():
+    drv, browser, _ = make_driver([CAL])
+    browser.loader_polls = 3
+    report = drv.discover("today")
+    assert report["page_ready"] is True
+    assert browser.scripts == ["loader"] * 4 + ["discovery"], "must capture only after the overlay cleared"
+
+
+def test_discover_flags_a_partial_capture_when_the_overlay_never_clears():
+    drv, browser, _ = make_driver([CAL], ticks=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+    browser.loader_polls = 10**6
+    report = drv.discover("today", load_timeout=3)
+    assert report["page_ready"] is False
+    assert browser.scripts[-1] == "discovery", "still captures, but is honest that it is partial"
 
 
 def test_close_quits_the_browser_once():

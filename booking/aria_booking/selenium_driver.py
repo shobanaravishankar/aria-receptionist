@@ -20,7 +20,7 @@ from datetime import date
 from typing import Any, Callable, Optional
 
 from .config import Config
-from .discover import DISCOVERY_JS, build_report
+from .discover import DISCOVERY_JS, LOADER_GONE_JS, build_report
 from .driver import BeforeSaveError, DriverUnavailable, SignInRequired
 from .models import AppointmentSpec, DaySnapshot
 
@@ -125,11 +125,24 @@ class SeleniumBooksyDriver:
         raise DiscoveryRequired("appointment creation has not been verified against the live page; nothing was clicked")
 
     # ---- discovery -----------------------------------------------------------------------
-    def discover(self, day_text: str = "today") -> dict[str, Any]:
+    def _wait_for_calendar(self, browser, timeout: float) -> bool:
+        """Wait for the app's loading overlay to clear. False means it never did (still loading)."""
+        deadline = self._monotonic() + timeout
+        while True:
+            if browser.execute_script(LOADER_GONE_JS):
+                return True
+            if self._monotonic() >= deadline:
+                return False
+            self._sleep(self._poll)
+
+    def discover(self, day_text: str = "today", *, load_timeout: float = 40.0) -> dict[str, Any]:
         browser = self._browser()
         browser.get(self.cfg.calendar_url(day_text))
-        self._sleep(3)  # let the single-page app render
+        ready = self._wait_for_calendar(browser, load_timeout)
         if not BUSINESS_PATH_RE.search(browser.current_url or ""):
             raise SignInRequired("the calendar did not open (signed out?); sign in and run again")
+        self._sleep(1)  # let the grid finish painting after the overlay clears
         nodes = browser.execute_script(DISCOVERY_JS)
-        return build_report(browser.current_url, browser.title, nodes, day=day_text)
+        report = build_report(browser.current_url, browser.title, nodes, day=day_text)
+        report["page_ready"] = ready  # False => the loading overlay never cleared; structure is partial
+        return report
