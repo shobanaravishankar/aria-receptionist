@@ -84,6 +84,10 @@ class SeleniumBooksyDriver:
             self._driver = self._factory(self.cfg)
         return self._driver
 
+    def browser(self):
+        """The live webdriver (used by the click-through discovery)."""
+        return self._browser()
+
     def close(self) -> None:
         if self._driver is not None:
             try:

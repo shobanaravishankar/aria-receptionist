@@ -44,7 +44,12 @@ _KEEP_PATTERNS = [
 _BUSINESS_ID_IN_PATH = re.compile(r"/(\d{3,})(?=/|$)")
 
 
+MARKER = "aria test"  # our own test-note marker: this text is ours, not personal data
+
+
 def redact_text(text: str) -> str:
+    if text and MARKER in text.casefold():
+        return text[:300]  # the note we wrote ourselves; lets us see WHERE notes are displayed
     out = []
     for token in (text or "").split():
         core = token.strip(",.;()[]")
@@ -97,10 +102,11 @@ def build_report(url: str, title: str, nodes: Iterable[dict[str, Any]], *, day: 
     }
 
 
-def write_report(evidence_dir: Path, report: dict[str, Any]) -> Path:
+def write_report(evidence_dir: Path, report: dict[str, Any], label: str = "") -> Path:
     evidence_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    path = evidence_dir / f"discovery-{stamp}.json"
+    suffix = f"-{label}" if label else ""
+    path = evidence_dir / f"discovery-{stamp}{suffix}.json"
     path.write_text(json.dumps(report, indent=1), encoding="utf-8")
     return path
 

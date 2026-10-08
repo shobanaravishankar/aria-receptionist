@@ -23,6 +23,7 @@ from .booking_service import BookingService, Status
 from .availability import describe
 from .config import Config, ConfigError
 from .discover import write_report
+from .discover_interactive import ALLOWED_STEPS, parse_allow, run_interactive_discovery
 from .driver import DriverError
 from .ledger import Ledger, LedgerError
 from .selenium_driver import SeleniumBooksyDriver
@@ -47,6 +48,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("login")
     p = sub.add_parser("discover")
     p.add_argument("--date", default="today")
+    p = sub.add_parser("discover-steps", help="click-through discovery; every click type must be approved with --allow")
+    p.add_argument("--allow", default="", help="comma list of approved steps: " + ", ".join(ALLOWED_STEPS))
     p = sub.add_parser("find")
     p.add_argument("--from", dest="first", default="today")
     p.add_argument("--days", type=int, default=7)
@@ -92,6 +95,13 @@ def main(
             out('refused: --start must look like "2026-10-12 10:00" (local time).')
             return EXIT_REFUSED
 
+    if args.command == "discover-steps":
+        try:
+            args.allowed_steps = parse_allow(args.allow)
+        except ValueError as exc:
+            out(f"refused: {exc}")
+            return EXIT_REFUSED
+
     driver = driver_factory(cfg) if driver_factory else SeleniumBooksyDriver(cfg)
     try:
         return _run(args, cfg, tz, now_fn, driver, out)
@@ -119,6 +129,11 @@ def _run(args, cfg: Config, tz: ZoneInfo, now_fn, driver, out) -> int:
         out(f"wrote {report['node_count']} redacted structure nodes to {path} (local, git-ignored)")
         if not report.get("page_ready", True):
             out("WARNING: the page was still loading when captured, so the structure is partial.")
+        return EXIT_OK
+
+    if args.command == "discover-steps":
+        paths = run_interactive_discovery(driver, cfg, allow=args.allowed_steps, out=out)
+        out(f"done: {len(paths)} redacted capture(s) in {cfg.evidence_dir} (local, git-ignored)")
         return EXIT_OK
 
     service = BookingService(cfg, driver, Ledger(cfg.ledger_path, clock=now_fn), clock=now_fn)

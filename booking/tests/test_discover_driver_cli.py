@@ -286,3 +286,72 @@ def test_book_with_an_unverified_driver_creates_nothing_and_says_availability_is
 def test_config_command_masks_the_business_id():
     code, text = run_cli(["config"], {"ARIA_BOOKSY_BUSINESS_ID": "1234567"})
     assert code == cli.EXIT_OK and "1234567" not in text and "****567" in text
+
+
+# ---------------------------------------------------------------- click-through discovery guards
+
+from aria_booking.discover_interactive import ALLOWED_STEPS, DENY_RE, click_refusal, parse_allow
+
+
+@pytest.mark.parametrize("text", ["SAVE", "Save changes", "Confirm", "Delete appointment", "Cancel appointment", "Check out", "Pay now",
+                                  "Send message", "Submit", "Discard changes", "Create", "Book now", "Yes"])
+def test_actions_that_change_things_are_refused(text):
+    assert click_refusal(text, None, None) is not None
+
+
+@pytest.mark.parametrize("text, aria, testid", [
+    ("NEW APPOINTMENT", None, None), ("Aria Salon Walk-in", None, "calendar-content-calendar-grid-calendar-card-0-2"),
+    (None, None, "close-icon"), (None, "Close", None), (None, None, "add-button"), ("next", None, "next-button"),
+])
+def test_navigation_and_close_clicks_are_allowed(text, aria, testid):
+    assert click_refusal(text, aria, testid) is None
+
+
+def test_the_deny_list_looks_at_aria_label_and_test_id_too():
+    assert click_refusal(None, "Save", None) and click_refusal(None, None, "confirm-button")
+
+
+def test_only_named_steps_can_be_approved():
+    assert parse_allow("tour, appointment") == {"tour", "appointment"}
+    for bad in ("", "  ", "all", "tour,delete"):
+        with pytest.raises(ValueError):
+            parse_allow(bad)
+    assert set(ALLOWED_STEPS) == {"tour", "appointment", "new-form"}
+
+
+def test_discover_steps_is_refused_without_explicit_approval_and_creates_no_browser():
+    SpyDriver.created = 0
+    for argv in (["discover-steps"], ["discover-steps", "--allow", ""], ["discover-steps", "--allow", "save"]):
+        code, text = run_cli(argv, {"ARIA_BOOKSY_BUSINESS_ID": "1234567"}, SpyDriver)
+        assert code == cli.EXIT_REFUSED and "refused" in text
+    assert SpyDriver.created == 0
+
+
+def test_our_own_test_note_stays_readable_but_other_text_is_still_masked():
+    note = "ARIA TEST - fictional appointment, no real customer or payment. Ref: ARIA-0123ABCD"
+    assert redact_text(note) == note
+    assert "Maria" not in redact_text("Maria Lopez")
+
+
+class FakeClickable:
+    def __init__(self, text="", aria=None, testid=None):
+        self.text, self._attrs, self.clicked = text, {"aria-label": aria, "data-testid": testid}, False
+
+    def get_attribute(self, name):
+        return self._attrs.get(name)
+
+    def click(self):
+        self.clicked = True
+
+
+def test_the_click_wrapper_refuses_before_clicking():
+    from aria_booking.discover_interactive import ClickRefused, InteractiveDiscovery
+
+    runner = InteractiveDiscovery(object(), Config(business_id="1234567"), out=lambda s: None)
+    risky = FakeClickable("SAVE")
+    with pytest.raises(ClickRefused):
+        runner._click(risky, "test")
+    assert risky.clicked is False
+    fine = FakeClickable(testid="close-icon")
+    runner._click(fine, "test")
+    assert fine.clicked is True
