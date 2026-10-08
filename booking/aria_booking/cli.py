@@ -4,7 +4,8 @@
     python -m aria_booking login                       open the test browser; a PERSON signs in; verify the business
     python -m aria_booking discover [--date today]     dump the calendar page STRUCTURE (redacted) for review
     python -m aria_booking find [--from D] [--days N]  list free slots (unknown days are reported, never "free")
-    python -m aria_booking book --start "YYYY-MM-DD HH:MM" --confirm-business-id ID
+    python -m aria_booking book --start "YYYY-MM-DD HH:MM" --confirm-business-id ID --approve-save --approve-note-typing
+           --approve-tour-popups --approve-not-now --approve-note-readback
                                                        create ONE fictional test booking (needs ARIA_LIVE_BOOKSY=1)
 
 Nothing here runs a live action by default, and nothing here ever asks for or stores a password.
@@ -35,6 +36,15 @@ from .selenium_driver import SeleniumBooksyDriver
 
 EXIT_OK, EXIT_REFUSED, EXIT_REVIEW, EXIT_NOT_SAVED = 0, 2, 3, 4
 
+# Every one of these must be given for `book`; each names one thing the run is allowed to do to the real account.
+BOOK_APPROVALS = {
+    "save": "allow the ONE click on Save that creates the appointment",
+    "note-typing": "allow typing the ARIA TEST note into the unsaved form",
+    "tour-popups": "allow closing product-tour popups that cover the page",
+    "not-now": "allow answering the new-client prompt after Save with NOT NOW (nothing else)",
+    "note-readback": "allow opening appointment details (read-only) to read the saved note back",
+}
+
 
 def _truthy(value: Optional[str]) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -64,9 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("find")
     p.add_argument("--from", dest="first", default="today")
     p.add_argument("--days", type=int, default=7)
-    p = sub.add_parser("book")
+    p = sub.add_parser("book", help="create ONE real (fictional, ARIA TEST) appointment; every approval flag is required")
     p.add_argument("--start", required=True, help='local start, e.g. "2026-10-12 10:00"')
     p.add_argument("--confirm-business-id", required=True)
+    for flag, text in BOOK_APPROVALS.items():
+        p.add_argument("--approve-" + flag, action="store_true", help=text)
     return parser
 
 
@@ -100,6 +112,11 @@ def main(
         if not cfg.business_id or args.confirm_business_id != cfg.business_id:
             out("refused: --confirm-business-id must equal the configured ARIA_BOOKSY_BUSINESS_ID.")
             return EXIT_REFUSED
+        missing = [f"--approve-{flag}" for flag in BOOK_APPROVALS if not getattr(args, "approve_" + flag.replace("-", "_"))]
+        if missing:
+            out("refused: a real booking needs every approval to be given explicitly; missing: " + ", ".join(missing))
+            return EXIT_REFUSED
+        args.approvals = frozenset(BOOK_APPROVALS)
         try:
             args.start_dt = datetime.strptime(args.start, "%Y-%m-%d %H:%M").replace(tzinfo=tz)
         except ValueError:
@@ -135,7 +152,8 @@ def main(
             out(f"refused: {exc}")
             return EXIT_REFUSED
 
-    driver = driver_factory(cfg) if driver_factory else SeleniumBooksyDriver(cfg)
+    approvals = getattr(args, "approvals", frozenset())
+    driver = driver_factory(cfg) if driver_factory else SeleniumBooksyDriver(cfg, approvals=approvals)
     try:
         return _run(args, cfg, tz, now_fn, driver, out)
     except (ConfigError, DriverError, LedgerError) as exc:
@@ -203,6 +221,8 @@ def _run(args, cfg: Config, tz: ZoneInfo, now_fn, driver, out) -> int:
         out(f"  - {detail}")
     if result.ref:
         out(f"  reference: {result.ref}")
+    if result.status in (Status.UNCERTAIN_NEEDS_REVIEW, Status.VERIFY_MISMATCH, Status.BOOKED_CONFLICT_DETECTED):
+        out("  The browser window may have been left open on purpose. Look at it and the ledger before doing anything else.")
     if result.ok:
         return EXIT_OK
     if result.status in (Status.UNCERTAIN_NEEDS_REVIEW, Status.VERIFY_MISMATCH, Status.BOOKED_CONFLICT_DETECTED):

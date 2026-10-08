@@ -21,11 +21,12 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from typing import Any, Callable, Optional
 
+from .appointment_creator import AppointmentCreator, LeaveWindowOpen, NoteReader, attach_notes
 from .calendar_parser import CalendarParseError, normalize_nodes, parse_day
 from .config import Config
 from .discover import DISCOVERY_JS, LOADER_GONE_JS, build_report
-from .discover_interactive import click_refusal
-from .driver import BeforeSaveError, DriverUnavailable, SignInRequired
+from .discover_interactive import RunStopped, click_refusal
+from .driver import BeforeSaveError, DriverError, DriverUnavailable, SaveOutcomeUnknown, SignInRequired
 from .models import AppointmentSpec, DaySnapshot
 from .staff_census import LIST_TESTID, confirms_single_staff, parse_staff_list
 
@@ -61,6 +62,7 @@ def build_chrome(cfg: Config):
     options.add_argument(f"--user-data-dir={cfg.chrome_profile_dir}")
     options.add_argument("--window-size=1400,1000")
     options.add_argument("--no-first-run")
+    options.add_experimental_option("detach", True)  # a window left open for a person survives this program exiting
     return webdriver.Chrome(service=service, options=options)
 
 
@@ -74,6 +76,7 @@ class SeleniumBooksyDriver:
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
         poll_seconds: float = 2.0,
+        approvals: frozenset = frozenset(),
     ):
         self.cfg = cfg
         self._factory = webdriver_factory
@@ -83,6 +86,9 @@ class SeleniumBooksyDriver:
         self._poll = poll_seconds
         self._driver: Optional[Any] = None
         self._staff_confirmed: Optional[bool] = None  # decided once per session from the Staff page
+        self.approvals = frozenset(approvals)
+        self._appointment_counts: dict = {}  # appointments seen by the latest read of each day
+        self._frozen: Optional[str] = None  # set when a window was deliberately left open for a person
 
     # ---- lifecycle -----------------------------------------------------------------------
     def _browser(self):
@@ -95,6 +101,10 @@ class SeleniumBooksyDriver:
         return self._browser()
 
     def close(self) -> None:
+        if self._frozen:
+            self._notify(f"Leaving the browser window OPEN for a person to look at: {self._frozen}")
+            self._driver = None  # never quit it; the detached window stays
+            return
         if self._driver is not None:
             try:
                 self._driver.quit()
@@ -153,8 +163,14 @@ class SeleniumBooksyDriver:
         return self._staff_confirmed
 
     # ---- reading the calendar (parser tested offline against real captures; see README for live status) ---------
-    def read_day(self, day: date) -> DaySnapshot:
-        """Load that day's calendar and parse it. Anything not understood raises (never 'free')."""
+    def _require_not_frozen(self) -> None:
+        if self._frozen:
+            raise DriverError(f"the browser window was left open for a person ({self._frozen}); not touching it")
+
+    def read_day(self, day: date, include_notes: bool = False) -> DaySnapshot:
+        """Load that day's calendar and parse it. Anything not understood raises (never 'free').
+        include_notes opens each appointment's details (read-only) to fill in its internal note."""
+        self._require_not_frozen()
         self.verify_single_staff()  # may raise; once per session
         browser = self._browser()
         browser.get(self.cfg.calendar_url(day.isoformat()))
@@ -166,7 +182,7 @@ class SeleniumBooksyDriver:
         self._sleep(1)  # let the grid finish painting after the overlay clears
         raw = browser.execute_script(DISCOVERY_JS)
         tz = ZoneInfo(self.cfg.timezone)
-        return parse_day(
+        snapshot = parse_day(
             normalize_nodes(raw),
             day=day,
             tz=tz,
@@ -174,10 +190,45 @@ class SeleniumBooksyDriver:
             staff_confirmed=self._staff_confirmed,
             captured_at=datetime.now(tz),
         )
+        staff_day = snapshot.for_staff(self.cfg.staff_name)
+        if staff_day is not None and staff_day.appointments is not None:
+            self._appointment_counts[day] = len(staff_day.appointments)
+        else:
+            self._appointment_counts.pop(day, None)
+        if include_notes and staff_day is not None and staff_day.appointments:
+            reader = NoteReader(browser, self.cfg, sleep=self._sleep, monotonic=self._monotonic, out=self._notify)
+            try:
+                notes = reader.read_notes(tour_ok="tour-popups" in self.approvals)
+            except RunStopped as exc:
+                raise DriverError(f"could not read appointment notes: {exc}") from exc
+            snapshot = attach_notes(snapshot, notes)
+        return snapshot
 
-    # ---- not yet verified against the live site -----------------------------------------
+    # ---- creating the one approved appointment ------------------------------------------------
     def create_appointment(self, spec: AppointmentSpec) -> None:
-        raise DiscoveryRequired("appointment creation has not been verified against the live page; nothing was clicked")
+        """Fill and save the New Appointment form. Before the Save click every failure is BeforeSaveError (nothing
+        was created); from the Save click on every failure is SaveOutcomeUnknown and the window is left open."""
+        self._require_not_frozen()
+        expected = self._appointment_counts.get(spec.start.astimezone(ZoneInfo(self.cfg.timezone)).date())
+        if expected is None:
+            raise BeforeSaveError("the day was not read just before saving, so its appointment count is unknown")
+        creator = AppointmentCreator(
+            self._browser(), self.cfg, approvals=set(self.approvals), sleep=self._sleep, monotonic=self._monotonic, out=self._notify
+        )
+        try:
+            creator.create(spec, staff=self.cfg.staff_name, expected_existing=expected)
+        except LeaveWindowOpen as exc:
+            self._frozen = str(exc)
+            raise
+        except (BeforeSaveError, SaveOutcomeUnknown):
+            if creator.save_clicked:
+                self._frozen = self._frozen or "unexpected state after Save"
+            raise
+        except Exception as exc:  # RunStopped, selenium errors, helper DriverErrors
+            if creator.save_clicked:
+                self._frozen = f"{type(exc).__name__} after Save: {exc}"
+                raise SaveOutcomeUnknown(f"stopped after the Save click: {exc}") from exc
+            raise BeforeSaveError(f"stopped before the Save click, nothing was created: {exc}") from exc
 
     # ---- discovery -----------------------------------------------------------------------
     def _wait_for_calendar(self, browser, timeout: float) -> bool:

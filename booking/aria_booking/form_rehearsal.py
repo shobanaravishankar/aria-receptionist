@@ -213,12 +213,14 @@ class FormRehearsal(InteractiveDiscovery):
         self._stable()
         return not self._all(DRAWER) and not self._all(DISCARD_MODAL)
 
-    # ---- the rehearsal
-    def rehearse(self, spec: AppointmentSpec, *, staff: str) -> RehearsalResult:
+    # ---- fill everything except Save (shared by the rehearsal and by real creation)
+    def fill_form(self, spec: AppointmentSpec, *, staff: str) -> tuple[FormState, list[str], int]:
+        """Open the target day, open an UNSAVED New Appointment form and fill it exactly as planned. Returns the
+        values read back from the form, every difference from the plan, and how many appointment cards that day
+        already had. Never clicks Save."""
         tz = ZoneInfo(self.cfg.timezone)
         local = spec.start.astimezone(tz)
         target = local.date()
-        self.out(f"rehearsal for {local:%a %d %b %Y %I:%M %p} ({spec.duration_minutes} min): fills the form, NEVER saves")
         self._open_calendar(target.isoformat())
         self._dismiss_tour_popups(True)
         self._verify_page_day(target)
@@ -234,13 +236,23 @@ class FormRehearsal(InteractiveDiscovery):
         self._type_note(spec.note)
         state = self.read_state(tabs)
         problems = compare_with_plan(spec, state, today=self._today(), tz=tz, staff=staff)
-        self._snapshot("21-rehearsal-filled")
+        self._snapshot("21-form-filled")
+        self._print_state(state, spec)
+        return state, problems, before_cards
 
-        self.out("  form as read back (no values are saved anywhere):")
+    def _print_state(self, state: FormState, spec: AppointmentSpec) -> None:
+        self.out("  form as read back:")
         for name in ("service_text", "date_text", "start_text", "end_text", "save_enabled"):
             self.out(f"    {name}: {getattr(state, name)!r}")
         self.out(f"    internal note matches the plan exactly: {state.note_value == spec.note}")
         self.out(f"    second note box empty: {not state.other_note_value.strip()}")
+
+    # ---- the rehearsal
+    def rehearse(self, spec: AppointmentSpec, *, staff: str) -> RehearsalResult:
+        tz = ZoneInfo(self.cfg.timezone)
+        local = spec.start.astimezone(tz)
+        self.out(f"rehearsal for {local:%a %d %b %Y %I:%M %p} ({spec.duration_minutes} min): fills the form, NEVER saves")
+        state, problems, before_cards = self.fill_form(spec, staff=staff)
         self.out("  STOPPING BEFORE SAVE. Save was never clicked.")
 
         discarded = self.discard_draft()

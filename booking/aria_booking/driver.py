@@ -37,8 +37,9 @@ class BookingDriver(Protocol):
     def verify_business(self) -> str:
         """Return the business id the browser is actually signed in to (read from the page)."""
 
-    def read_day(self, day: date) -> DaySnapshot:
-        """Read one day's calendar. Anything unreadable must be reported as None (unknown)."""
+    def read_day(self, day: date, include_notes: bool = False) -> DaySnapshot:
+        """Read one day's calendar. Anything unreadable must be reported as None (unknown).
+        include_notes also opens each appointment's details (read-only) to read its internal note."""
 
     def create_appointment(self, spec: AppointmentSpec) -> None:
         """Create exactly one appointment. Raise BeforeSaveError or SaveOutcomeUnknown on failure."""

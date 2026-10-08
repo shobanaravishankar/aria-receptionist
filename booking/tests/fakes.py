@@ -3,6 +3,7 @@ logic, with switches to simulate each failure mode (unknown data, uncertain save
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime
 from typing import Callable, Optional
 
@@ -35,6 +36,7 @@ class FakeCalendar:
         self.sign_in_required = False
         self.create_mode = "ok"  # ok | before_save_error | unknown_but_saved | unknown_not_saved | saves_wrong_time
         self.on_create: Optional[Callable[["FakeCalendar", AppointmentSpec], None]] = None
+        self.notes_need_include_flag = False  # like the real site: the day view shows no notes
         self.hidden_reads_after_create = 0  # eventual consistency: new entry invisible for N reads
         # observations
         self.create_calls: list[AppointmentSpec] = []
@@ -62,7 +64,7 @@ class FakeCalendar:
             raise SignInRequired("not signed in")
         return self.business_id
 
-    def read_day(self, day: date) -> DaySnapshot:
+    def read_day(self, day: date, include_notes: bool = False) -> DaySnapshot:
         self.read_calls += 1
         if self.sign_in_required:
             raise SignInRequired("session expired")
@@ -77,6 +79,9 @@ class FakeCalendar:
         if self._hide_ref and self.hidden_reads_after_create > 0:
             appts = [a for a in appts if extract_ref(a.note) != self._hide_ref]
             self.hidden_reads_after_create -= 1
+
+        if self.notes_need_include_flag and not include_notes:
+            appts = [replace(a, note="") for a in appts]
 
         staff_day = StaffDay(
             self.staff,

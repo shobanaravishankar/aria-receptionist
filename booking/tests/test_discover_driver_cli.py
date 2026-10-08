@@ -9,7 +9,7 @@ from aria_booking import cli
 from aria_booking.config import Config
 from aria_booking.discover import DISCOVERY_JS, LOADER_GONE_JS, build_report, mask_url, redact_text, sanitize_nodes, write_report
 from aria_booking.driver import BeforeSaveError, DriverError, DriverUnavailable, SignInRequired
-from aria_booking.selenium_driver import DiscoveryRequired, SeleniumBooksyDriver, build_chrome
+from aria_booking.selenium_driver import SeleniumBooksyDriver, build_chrome
 from aria_booking.models import AppointmentSpec
 
 from conftest import NOW, TZ
@@ -155,12 +155,11 @@ def test_verify_business_times_out_as_sign_in_required():
         drv.verify_business()
 
 
-def test_creating_an_appointment_still_refuses_without_touching_the_page():
+def test_creating_without_a_fresh_read_of_that_day_refuses_without_touching_the_page():
     drv, browser, _ = make_driver([CAL])
     spec = AppointmentSpec("Shobs", "Aria Salon", NOW, 150, "note")
-    with pytest.raises(DiscoveryRequired) as err:
+    with pytest.raises(BeforeSaveError, match="not read just before saving"):
         drv.create_appointment(spec)
-    assert isinstance(err.value, BeforeSaveError), "must be classified as definitely-not-saved"
     assert browser.visited == [], "refusing must not even navigate"
 
 
@@ -206,7 +205,7 @@ class SpyDriver:
     def close(self):
         self.closed = True
 
-    def read_day(self, day):
+    def read_day(self, day, include_notes=False):
         raise DriverError("not verified")
 
 
@@ -219,7 +218,7 @@ def run_cli(argv, env, factory=None):
 def test_book_is_refused_without_the_live_switch_and_no_browser_is_created():
     SpyDriver.created = 0
     code, text = run_cli(
-        ["book", "--start", "2026-10-12 10:00", "--confirm-business-id", "1234567"],
+        ["book", "--start", "2026-10-12 10:00", "--confirm-business-id", "1234567", "--approve-save", "--approve-note-typing", "--approve-tour-popups", "--approve-not-now", "--approve-note-readback"],
         {"ARIA_BOOKSY_BUSINESS_ID": "1234567"},
         SpyDriver,
     )
@@ -229,7 +228,7 @@ def test_book_is_refused_without_the_live_switch_and_no_browser_is_created():
 def test_book_is_refused_when_the_confirmation_does_not_match():
     SpyDriver.created = 0
     code, text = run_cli(
-        ["book", "--start", "2026-10-12 10:00", "--confirm-business-id", "999999"],
+        ["book", "--start", "2026-10-12 10:00", "--confirm-business-id", "999999", "--approve-save", "--approve-note-typing", "--approve-tour-popups", "--approve-not-now", "--approve-note-readback"],
         {"ARIA_BOOKSY_BUSINESS_ID": "1234567", "ARIA_LIVE_BOOKSY": "1"},
         SpyDriver,
     )
@@ -239,7 +238,7 @@ def test_book_is_refused_when_the_confirmation_does_not_match():
 def test_book_rejects_a_malformed_start_before_any_browser():
     SpyDriver.created = 0
     code, text = run_cli(
-        ["book", "--start", "tomorrow", "--confirm-business-id", "1234567"],
+        ["book", "--start", "tomorrow", "--confirm-business-id", "1234567", "--approve-save", "--approve-note-typing", "--approve-tour-popups", "--approve-not-now", "--approve-note-readback"],
         {"ARIA_BOOKSY_BUSINESS_ID": "1234567", "ARIA_LIVE_BOOKSY": "1"},
         SpyDriver,
     )
@@ -269,7 +268,7 @@ def test_find_with_an_unverified_driver_reports_unknown_not_free(tmp_path):
 
 def test_book_with_an_unverified_driver_creates_nothing_and_says_availability_is_unknown(tmp_path):
     code, text = run_cli(
-        ["book", "--start", "2026-10-12 10:00", "--confirm-business-id", "1234567"],
+        ["book", "--start", "2026-10-12 10:00", "--confirm-business-id", "1234567", "--approve-save", "--approve-note-typing", "--approve-tour-popups", "--approve-not-now", "--approve-note-readback"],
         {"ARIA_BOOKSY_BUSINESS_ID": "1234567", "ARIA_LIVE_BOOKSY": "1", "ARIA_LOCAL_DIR": str(tmp_path)},
         lambda cfg: SpyDriver(cfg),
     )

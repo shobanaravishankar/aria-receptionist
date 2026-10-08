@@ -51,6 +51,26 @@ def test_duplicate_detection_survives_a_new_process(cfg, calendar, clock):
     assert len(calendar.create_calls) == 1
 
 
+# ---------------------------------------------------------------- notes are only visible when asked for
+
+def test_the_reference_is_found_on_the_calendar_only_by_asking_for_notes(service, calendar):
+    """On the real site the day view shows no notes, so both the read-back and the duplicate check must ask."""
+    calendar.notes_need_include_flag = True
+    first = service.book(slot(calendar))
+    assert first.status is Status.BOOKED_VERIFIED, "the read-back must ask for notes"
+    second = service.book(slot(calendar))
+    assert second.status is Status.ALREADY_BOOKED, "the duplicate check must ask for notes"
+    assert len(calendar.create_calls) == 1
+
+
+def test_the_pre_save_availability_read_does_not_open_any_appointment(service, calendar):
+    seen = []
+    original = calendar.read_day
+    calendar.read_day = lambda day, include_notes=False: (seen.append(include_notes), original(day, include_notes))[1]
+    service.search(DAY, 1)
+    assert seen == [False]
+
+
 # ---------------------------------------------------------------- availability
 
 

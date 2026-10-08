@@ -18,8 +18,8 @@ account** and nothing else.
 | Structural discovery, including approval-gated click-through steps | **run live**, read-only; nothing was ever saved |
 | Dress rehearsal of the New Appointment form (everything except Save) | **run live** for one slot; every value read back matched; the draft was discarded; the page ended identical to how it began |
 | **Calendar reader** (parse a day: working hours, appointments, time off) | implemented; tested on **real captured pages** and 19 deliberate corruptions; **run live, read-only**: 7 consecutive days parsed as predicted (the busy day showed no slots, the six empty days showed starts 10:00-16:30), no day came back unknown |
-| Create an appointment (the Save click and what follows) | **NOT implemented.** The form up to Save is proven; the prompt after Save and the saved state have never been seen |
-| Read a saved appointment's internal note back for verification | **NOT implemented** (the note is under the details view's Notes & Info tab) |
+| Create an appointment (the Save click and what follows) | **Written and tested offline only; NEVER RUN against the real site.** The form up to Save is proven live (rehearsal). The prompt after Save and the saved state have never been seen, so the code handles only NOT NOW and stops, leaving the window open, on anything else |
+| Read a saved appointment's internal note back for verification | **Written and tested offline only; NEVER RUN live** (the note is under the details view's Notes & Info tab; the live selectors for the details view's note are a best guess until one real booking has been read back) |
 | Reschedule, cancel, expired-sign-in recovery against the real site | **NOT implemented / NOT run** |
 
 **No real appointment has ever been created by this prototype.** The tests prove the logic and the parser's
@@ -118,8 +118,9 @@ python -m aria_booking rehearse --start "2026-10-12 11:00" --confirm-business-id
         --approve-note-typing --approve-draft-discard --approve-tour-popups
                                          # fills the New Appointment form completely, NEVER saves, discards the draft
 python -m aria_booking find              # free slots; unknown days are reported as unknown
-python -m aria_booking book --start "2026-10-20 10:00" --confirm-business-id <id>
-                                         # NOT usable yet: creation is not implemented
+python -m aria_booking book --start "2026-10-20 10:00" --confirm-business-id <id>         --approve-save --approve-note-typing --approve-tour-popups --approve-not-now --approve-note-readback
+                                         # creates ONE real fictional (ARIA TEST) appointment. Needs ARIA_LIVE_BOOKSY=1,
+                                         # all five approvals, and a person watching. Not yet run live.
 ```
 
 `discover-steps`, `rehearse` and `book` are refused unless every required approval is given explicitly, before any
@@ -143,9 +144,9 @@ Discard click is a narrow, separately approved exception for an unsaved draft.
 
 1. ~~Run the reader live and read-only~~ **done**: it parsed seven live days as predicted.
 2. ~~Verify the staff identity properly~~ **done**: the reader now checks the Staff page itself.
-3. Implement creation: the Save click, the prompt after it (the brief mentions a new-client prompt with NOT NOW), the
-   saved state, and read-back of the internal note. This can only be learned by one supervised real booking, which will
-   need its own explicit approval for a named slot, stop at anything unexpected, and verify by reopening the card.
+3. ~~Implement creation~~ **written and tested offline**. Run it once for a named, explicitly approved slot with a person
+   watching; it stops at anything unexpected and verifies by reopening the card and reading the note back. Until that run,
+   treat the post-Save handling and the note read-back as unproven.
 4. Later scenarios — near-closing rejection, reschedule, cancellation, expired sign-in — are **not** considered passed
    until actually run.
 

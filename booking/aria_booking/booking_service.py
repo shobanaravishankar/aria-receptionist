@@ -226,7 +226,7 @@ class BookingService:
             return None  # known not saved; a new attempt is allowed
 
         try:
-            snapshot = self.driver.read_day(spec.start.date())
+            snapshot = self.driver.read_day(spec.start.date(), include_notes=True)
         except DriverError as exc:
             if entry.state == State.VERIFIED:
                 return BookingResult(
@@ -279,7 +279,7 @@ class BookingService:
             if attempt:
                 self.sleep(self.readback_delay_seconds)
             try:
-                snapshot = self.driver.read_day(spec.start.date())
+                snapshot = self.driver.read_day(spec.start.date(), include_notes=True)
             except DriverError as exc:
                 problems_seen.append(f"read-back {attempt + 1}: calendar unreadable ({exc})")
                 continue
