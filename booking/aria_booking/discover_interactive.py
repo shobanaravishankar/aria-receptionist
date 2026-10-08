@@ -24,7 +24,7 @@ from .config import Config
 from .discover import DISCOVERY_JS, LOADER_GONE_JS, build_report, write_report
 from .driver import DriverError
 
-ALLOWED_STEPS = ("tour", "appointment", "notes-tab", "future-date", "new-form", "form-explore")
+ALLOWED_STEPS = ("tour", "appointment", "notes-tab", "future-date", "new-form", "form-explore", "staff-list")
 REQUIRES = {"notes-tab": "appointment", "form-explore": "new-form"}
 
 # Words that mean "this click changes something". Matched against the element's text, aria-label and test id.
@@ -311,6 +311,19 @@ class InteractiveDiscovery:
             self.out(f"  loaded {day.isoformat()}; the page's own date label reads: {self._day_label()!r}")
             self._snapshot(f"13-date-{day.isoformat()}")
 
+    def step_staff_list(self, allow: set[str]) -> None:
+        """Open the Staff page from the side menu and capture its structure (a read-only page view).
+        Used to establish how many staff members the account has; nothing on it is clicked or changed."""
+        self.out("step: staff list (a read-only page view)")
+        if not self._click_testid("staff", "open the Staff page from the side menu (read-only view)"):
+            return
+        deadline = self._monotonic() + 30
+        while self._monotonic() < deadline and not self.browser.execute_script(LOADER_GONE_JS):
+            self._sleep(1)
+        self._stable()
+        self._dismiss_tour_popups("tour" in allow)
+        self._snapshot("30-staff-page")
+
     def run(self, allow: set[str]) -> list[Path]:
         self._open_calendar("today")
         try:
@@ -322,6 +335,8 @@ class InteractiveDiscovery:
                 self.step_new_form(allow)
             if "future-date" in allow:
                 self.step_future_dates(allow)
+            if "staff-list" in allow:
+                self.step_staff_list(allow)  # last: it navigates away from the calendar
         except RunStopped as stop:
             self.out(f"STOPPED: {stop}")
         return self.paths

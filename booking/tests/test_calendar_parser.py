@@ -124,7 +124,7 @@ def test_a_loading_page_is_refused():
 
 
 def test_the_single_column_is_never_assumed_to_be_the_configured_staff():
-    with pytest.raises(CalendarParseError, match="ARIA_CONFIRM_SINGLE_STAFF"):
+    with pytest.raises(CalendarParseError, match="staff check has not confirmed"):
         parse("empty_day_mon_12_oct.json", MON, confirmed=False)
 
 
@@ -240,8 +240,3 @@ def test_non_working_blocks_alone_define_working_time_when_the_displayed_hours_a
 def test_normalize_turns_the_live_script_shape_into_the_stored_shape():
     raw = [{"tag": "div", "depth": 3, "cls": ["a"], "attrs": ["data-x"], "role": None, "testid": "t", "aria": None, "text": "hi", "x": 1, "y": 2, "w": 3, "h": 4}]
     assert normalize_nodes(raw) == [{"tag": "div", "depth": 3, "cls": ["a"], "attrs": ["data-x"], "role": None, "testid": "t", "aria": None, "text": "hi", "box": [1, 2, 3, 4]}]
-
-
-def test_config_defaults_to_not_confirmed():
-    assert Config.from_env({}).single_staff_confirmed is False
-    assert Config.from_env({"ARIA_CONFIRM_SINGLE_STAFF": "1"}).single_staff_confirmed is True

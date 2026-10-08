@@ -84,6 +84,9 @@ class FakeBrowser:
     loader_polls = 0  # how many readiness checks report "still loading" before the overlay clears
     scripts = None
 
+    def find_elements(self, by, css):
+        return []  # this fake page has no side menu
+
     def execute_script(self, js):
         if self.scripts is None:
             self.scripts = []
@@ -306,7 +309,7 @@ def test_only_named_steps_can_be_approved():
     for bad in ("", "  ", "all", "tour,delete"):
         with pytest.raises(ValueError):
             parse_allow(bad)
-    assert set(ALLOWED_STEPS) == {"tour", "appointment", "notes-tab", "future-date", "new-form", "form-explore"}
+    assert set(ALLOWED_STEPS) == {"tour", "appointment", "notes-tab", "future-date", "new-form", "form-explore", "staff-list"}
 
 
 def test_discover_steps_is_refused_without_explicit_approval_and_creates_no_browser():

@@ -11,7 +11,8 @@ Principles (unknown is never free):
     whose card text disagrees with its position on the hour axis, makes APPOINTMENTS unknown.
   * Working hours = the visible grid minus the non-working blocks, limited to the day's displayed hours.
   * Which staff member a column belongs to is NOT shown on the page. The reader refuses unless there is
-    exactly one column AND the caller states it has verified that this single column is the configured staff.
+    exactly one column AND the caller has verified (from the Staff page, see staff_census) that the account's
+    only staff member is the configured one.
 """
 
 from __future__ import annotations
@@ -206,8 +207,8 @@ def parse_day(
         raise CalendarParseError(f"the calendar shows {len(columns)} staff columns; refusing to guess which one is {staff!r}")
     if not staff_confirmed:
         raise CalendarParseError(
-            f"the page does not name the staff member of its single column; set ARIA_CONFIRM_SINGLE_STAFF=1 "
-            f"only after verifying that column is {staff!r}"
+            f"the page does not name the staff member of its single column, and the staff check has not confirmed "
+            f"that the account's only staff member is {staff!r}"
         )
 
     grid = axis.interval(wrapper["box"][1], wrapper["box"][3])

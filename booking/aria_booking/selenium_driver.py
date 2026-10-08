@@ -24,8 +24,10 @@ from typing import Any, Callable, Optional
 from .calendar_parser import CalendarParseError, normalize_nodes, parse_day
 from .config import Config
 from .discover import DISCOVERY_JS, LOADER_GONE_JS, build_report
+from .discover_interactive import click_refusal
 from .driver import BeforeSaveError, DriverUnavailable, SignInRequired
 from .models import AppointmentSpec, DaySnapshot
+from .staff_census import LIST_TESTID, confirms_single_staff, parse_staff_list
 
 # Any signed-in, business-scoped page, e.g. https://booksy.com/pro/en-us/<business id>/calendar?...
 # or a dashboard page under the same prefix. The login page has no business id in its path.
@@ -80,6 +82,7 @@ class SeleniumBooksyDriver:
         self._monotonic = monotonic
         self._poll = poll_seconds
         self._driver: Optional[Any] = None
+        self._staff_confirmed: Optional[bool] = None  # decided once per session from the Staff page
 
     # ---- lifecycle -----------------------------------------------------------------------
     def _browser(self):
@@ -121,9 +124,38 @@ class SeleniumBooksyDriver:
                 raise SignInRequired("timed out waiting for a person to sign in; run the login command again")
             self._sleep(self._poll)
 
+    # ---- who is the single column? (decided from the Staff page, once per session) ----------------------------
+    def verify_single_staff(self) -> bool:
+        """Open the Staff page (a read-only view) and confirm the account has exactly one staff member and that it
+        is the configured one. The calendar itself never names a column's staff member."""
+        if self._staff_confirmed is not None:
+            return self._staff_confirmed
+        from selenium.webdriver.common.by import By
+
+        browser = self._browser()
+        browser.get(self.cfg.calendar_url("today"))
+        self._wait_for_calendar(browser, 40.0)
+        entries = [e for e in browser.find_elements(By.CSS_SELECTOR, '[data-testid="staff"]') if e.is_displayed()]
+        if not entries:
+            raise CalendarParseError("the Staff entry was not found in the side menu, so the staff cannot be checked")
+        refusal = click_refusal(entries[0].text, entries[0].get_attribute("aria-label"), entries[0].get_attribute("data-testid"))
+        if refusal:
+            raise CalendarParseError(refusal)
+        entries[0].click()  # a navigation click to a read-only page
+        deadline = self._monotonic() + 30
+        while self._monotonic() < deadline:
+            if browser.find_elements(By.CSS_SELECTOR, f'[data-testid="{LIST_TESTID}"]') and browser.execute_script(LOADER_GONE_JS):
+                break
+            self._sleep(0.8)
+        self._sleep(1)
+        names = parse_staff_list(normalize_nodes(browser.execute_script(DISCOVERY_JS)))
+        self._staff_confirmed = confirms_single_staff(names, self.cfg.staff_name)
+        return self._staff_confirmed
+
     # ---- reading the calendar (parser tested offline against real captures; see README for live status) ---------
     def read_day(self, day: date) -> DaySnapshot:
         """Load that day's calendar and parse it. Anything not understood raises (never 'free')."""
+        self.verify_single_staff()  # may raise; once per session
         browser = self._browser()
         browser.get(self.cfg.calendar_url(day.isoformat()))
         ready = self._wait_for_calendar(browser, 40.0)
@@ -139,7 +171,7 @@ class SeleniumBooksyDriver:
             day=day,
             tz=tz,
             staff=self.cfg.staff_name,
-            staff_confirmed=self.cfg.single_staff_confirmed,
+            staff_confirmed=self._staff_confirmed,
             captured_at=datetime.now(tz),
         )
 

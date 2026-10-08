@@ -17,7 +17,7 @@ account** and nothing else.
 | Browser launch, wait for a **person** to sign in, verify the signed-in business | **run live** (a person signed in using an ordinary Chrome window; the automated browser reused the session) |
 | Structural discovery, including approval-gated click-through steps | **run live**, read-only; nothing was ever saved |
 | Dress rehearsal of the New Appointment form (everything except Save) | **run live** for one slot; every value read back matched; the draft was discarded; the page ended identical to how it began |
-| **Calendar reader** (parse a day: working hours, appointments, time off) | implemented; tested against **real captured pages** and 12 deliberate corruptions; **NOT yet run live** |
+| **Calendar reader** (parse a day: working hours, appointments, time off) | implemented; tested on **real captured pages** and 19 deliberate corruptions; **run live, read-only**: 7 consecutive days parsed as predicted (the busy day showed no slots, the six empty days showed starts 10:00-16:30), no day came back unknown |
 | Create an appointment (the Save click and what follows) | **NOT implemented.** The form up to Save is proven; the prompt after Save and the saved state have never been seen |
 | Read a saved appointment's internal note back for verification | **NOT implemented** (the note is under the details view's Notes & Info tab) |
 | Reschedule, cancel, expired-sign-in recovery against the real site | **NOT implemented / NOT run** |
@@ -35,9 +35,10 @@ It is a pure function over the page's structure, so it is tested offline against
 - every card must be understood. An unrecognised card makes **time off unknown**; an appointment whose times
   cannot be read, or whose text disagrees with its position on the hour axis, makes **appointments unknown**;
 - working hours = the visible grid minus non-working blocks, limited to the day's displayed hours;
-- **staff identity is not shown on the page.** The reader accepts a day only if there is exactly one staff column
-  *and* you have set `ARIA_CONFIRM_SINGLE_STAFF=1`, which states that you verified that column is the configured
-  staff member. Without it the reader refuses.
+- **staff identity is not shown on the page.** The reader therefore first opens the account's Staff page (a read-only
+  view) and accepts a day only if that list contains **exactly one** staff member whose first name is the configured one
+  *and* the calendar has exactly one column. Two staff, none, or another name: it refuses. The result is remembered for
+  the session. (Live, the Staff page listed exactly one member.)
 
 ## What the rules guarantee — and what they cannot
 
@@ -95,7 +96,6 @@ The live tests in `tests/live/` are excluded by default and skip cleanly without
 | `ARIA_BOOKSY_BUSINESS_ID` | numeric id of the **test** business (required for any live command) |
 | `ARIA_LIVE_BOOKSY` | must be `1` to allow `book` and live tests |
 | `ARIA_CHROMEDRIVER_PATH` | path to an existing chromedriver |
-| `ARIA_CONFIRM_SINGLE_STAFF` | `1` states that the calendar's single staff column is the configured staff member (the page does not say). Off by default: the reader then refuses |
 | `ARIA_ALLOW_DRIVER_DOWNLOAD` | `1` lets Selenium download a matching driver (a file download; off by default) |
 | `ARIA_STAFF_NAME`, `ARIA_SERVICE_NAME`, `ARIA_SERVICE_MINUTES` | test staff/service (defaults above) |
 | `ARIA_BUFFER_BEFORE_MINUTES`, `ARIA_BUFFER_AFTER_MINUTES` | padding around the service (default 0) |
@@ -141,10 +141,8 @@ Discard click is a narrow, separately approved exception for an unsaved draft.
 
 ## What happens next
 
-1. Run the reader **live and read-only** (page loads, no clicks) to confirm it parses the real calendar the same way it
-   parses the captured pages.
-2. Verify the staff identity properly (for example a read-only look at the staff list) so the single-staff confirmation
-   is not just a statement.
+1. ~~Run the reader live and read-only~~ **done**: it parsed seven live days as predicted.
+2. ~~Verify the staff identity properly~~ **done**: the reader now checks the Staff page itself.
 3. Implement creation: the Save click, the prompt after it (the brief mentions a new-client prompt with NOT NOW), the
    saved state, and read-back of the internal note. This can only be learned by one supervised real booking, which will
    need its own explicit approval for a named slot, stop at anything unexpected, and verify by reopening the card.
@@ -168,6 +166,7 @@ booking/
     discover_interactive.py  approval-gated click-through discovery
     form_rehearsal.py  fill-everything-except-Save rehearsal
     calendar_parser.py pure parser: page structure -> availability
+    staff_census.py    confirms the account has exactly one staff member, the configured one
     timeparse.py       time/date text parsing
     cli.py             command line
   tests/               deterministic tests, sanitized real-page fixtures, opt-in live tests
