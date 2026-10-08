@@ -345,3 +345,159 @@ def test_the_card_list_shrinking_while_notes_are_read_makes_the_read_incomplete(
     Shrinking.calls = 0
     with pytest.raises(DriverError, match="number of appointment cards changed"):
         Shrinking([("11:00 AM", "1:30 PM"), ("3:15 PM", "5:45 PM")]).read_notes(tour_ok=True)
+
+
+# ---------------------------------------------------------------- R8: a record that was SEEN is never "not saved"
+# These use a FRESH BookingService on the same persisted ledger, as the command line does: the per-run creation cap of
+# a reused service would hide the bug.
+
+
+class Clock:
+    def __init__(self):
+        self.now = NOW
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, seconds):
+        self.now = self.now + timedelta(seconds=seconds)
+
+
+@pytest.fixture
+def world(tmp_path):
+    cfg = Config(business_id="9999999", local_dir=tmp_path)
+    calendar = FakeCalendar(TZ, now=NOW)
+    calendar.set_hours(DAY, 9, 20)
+    clock = Clock()
+
+    def fresh():
+        return BookingService(cfg, calendar, Ledger(cfg.ledger_path, clock=clock), clock=clock, sleep=lambda _: None)
+
+    return cfg, calendar, clock, fresh, calendar.at(DAY, 10)
+
+
+def entry_of(cfg, start):
+    key = request_key(cfg.business_id, cfg.staff_name, cfg.service_name, start, cfg.service_duration_minutes)
+    return Ledger(cfg.ledger_path).get(key)
+
+
+def _break_then_remove(calendar, how):
+    """Put the saved record into a bad but OBSERVED condition, then (after it was observed) remove it."""
+    if how == "cancelled":
+        calendar.appointments[0] = replace(calendar.appointments[0], blocks_time=False)
+    elif how == "moved":
+        a = calendar.appointments[0]
+        calendar.appointments[0] = replace(a, interval=Interval(a.interval.start + timedelta(minutes=30), a.interval.end + timedelta(minutes=30)))
+    elif how == "conflict":
+        calendar.add_appointment(DAY, (11, 0), (12, 0))
+    elif how == "duplicate":
+        calendar.appointments.append(replace(calendar.appointments[0]))
+    elif how == "identity_lost":
+        calendar.appointments[0] = replace(calendar.appointments[0], service="")
+    elif how == "wrong_staff":
+        calendar.appointments[0] = replace(calendar.appointments[0], staff="Someone Else")
+
+
+@pytest.mark.parametrize("how", ["cancelled", "moved", "conflict", "duplicate", "identity_lost", "wrong_staff"])
+def test_r8_a_known_bad_record_that_later_disappears_is_never_recreated_by_a_later_process(world, how):
+    cfg, calendar, clock, fresh, start = world
+    assert fresh().book(start).ok
+    _break_then_remove(calendar, how)
+    observed = fresh().verify(start)  # the bad record is OBSERVED here
+    assert not observed.ok
+    assert entry_of(cfg, start).observed is True
+    calendar.appointments = [a for a in calendar.appointments if not a.note]  # the record is gone entirely
+    clock.advance(cfg.settle_seconds * 10)  # far beyond the timeout route
+    later = fresh().book(start)  # a NEW process, as the CLI does
+    assert not later.ok and later.status is Status.UNCERTAIN_NEEDS_REVIEW
+    assert len(calendar.create_calls) == 1, f"{how}: a second appointment was created automatically"
+
+
+@pytest.mark.parametrize("how", ["cancelled", "moved", "conflict", "duplicate", "identity_lost"])
+def test_r8_the_same_when_the_bad_record_was_first_observed_by_a_retry_not_verify(world, how):
+    cfg, calendar, clock, fresh, start = world
+    assert fresh().book(start).ok
+    _break_then_remove(calendar, how)
+    assert not fresh().book(start).ok  # observed by the retry path
+    calendar.appointments = [a for a in calendar.appointments if not a.note]
+    clock.advance(cfg.settle_seconds * 10)
+    assert not fresh().book(start).ok and len(calendar.create_calls) == 1
+
+
+def test_r8_a_record_seen_only_in_the_first_readback_is_also_remembered(world):
+    cfg, calendar, clock, fresh, start = world
+    duplicate_on_create(calendar)
+    assert not fresh().book(start).ok  # observed (twice) during the first read-back
+    assert entry_of(cfg, start).observed is True
+    calendar.appointments.clear()
+    clock.advance(cfg.settle_seconds * 10)
+    assert not fresh().book(start).ok and len(calendar.create_calls) == 1
+
+
+def test_r8_a_verified_booking_that_later_disappears_is_not_recreated_by_a_later_process(world):
+    cfg, calendar, clock, fresh, start = world
+    assert fresh().book(start).ok
+    calendar.appointments.clear()
+    clock.advance(cfg.settle_seconds * 10)
+    assert not fresh().book(start).ok and len(calendar.create_calls) == 1
+
+
+def test_r8_a_save_that_was_never_observed_may_still_be_retried_after_the_timeout(world):
+    """The timeout route is for a save whose outcome was never seen on the calendar: it must keep working."""
+    cfg, calendar, clock, fresh, start = world
+    calendar.create_mode = "unknown_not_saved"
+    first = fresh().book(start)
+    assert first.status is Status.UNCERTAIN_NEEDS_REVIEW and entry_of(cfg, start).observed is False
+    clock.advance(cfg.settle_seconds * 10)
+    calendar.create_mode = "ok"
+    again = fresh().book(start)
+    assert again.ok and len(calendar.create_calls) == 2
+
+
+def test_r8_inside_the_settle_window_an_unobserved_save_is_still_not_retried(world):
+    cfg, calendar, clock, fresh, start = world
+    calendar.create_mode = "unknown_not_saved"
+    fresh().book(start)
+    calendar.create_mode = "ok"
+    assert not fresh().book(start).ok and len(calendar.create_calls) == 1
+
+
+def test_r8_the_observed_flag_survives_later_state_changes_and_is_never_cleared(world):
+    cfg, calendar, clock, fresh, start = world
+    assert fresh().book(start).ok
+    calendar.appointments[0] = replace(calendar.appointments[0], blocks_time=False)
+    fresh().verify(start)
+    calendar.appointments[0] = replace(calendar.appointments[0], blocks_time=True)  # back to a clean record
+    assert fresh().verify(start).ok
+    assert entry_of(cfg, start).state == State.VERIFIED and entry_of(cfg, start).observed is True
+
+
+def test_r8_a_ledger_written_before_this_field_existed_still_loads(tmp_path):
+    import json
+
+    path = tmp_path / "ledger.json"
+    old = {"k": {"key": "k", "ref": "ARIA-00000000", "state": "verified", "staff": "Shobs", "service": "Aria Salon",
+                 "start": "s", "end": "e", "created_at": "c", "updated_at": "u", "detail": "d"}}
+    path.write_text(json.dumps(old), encoding="utf-8")
+    entry = Ledger(path).get("k")
+    assert entry.observed is False and entry.state == "verified"
+
+
+def test_r8_marking_an_unknown_entry_is_an_error(tmp_path):
+    from aria_booking.ledger import LedgerError
+
+    with pytest.raises(LedgerError):
+        Ledger(tmp_path / "ledger.json").mark_observed("nope")
+
+
+def test_r8_an_entry_marked_failed_but_observed_is_still_not_retried(world):
+    """FAILED means 'known not saved'. If a record was ever seen that can't be true, so never retry on it."""
+    cfg, calendar, clock, fresh, start = world
+    key = request_key(cfg.business_id, cfg.staff_name, cfg.service_name, start, cfg.service_duration_minutes)
+    ledger = Ledger(cfg.ledger_path, clock=clock)
+    ledger.create(key, ref_from_key(key), cfg.staff_name, cfg.service_name, start.isoformat(), (start + timedelta(minutes=150)).isoformat(), State.FAILED)
+    ledger.mark_observed(key)
+    clock.advance(cfg.settle_seconds * 10)
+    result = fresh().book(start)
+    assert not result.ok and result.status is Status.UNCERTAIN_NEEDS_REVIEW
+    assert calendar.create_calls == []

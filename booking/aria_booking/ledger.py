@@ -48,6 +48,10 @@ class Entry:
     created_at: str
     updated_at: str
     detail: str = ""
+    # True once a calendar record carrying this entry's reference has EVER been seen. It is never cleared, and it is
+    # separate from `state`: the state describes the latest judgement, this records that the booking really existed,
+    # so a later cancellation or move can never be mistaken for "the save never happened".
+    observed: bool = False
 
 
 def request_key(business_id: str, staff: str, service: str, start: datetime, duration_minutes: int) -> str:
@@ -137,6 +141,15 @@ class Ledger:
         entry.detail = detail
         entry.updated_at = self._now_text()
         self.put(entry)
+        return entry
+
+    def mark_observed(self, key: str) -> Entry:
+        entry = self.get(key)
+        if entry is None:
+            raise LedgerError(f"no ledger entry for key {key[:8]}")
+        if not entry.observed:
+            entry.observed = True
+            self.put(entry)
         return entry
 
     def all_entries(self) -> list[Entry]:

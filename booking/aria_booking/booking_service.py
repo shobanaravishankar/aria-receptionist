@@ -152,6 +152,7 @@ class BookingService:
         kind, details = assessment.kind, assessment.details
         if kind in ("unreadable", "absent"):
             return None
+        self.ledger.mark_observed(key)  # a record with our reference exists: durable, whatever its condition
         if kind == "ok":
             self.ledger.set_state(key, State.VERIFIED, ok_detail)
             return BookingResult(ok_status, ok_message, ref)
@@ -302,8 +303,8 @@ class BookingService:
     # ---- internals -----------------------------------------------------------------------
     def _handle_existing(self, entry, spec: AppointmentSpec, ref: str, key: str) -> Optional[BookingResult]:
         """Decide what a previous ledger entry for the same slot means. None = safe to proceed."""
-        if entry.state == State.FAILED:
-            return None  # known not saved; a new attempt is allowed
+        if entry.state == State.FAILED and not entry.observed:
+            return None  # known not saved (and never seen on the calendar); a new attempt is allowed
 
         try:
             snapshot = self.driver.read_day(spec.start.date(), include_notes=True)
@@ -343,10 +344,14 @@ class BookingService:
             )
 
         # Calendar readable and the reference is absent.
-        if entry.state == State.VERIFIED:
+        if entry.state == State.VERIFIED or entry.observed:
+            # A record carrying this reference was seen on the calendar at some point, so the save DID happen. Its
+            # absence now means cancelled or moved, never "not saved". The timeout route below is only for a save that
+            # was never observed, and must not apply here.
             return BookingResult(
                 Status.UNCERTAIN_NEEDS_REVIEW,
-                "ledger says this was booked but it is not on the calendar (cancelled or moved?); not re-booking automatically",
+                "a record carrying this reference was on the calendar earlier but is not there now (cancelled or moved?); "
+                "not re-booking automatically. A person must reconcile this.",
                 ref,
             )
         age = to_utc(self.clock()) - to_utc(datetime.fromisoformat(entry.updated_at))
