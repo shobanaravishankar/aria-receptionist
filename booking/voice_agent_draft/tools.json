@@ -1,0 +1,69 @@
+{
+  "_status": "DRAFT FOR REVIEW. Not imported into Retell, not deployed. Field names mirror the concepts on Retell's custom-function pages (URL, method, headers, parameters, timeout, retries, speak-during-execution); confirm the exact names on import because the dashboard/API schema was not inspected.",
+  "_notes": [
+    "Replace <YOUR-TUNNEL-HOST> with the public HTTPS host of the tunnel Shobana starts herself. Retell blocks localhost and private addresses.",
+    "Set the bearer token (ARIA_RETELL_TOOL_TOKEN) in the Retell dashboard header value, never in this file.",
+    "Timeouts are ESTIMATES. A live calendar read takes seconds to tens of seconds; measure before relying on them.",
+    "max_retry is 0 on purpose: the server is idempotent, but a retry of a slow browser action only adds delay.",
+    "Do NOT use 'payload: args only'. The server needs the call object (call_id) to bind options and confirmations to one call."
+  ],
+  "tools": [
+    {
+      "name": "check_slot",
+      "description": "Check whether the caller's requested date and start time can be booked for the FULL service. Always call this before saying anything about availability. If the time is not available it explains why (closed, service would run past closing, already taken, too soon) and returns up to three genuinely free alternatives, each with an option_id. Never state availability from your own knowledge.",
+      "url": "https://<YOUR-TUNNEL-HOST>/tools/check_slot",
+      "method": "POST",
+      "headers": { "Authorization": "Bearer <set in the Retell dashboard>" },
+      "timeout_ms": 90000,
+      "max_retry": 0,
+      "speak_during_execution": true,
+      "execution_message_description": "Tell the caller you are checking the calendar and it may take a few seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": { "type": "string", "description": "The requested day as YYYY-MM-DD in the salon's time zone (America/New_York). Resolve words like 'tomorrow' or 'next Tuesday' yourself using the current date, and if it is ambiguous ask the caller first." },
+          "time": { "type": "string", "description": "The requested START time in 24-hour HH:MM (for example 14:30). Appointments start on the quarter hour. If the caller said an ambiguous time such as 'at 3', ask whether they mean morning or afternoon before calling." }
+        },
+        "required": ["date", "time"]
+      }
+    },
+    {
+      "name": "find_alternatives",
+      "description": "List up to three genuinely free appointment options starting from a day (and optionally a preferred start time). Use when the caller has no specific time, or asks for other options. Each option has an option_id.",
+      "url": "https://<YOUR-TUNNEL-HOST>/tools/find_alternatives",
+      "method": "POST",
+      "headers": { "Authorization": "Bearer <set in the Retell dashboard>" },
+      "timeout_ms": 90000,
+      "max_retry": 0,
+      "speak_during_execution": true,
+      "execution_message_description": "Tell the caller you are looking at the calendar for other times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": { "type": "string", "description": "The first day to search from, YYYY-MM-DD." },
+          "time": { "type": "string", "description": "Optional preferred START time in 24-hour HH:MM." }
+        },
+        "required": ["date"]
+      }
+    },
+    {
+      "name": "book_slot",
+      "description": "Book ONE option that this call was offered. Two steps are enforced by the server: the first call returns the exact read-back sentence (status confirmation_required); only after the caller clearly says yes, call again with the same option_id and confirmed=true. Only book when the tool returns status booked_verified or already_booked with ok=true; any other status means the booking is NOT confirmed.",
+      "url": "https://<YOUR-TUNNEL-HOST>/tools/book_slot",
+      "method": "POST",
+      "headers": { "Authorization": "Bearer <set in the Retell dashboard>" },
+      "timeout_ms": 180000,
+      "max_retry": 0,
+      "speak_during_execution": true,
+      "execution_message_description": "Tell the caller you are booking it now and checking that it saved, which can take a minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "option_id": { "type": "string", "description": "The option_id returned by check_slot or find_alternatives in THIS call, exactly as given. Never invent one." },
+          "confirmed": { "type": "boolean", "description": "false (or omitted) to get the read-back sentence; true ONLY after the caller has clearly said yes to that exact read-back." }
+        },
+        "required": ["option_id"]
+      }
+    }
+  ]
+}
