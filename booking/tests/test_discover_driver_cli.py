@@ -316,7 +316,7 @@ def test_only_named_steps_can_be_approved():
     for bad in ("", "  ", "all", "tour,delete"):
         with pytest.raises(ValueError):
             parse_allow(bad)
-    assert set(ALLOWED_STEPS) == {"tour", "appointment", "new-form"}
+    assert set(ALLOWED_STEPS) == {"tour", "appointment", "notes-tab", "future-date", "new-form", "form-explore"}
 
 
 def test_discover_steps_is_refused_without_explicit_approval_and_creates_no_browser():
@@ -355,3 +355,40 @@ def test_the_click_wrapper_refuses_before_clicking():
     fine = FakeClickable(testid="close-icon")
     runner._click(fine, "test")
     assert fine.clicked is True
+
+
+def test_dependent_steps_cannot_be_approved_alone():
+    with pytest.raises(ValueError):
+        parse_allow("notes-tab")  # needs the appointment step
+    with pytest.raises(ValueError):
+        parse_allow("form-explore,tour")  # needs new-form
+    assert parse_allow("appointment,notes-tab,new-form,form-explore,future-date,tour")
+
+
+@pytest.mark.parametrize("testid", ["appointment-button-save", "appointment-button-discard", "appointment-button-book-again",
+                                    "appointment-button-checkout", "calendar-status-filter-submit"])
+def test_every_dangerous_button_seen_in_the_live_structure_is_refused(testid):
+    assert click_refusal(None, None, testid) is not None
+
+
+@pytest.mark.parametrize("testid", ["add-button", "new-appointment-button", "subbooking-select-service", "notes-and-info",
+                                    "select-input-toggle-booked_from", "header-close-button", "finish-button", "close-icon"])
+def test_every_navigation_control_needed_for_discovery_is_allowed(testid):
+    assert click_refusal(None, None, testid) is None
+
+
+def test_future_dates_are_the_next_sunday_then_monday():
+    from datetime import date as d
+    from aria_booking.discover_interactive import future_dates
+
+    assert future_dates(d(2026, 10, 8)) == [d(2026, 10, 11), d(2026, 10, 12)]  # Thursday
+    assert future_dates(d(2026, 10, 11)) == [d(2026, 10, 18), d(2026, 10, 19)]  # a Sunday asks for the NEXT one
+    assert future_dates(d(2026, 10, 10)) == [d(2026, 10, 11), d(2026, 10, 12)]  # Saturday
+
+
+def test_the_service_search_cannot_match_the_calendar_grid_or_the_tour():
+    from aria_booking.discover_interactive import InteractiveDiscovery
+
+    js = InteractiveDiscovery.PICK_JS
+    assert 'calendar-grid-day' in js and 'data-appointment-id' in js and 'step-0' in js
+    assert js.count(".closest(") == 3 and js.count("!e.closest(") == 3
