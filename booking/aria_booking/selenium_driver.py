@@ -24,8 +24,9 @@ from .discover import DISCOVERY_JS, build_report
 from .driver import BeforeSaveError, DriverUnavailable, SignInRequired
 from .models import AppointmentSpec, DaySnapshot
 
-# e.g. https://booksy.com/pro/en-us/<business id>/calendar?...
-CALENDAR_PATH_RE = re.compile(r"/pro/[a-z]{2}-[a-z]{2}/(\d+)/calendar")
+# Any signed-in, business-scoped page, e.g. https://booksy.com/pro/en-us/<business id>/calendar?...
+# or a dashboard page under the same prefix. The login page has no business id in its path.
+BUSINESS_PATH_RE = re.compile(r"/pro/[a-z]{2}-[a-z]{2}/(\d+)(?:/|$|\?)")
 
 
 class DiscoveryRequired(BeforeSaveError):
@@ -100,9 +101,9 @@ class SeleniumBooksyDriver:
         deadline = self._monotonic() + self.cfg.sign_in_wait_seconds
         announced = False
         while True:
-            match = CALENDAR_PATH_RE.search(browser.current_url or "")
+            match = BUSINESS_PATH_RE.search(browser.current_url or "")
             if match:
-                return match.group(1)
+                return match.group(1)  # signed in; callers compare it with the configured business
             if not announced:
                 self._notify(
                     "Not signed in (or the session expired). Please sign in to Booksy Biz in the browser window "
@@ -128,5 +129,7 @@ class SeleniumBooksyDriver:
         browser = self._browser()
         browser.get(self.cfg.calendar_url(day_text))
         self._sleep(3)  # let the single-page app render
+        if not BUSINESS_PATH_RE.search(browser.current_url or ""):
+            raise SignInRequired("the calendar did not open (signed out?); sign in and run again")
         nodes = browser.execute_script(DISCOVERY_JS)
         return build_report(browser.current_url, browser.title, nodes, day=day_text)

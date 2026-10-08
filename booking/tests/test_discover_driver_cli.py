@@ -110,6 +110,25 @@ def test_verify_business_returns_the_id_when_already_signed_in():
     assert messages == [] and "1234567" in browser.visited[0]
 
 
+def test_verify_business_recognises_any_signed_in_page_not_only_the_calendar():
+    dashboard = "https://booksy.com/pro/en-us/1234567/dashboard"
+    drv, _, _ = make_driver([LOGIN, dashboard])
+    assert drv.verify_business() == "1234567"
+
+
+def test_login_page_with_the_id_only_in_a_query_string_is_not_treated_as_signed_in():
+    tricky = "https://booksy.com/pro/en-us/login?next=%2Fpro%2Fen-us%2F1234567%2Fcalendar"
+    drv, _, _ = make_driver([tricky], wait=10, ticks=[0, 3, 6, 11])
+    with pytest.raises(SignInRequired):
+        drv.verify_business()
+
+
+def test_discover_refuses_when_the_calendar_did_not_open():
+    drv, _, _ = make_driver([LOGIN])
+    with pytest.raises(SignInRequired):
+        drv.discover("today")
+
+
 def test_verify_business_waits_for_a_person_to_sign_in_and_tells_them_once():
     drv, _, messages = make_driver([LOGIN, LOGIN, LOGIN, CAL])
     assert drv.verify_business() == "1234567"
