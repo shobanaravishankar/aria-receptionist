@@ -1,0 +1,6 @@
+# Booking prototype dependencies (install into a project-local virtual environment).
+# selenium does not download a browser driver at install time; see README for the
+# explicit, opt-in driver handling.
+selenium==4.50.0
+tzdata==2026.5      # IANA timezone data for zoneinfo on Windows
+pytest==9.1.1
