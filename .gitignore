@@ -14,3 +14,10 @@ Thumbs.db
 # build output for deploy
 dist/
 *.zip
+
+# booking prototype: environment, caches, and EVERYTHING local to the test account
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+booking/.local/

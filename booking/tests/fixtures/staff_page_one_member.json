@@ -1,0 +1,2537 @@
+{
+ "fixture": "staff_page_one_member.json",
+ "source": "redacted `discover-steps` report of the Staff page; decoration nodes and the (masked) email node dropped; internal ids blanked",
+ "page": {
+  "url": "https://booksy.com/pro/en-us/<business-id>/staff/members/<business-id>",
+  "title": "xxxxxx xxx"
+ },
+ "nodes": [
+  {
+   "tag": "div",
+   "depth": 1,
+   "cls": [
+    "w-full",
+    "h-full"
+   ],
+   "attrs": [
+    "data-v-app",
+    "id"
+   ],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    0,
+    1283,
+    667
+   ]
+  },
+  {
+   "tag": "main",
+   "depth": 2,
+   "cls": [
+    "flex",
+    "flex-col",
+    "h-full",
+    "sm:min-h-full"
+   ],
+   "attrs": [
+    "data-testid",
+    "id"
+   ],
+   "role": null,
+   "testid": "main",
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    0,
+    1283,
+    667
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 3,
+   "cls": [
+    "flex",
+    "w-full",
+    "h-full",
+    "flex-col",
+    "min-h-screen",
+    "[@media(min-width:960px)]:flex-row"
+   ],
+   "attrs": [
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "staff.members.details-view",
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    0,
+    1283,
+    667
+   ]
+  },
+  {
+   "tag": "aside",
+   "depth": 4,
+   "cls": [
+    "_bar_14vyt_27"
+   ],
+   "attrs": [
+    "data-testid",
+    "id"
+   ],
+   "role": null,
+   "testid": "side-menu",
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    0,
+    56,
+    667
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 5,
+   "cls": [
+    "_barContent_14vyt_38"
+   ],
+   "attrs": [
+    "id"
+   ],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    0,
+    56,
+    667
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 6,
+   "cls": [
+    "_language_14vyt_76"
+   ],
+   "attrs": [
+    "aria-label",
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "side-menu-select-language",
+   "aria": "Select xxxxxxxx",
+   "text": null,
+   "box": [
+    16,
+    16,
+    24,
+    24
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 6,
+   "cls": [
+    "_menu_14vyt_197",
+    "w-full",
+    "scrollable"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    65,
+    56,
+    487
+   ]
+  },
+  {
+   "tag": "ul",
+   "depth": 7,
+   "cls": [
+    "_list_14vyt_113",
+    "flex-1",
+    "w-full"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    65,
+    50,
+    693
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 8,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    65,
+    50,
+    52
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_iconWrapper_14vyt_243"
+   ],
+   "attrs": [
+    "aria-label",
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "calendar-main",
+   "aria": "xxxxxxxxxxxx",
+   "text": null,
+   "box": [
+    0,
+    73,
+    50,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "relative"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    12,
+    77,
+    28,
+    28
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 8,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    117,
+    50,
+    52
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_iconWrapper_14vyt_243"
+   ],
+   "attrs": [
+    "aria-label",
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "sales",
+   "aria": "xxxxxxxx",
+   "text": null,
+   "box": [
+    0,
+    125,
+    50,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "relative"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    12,
+    129,
+    28,
+    28
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 8,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    169,
+    50,
+    52
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_iconWrapper_14vyt_243"
+   ],
+   "attrs": [
+    "aria-label",
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "customers-main",
+   "aria": "xxxxxxx",
+   "text": null,
+   "box": [
+    0,
+    177,
+    50,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "relative"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    12,
+    181,
+    28,
+    28
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 8,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    221,
+    50,
+    52
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_iconWrapper_14vyt_243"
+   ],
+   "attrs": [
+    "aria-label",
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "inventory",
+   "aria": "xxxxxxxxx",
+   "text": null,
+   "box": [
+    0,
+    229,
+    50,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "relative"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    12,
+    233,
+    28,
+    28
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 8,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    273,
+    50,
+    52
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_iconWrapper_14vyt_243"
+   ],
+   "attrs": [
+    "aria-label",
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "promotion",
+   "aria": "xxxxxxxxx",
+   "text": null,
+   "box": [
+    0,
+    281,
+    50,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "relative"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    12,
+    285,
+    28,
+    28
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 8,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    325,
+    50,
+    52
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_iconWrapper_14vyt_243"
+   ],
+   "attrs": [
+    "aria-label",
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "gifts-and-bundle-services",
+   "aria": "xxxx xxxxx & xxxxxxx xxxxxxxx",
+   "text": null,
+   "box": [
+    0,
+    333,
+    50,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "relative"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    12,
+    337,
+    28,
+    28
+   ]
+  },
+  {
+   "tag": "span",
+   "depth": 10,
+   "cls": [
+    "b-badge",
+    "b-badge-violet",
+    "_badge_14vyt_229"
+   ],
+   "attrs": [
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "side-menu-badge",
+   "aria": null,
+   "text": "new",
+   "box": [
+    11,
+    359,
+    31,
+    16
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 8,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    377,
+    50,
+    52
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_iconWrapper_14vyt_243"
+   ],
+   "attrs": [
+    "aria-label",
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "stats-and-reports",
+   "aria": "xxxxxxx",
+   "text": null,
+   "box": [
+    0,
+    385,
+    50,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "relative"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    12,
+    389,
+    28,
+    28
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 8,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    429,
+    50,
+    52
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_iconWrapper_14vyt_243",
+    "_active_14vyt_286"
+   ],
+   "attrs": [
+    "aria-label",
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "staff",
+   "aria": "Staff xxxxxxxxxx & xxxxxxxxx",
+   "text": null,
+   "box": [
+    0,
+    437,
+    50,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "relative"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    12,
+    441,
+    28,
+    28
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 8,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    481,
+    50,
+    52
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_iconWrapper_14vyt_243"
+   ],
+   "attrs": [
+    "aria-label",
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "side-menu-settings.subscription",
+   "aria": "xxxxxxxxxxxx & xxxxxxx",
+   "text": null,
+   "box": [
+    0,
+    489,
+    50,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "relative"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    12,
+    493,
+    28,
+    28
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 8,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    533,
+    50,
+    52
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_iconWrapper_14vyt_243"
+   ],
+   "attrs": [
+    "aria-label",
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "booksy-wallet",
+   "aria": "xxxxxxxx xxxxxx",
+   "text": null,
+   "box": [
+    0,
+    541,
+    50,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "relative"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    12,
+    545,
+    28,
+    28
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 8,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    585,
+    50,
+    17
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 8,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    601,
+    50,
+    52
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_iconWrapper_14vyt_243"
+   ],
+   "attrs": [
+    "aria-label",
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "profile",
+   "aria": "xxxxxxx",
+   "text": null,
+   "box": [
+    0,
+    609,
+    50,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "relative"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    12,
+    613,
+    28,
+    28
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 8,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    653,
+    50,
+    52
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_iconWrapper_14vyt_243"
+   ],
+   "attrs": [
+    "aria-label",
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "settings",
+   "aria": "xxxxxxxx xxxxxxxx",
+   "text": null,
+   "box": [
+    0,
+    661,
+    50,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "relative"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    12,
+    665,
+    28,
+    28
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 8,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    705,
+    50,
+    52
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [],
+   "attrs": [
+    "aria-label"
+   ],
+   "role": null,
+   "testid": null,
+   "aria": "xxxxxxx",
+   "text": null,
+   "box": [
+    0,
+    713,
+    50,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "b-frame-wrapper",
+    "_iconWrapper_14vyt_243",
+    "sidenav"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    0,
+    713,
+    50,
+    36
+   ]
+  },
+  {
+   "tag": "button",
+   "depth": 11,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    12,
+    717,
+    28,
+    28
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 6,
+   "cls": [
+    "_avatar_14vyt_144"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    10,
+    615,
+    36,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 7,
+   "cls": [
+    "_avatar_y56f5_7"
+   ],
+   "attrs": [
+    "data-testid",
+    "title"
+   ],
+   "role": null,
+   "testid": "side-menu-avatar",
+   "aria": null,
+   "text": null,
+   "box": [
+    10,
+    615,
+    36,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 8,
+   "cls": [
+    "_avatarInitials_y56f5_24"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": "xx",
+   "box": [
+    10,
+    615,
+    36,
+    36
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 7,
+   "cls": [
+    "_account_14vyt_214"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": "xx",
+   "box": [
+    33,
+    637,
+    17,
+    17
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 4,
+   "cls": [
+    "content"
+   ],
+   "attrs": [
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "content",
+   "aria": null,
+   "text": null,
+   "box": [
+    56,
+    0,
+    1227,
+    667
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 5,
+   "cls": [
+    "_staffContainer_sbdxu_7",
+    "bg-secondary"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    56,
+    0,
+    1227,
+    667
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 6,
+   "cls": [
+    "pl-3",
+    "_tabsWrapper_sbdxu_16",
+    "bg-primary",
+    "border-b"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    56,
+    0,
+    1227,
+    49
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 7,
+   "cls": [
+    "scrollable-x",
+    "_container_1nv3g_12",
+    "_containerDefault_1nv3g_18",
+    "_tabs_sbdxu_16",
+    "scrollable-x"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    68,
+    0,
+    1215,
+    48
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 8,
+   "cls": [
+    "_content_1nv3g_25"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    68,
+    0,
+    1215,
+    48
+   ]
+  },
+  {
+   "tag": "ul",
+   "depth": 9,
+   "cls": [
+    "_tabs_1nv3g_43"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    68,
+    0,
+    410,
+    48
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 10,
+   "cls": [
+    "_tab_1nv3g_43",
+    "_tabDefault_1nv3g_66",
+    "_tabDefaultActive_1nv3g_78"
+   ],
+   "attrs": [
+    "data-testid",
+    "tabindex"
+   ],
+   "role": null,
+   "testid": "staff.members.list",
+   "aria": null,
+   "text": "Staff xxxxxxx",
+   "box": [
+    68,
+    0,
+    126,
+    48
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 10,
+   "cls": [
+    "_tab_1nv3g_43",
+    "_tabDefault_1nv3g_66"
+   ],
+   "attrs": [
+    "data-testid",
+    "tabindex"
+   ],
+   "role": null,
+   "testid": "staff.shifts",
+   "aria": null,
+   "text": "xxxxxx",
+   "box": [
+    194,
+    0,
+    71,
+    48
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 10,
+   "cls": [
+    "_tab_1nv3g_43",
+    "_tabDefault_1nv3g_66"
+   ],
+   "attrs": [
+    "data-testid",
+    "tabindex"
+   ],
+   "role": null,
+   "testid": "staff.appliances.list",
+   "aria": null,
+   "text": "xxxxxxxxx",
+   "box": [
+    265,
+    0,
+    100,
+    48
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 10,
+   "cls": [
+    "_tab_1nv3g_43",
+    "_tabDefault_1nv3g_66"
+   ],
+   "attrs": [
+    "data-testid",
+    "tabindex"
+   ],
+   "role": null,
+   "testid": "staff.commissions",
+   "aria": null,
+   "text": "xxxxxxxxxxx",
+   "box": [
+    365,
+    0,
+    113,
+    48
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 6,
+   "cls": [
+    "_staffers_1q7ig_7"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    56,
+    49,
+    1227,
+    620
+   ]
+  },
+  {
+   "tag": "section",
+   "depth": 7,
+   "cls": [
+    "_staffersLeft_1q7ig_17",
+    "bg-primary"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    56,
+    49,
+    281,
+    620
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 8,
+   "cls": [
+    "_staffersList_1q7ig_39"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    56,
+    49,
+    281,
+    620
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_search_md6zm_7",
+    "mt-3",
+    "mb-3"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    80,
+    61,
+    233,
+    48
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "b-form-field"
+   ],
+   "attrs": [
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "resources-search-input",
+   "aria": null,
+   "text": null,
+   "box": [
+    80,
+    61,
+    233,
+    48
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 11,
+   "cls": [
+    "b-form-group"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    80,
+    61,
+    233,
+    48
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 12,
+   "cls": [
+    "b-form-group-icon"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    81,
+    73,
+    36,
+    24
+   ]
+  },
+  {
+   "tag": "input",
+   "depth": 12,
+   "cls": [
+    "b-form-control"
+   ],
+   "attrs": [
+    "name",
+    "placeholder",
+    "type"
+   ],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    117,
+    62,
+    196,
+    45
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 12,
+   "cls": [
+    "b-form-group-placeholder"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": "xxxxxx Staff xxxxxxx...",
+   "box": [
+    93,
+    69,
+    155,
+    14
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_searchResultsWrapper_md6zm_11"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    56,
+    121,
+    281,
+    532
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "draggableContainer"
+   ],
+   "attrs": [
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "resources-list",
+   "aria": null,
+   "text": null,
+   "box": [
+    56,
+    121,
+    281,
+    65
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 11,
+   "cls": [],
+   "attrs": [
+    "data-draggable",
+    "data-dragula-index",
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "resources-list-item-0",
+   "aria": null,
+   "text": null,
+   "box": [
+    56,
+    121,
+    281,
+    65
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 12,
+   "cls": [
+    "_active_md6zm_20"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    56,
+    121,
+    281,
+    65
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 13,
+   "cls": [
+    "_searchItem_md6zm_39"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    80,
+    121,
+    233,
+    65
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 14,
+   "cls": [
+    "_avatar_y56f5_7"
+   ],
+   "attrs": [
+    "title"
+   ],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    112,
+    133,
+    40,
+    40
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 15,
+   "cls": [
+    "_avatarInitials_y56f5_24"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": "xx",
+   "box": [
+    112,
+    133,
+    40,
+    40
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 14,
+   "cls": [
+    "_searchItemName_md6zm_50"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    152,
+    141,
+    161,
+    24
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 15,
+   "cls": [
+    "truncate"
+   ],
+   "attrs": [
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "resources-list-item-name-0",
+   "aria": null,
+   "text": "Shobs x",
+   "box": [
+    164,
+    141,
+    137,
+    24
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 8,
+   "cls": [
+    "_addButtonWrapper_23m3i_16",
+    "_addButton_1q7ig_45"
+   ],
+   "attrs": [
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "add-button-staffer",
+   "aria": null,
+   "text": null,
+   "box": [
+    257,
+    597,
+    64,
+    64
+   ]
+  },
+  {
+   "tag": "button",
+   "depth": 9,
+   "cls": [
+    "_button_11aed_7",
+    "_size--lg_11aed_23",
+    "_theme--primary_11aed_39",
+    "_slotTheme--icon_11aed_127",
+    "_addButton_23m3i_7"
+   ],
+   "attrs": [
+    "data-testid",
+    "id"
+   ],
+   "role": null,
+   "testid": "add-button",
+   "aria": null,
+   "text": null,
+   "box": [
+    265,
+    605,
+    48,
+    48
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "_slotLeft_11aed_57"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    271,
+    611,
+    37,
+    35
+   ]
+  },
+  {
+   "tag": "section",
+   "depth": 7,
+   "cls": [
+    "_staffersRight_1q7ig_29"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    337,
+    49,
+    694,
+    620
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 8,
+   "cls": [
+    "_details_qvati_7"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    337,
+    49,
+    679,
+    620
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    361,
+    73,
+    631,
+    161
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "row",
+    "justify-center"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    349,
+    73,
+    655,
+    116
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 11,
+   "cls": [
+    "col",
+    "col-4"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    349,
+    73,
+    218,
+    116
+   ]
+  },
+  {
+   "tag": "button",
+   "depth": 12,
+   "cls": [
+    "_button_11aed_7",
+    "_size--lg_11aed_23",
+    "_theme--default_11aed_39",
+    "_slotTheme--icon_11aed_127"
+   ],
+   "attrs": [
+    "data-testid",
+    "id"
+   ],
+   "role": null,
+   "testid": "staffer-details-edit-btn",
+   "aria": null,
+   "text": null,
+   "box": [
+    361,
+    73,
+    48,
+    48
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 13,
+   "cls": [
+    "_slotLeft_11aed_57"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    367,
+    74,
+    37,
+    45
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 11,
+   "cls": [
+    "col"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    568,
+    73,
+    218,
+    116
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 12,
+   "cls": [
+    "_avatar_y56f5_7",
+    "_stafferAvatar_qvati_24"
+   ],
+   "attrs": [
+    "title"
+   ],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    637,
+    73,
+    80,
+    80
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 13,
+   "cls": [
+    "_avatarInitials_y56f5_24"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": "xx",
+   "box": [
+    637,
+    73,
+    80,
+    80
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 11,
+   "cls": [
+    "col",
+    "col-4",
+    "_rightCol_qvati_19"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    786,
+    73,
+    218,
+    116
+   ]
+  },
+  {
+   "tag": "button",
+   "depth": 12,
+   "cls": [
+    "_button_11aed_7",
+    "_size--md_11aed_19",
+    "_theme--default_11aed_39",
+    "_slotTheme--default_11aed_121",
+    "_goToCalendar_qvati_13"
+   ],
+   "attrs": [
+    "data-testid",
+    "id"
+   ],
+   "role": null,
+   "testid": "staffer-details-show-calendar-btn",
+   "aria": null,
+   "text": null,
+   "box": [
+    823,
+    73,
+    169,
+    31
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 13,
+   "cls": [
+    "_caption_11aed_19"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": "xxxx calendar",
+   "box": [
+    824,
+    73,
+    167,
+    30
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "_stafferName_qvati_27"
+   ],
+   "attrs": [
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "staffer-details-name",
+   "aria": null,
+   "text": "Shobs x",
+   "box": [
+    361,
+    165,
+    631,
+    42
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "_stafferInfo_qvati_35"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    361,
+    215,
+    631,
+    19
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 11,
+   "cls": [
+    "_stafferReviewsAvg_qvati_66"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": "-",
+   "box": [
+    526,
+    215,
+    44,
+    18
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 11,
+   "cls": [
+    "_stafferRole_qvati_57"
+   ],
+   "attrs": [
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "staffer-details-role",
+   "aria": null,
+   "text": "xxxxx",
+   "box": [
+    578,
+    215,
+    53,
+    19
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 9,
+   "cls": [
+    "_tabsWrapper_qvati_88"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    361,
+    250,
+    631,
+    682
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "scrollable-x",
+    "_container_1nv3g_12",
+    "_containerDefault_1nv3g_18",
+    "_tabs_qvati_81"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    361,
+    250,
+    631,
+    48
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 11,
+   "cls": [
+    "_content_1nv3g_25"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    250,
+    583,
+    47
+   ]
+  },
+  {
+   "tag": "ul",
+   "depth": 12,
+   "cls": [
+    "_tabs_1nv3g_43"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    250,
+    231,
+    47
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 13,
+   "cls": [
+    "_tab_1nv3g_43",
+    "_tabDefault_1nv3g_66",
+    "_tabDefaultActive_1nv3g_78"
+   ],
+   "attrs": [
+    "data-testid",
+    "tabindex"
+   ],
+   "role": null,
+   "testid": "services",
+   "aria": null,
+   "text": "xxxxxxxx (1)",
+   "box": [
+    385,
+    250,
+    101,
+    47
+   ]
+  },
+  {
+   "tag": "li",
+   "depth": 13,
+   "cls": [
+    "_tab_1nv3g_43",
+    "_tabDefault_1nv3g_66"
+   ],
+   "attrs": [
+    "data-testid",
+    "tabindex"
+   ],
+   "role": null,
+   "testid": "working-hours",
+   "aria": null,
+   "text": "Working xxxxx",
+   "box": [
+    486,
+    250,
+    129,
+    47
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 10,
+   "cls": [
+    "_tabsContent_qvati_85"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    361,
+    298,
+    631,
+    634
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 11,
+   "cls": [
+    "_serviceContainer_19tt1_40"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    322,
+    583,
+    586
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 12,
+   "cls": [
+    "_serviceListContainer_19tt1_46",
+    "justify-start"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    322,
+    583,
+    586
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 13,
+   "cls": [
+    "row"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    373,
+    322,
+    607,
+    72
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 14,
+   "cls": [
+    "col"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    373,
+    322,
+    607,
+    72
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 15,
+   "cls": [
+    "b-form-field"
+   ],
+   "attrs": [
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "services-search-input",
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    322,
+    583,
+    48
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 16,
+   "cls": [
+    "b-form-group"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    322,
+    583,
+    48
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 17,
+   "cls": [
+    "b-form-group-icon"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    386,
+    334,
+    36,
+    24
+   ]
+  },
+  {
+   "tag": "input",
+   "depth": 17,
+   "cls": [
+    "b-form-control"
+   ],
+   "attrs": [
+    "name",
+    "placeholder",
+    "type"
+   ],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    422,
+    323,
+    545,
+    45
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 17,
+   "cls": [
+    "b-form-group-placeholder"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": "xxxxxx xxxxxxxx...",
+   "box": [
+    398,
+    330,
+    116,
+    14
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 13,
+   "cls": [
+    "b-inifinite-scroll",
+    "_scrollable_1oe3e_7",
+    "_scrollable_19tt1_99",
+    "_serviceList_19tt1_37",
+    "scrollable"
+   ],
+   "attrs": [
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "services-option-list",
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    390,
+    583,
+    450
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 14,
+   "cls": [
+    "_content_1oe3e_17"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    390,
+    583,
+    450
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 15,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    390,
+    583,
+    47
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 16,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    390,
+    583,
+    46
+   ]
+  },
+  {
+   "tag": "p",
+   "depth": 17,
+   "cls": [
+    "_categoryName_19tt1_27"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": "Not xxxxxxxxxxx",
+   "box": [
+    385,
+    390,
+    583,
+    46
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 15,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    437,
+    583,
+    57
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 16,
+   "cls": [
+    "flex",
+    "items-center",
+    "pb-3",
+    "pt-3",
+    "pl-3"
+   ],
+   "attrs": [
+    "data-testid"
+   ],
+   "role": null,
+   "testid": "services-list-item-<id>",
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    437,
+    583,
+    56
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 17,
+   "cls": [
+    "_optionName_19tt1_70"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": "Aria Salon",
+   "box": [
+    428,
+    453,
+    378,
+    24
+   ]
+  },
+  {
+   "tag": "span",
+   "depth": 17,
+   "cls": [
+    "duration",
+    "_optionDuration_1fydo_7"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": "xx xxxxx",
+   "box": [
+    806,
+    456,
+    62,
+    18
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 17,
+   "cls": [
+    "_optionPrice_vy3m3_7"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": "$200.00",
+   "box": [
+    868,
+    453,
+    100,
+    24
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 16,
+   "cls": [
+    "_detector_1oe3e_24"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    483,
+    583,
+    10
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 13,
+   "cls": [],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    860,
+    583,
+    48
+   ]
+  },
+  {
+   "tag": "button",
+   "depth": 14,
+   "cls": [
+    "_button_11aed_7",
+    "_size--lg_11aed_23",
+    "_theme--default_11aed_39",
+    "_slotTheme--default_11aed_121"
+   ],
+   "attrs": [
+    "data-testid",
+    "id"
+   ],
+   "role": null,
+   "testid": "edit-services-button",
+   "aria": null,
+   "text": null,
+   "box": [
+    385,
+    860,
+    583,
+    48
+   ]
+  },
+  {
+   "tag": "div",
+   "depth": 15,
+   "cls": [
+    "_caption_11aed_19"
+   ],
+   "attrs": [],
+   "role": null,
+   "testid": null,
+   "aria": null,
+   "text": "Edit xxxxxxxx",
+   "box": [
+    386,
+    862,
+    581,
+    44
+   ]
+  }
+ ]
+}
