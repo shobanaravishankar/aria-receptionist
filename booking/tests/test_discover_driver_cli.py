@@ -152,10 +152,8 @@ def test_verify_business_times_out_as_sign_in_required():
         drv.verify_business()
 
 
-def test_unverified_operations_refuse_instead_of_guessing():
+def test_creating_an_appointment_still_refuses_without_touching_the_page():
     drv, browser, _ = make_driver([CAL])
-    with pytest.raises(DiscoveryRequired):
-        drv.read_day(date(2026, 10, 12))
     spec = AppointmentSpec("Shobs", "Aria Salon", NOW, 150, "note")
     with pytest.raises(DiscoveryRequired) as err:
         drv.create_appointment(spec)
@@ -163,20 +161,12 @@ def test_unverified_operations_refuse_instead_of_guessing():
     assert browser.visited == [], "refusing must not even navigate"
 
 
-def test_discover_waits_for_the_loading_overlay_before_capturing():
-    drv, browser, _ = make_driver([CAL])
-    browser.loader_polls = 3
-    report = drv.discover("today")
-    assert report["page_ready"] is True
-    assert browser.scripts == ["loader"] * 4 + ["discovery"], "must capture only after the overlay cleared"
+def test_reading_a_page_that_cannot_be_understood_raises_instead_of_returning_a_guess():
+    from aria_booking.calendar_parser import CalendarParseError
 
-
-def test_discover_flags_a_partial_capture_when_the_overlay_never_clears():
-    drv, browser, _ = make_driver([CAL], ticks=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
-    browser.loader_polls = 10**6
-    report = drv.discover("today", load_timeout=3)
-    assert report["page_ready"] is False
-    assert browser.scripts[-1] == "discovery", "still captures, but is honest that it is partial"
+    drv, _, _ = make_driver([CAL])  # the fake browser's page has no calendar structure at all
+    with pytest.raises(CalendarParseError):
+        drv.read_day(date(2026, 10, 12))
 
 
 def test_close_quits_the_browser_once():

@@ -4,8 +4,9 @@ STATUS: SCAFFOLD. What is real here: launching a dedicated browser profile, dete
 verifying which business the browser is signed in to, and structural discovery. What is deliberately NOT
 here yet: reading availability and creating appointments. Those need selectors that can only be learned
 from the live page, and this code will not click guessed elements on a real account. Until discovery has
-been done, ``read_day`` and ``create_appointment`` refuse with DiscoveryRequired, which the booking
-service reports as "availability unknown" (never as free, never as booked).
+been done, ``create_appointment`` refuses with DiscoveryRequired (nothing is clicked). ``read_day`` parses the
+live page with calendar_parser; whatever it cannot understand raises, which the booking service reports as
+"availability unknown" (never as free, never as booked).
 
 Credentials: this module never types a password and never stores cookies. A person signs in, in the
 dedicated browser window; the browser keeps its own session in the git-ignored profile directory.
@@ -16,9 +17,11 @@ from __future__ import annotations
 import re
 import shutil
 import time
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from typing import Any, Callable, Optional
 
+from .calendar_parser import CalendarParseError, normalize_nodes, parse_day
 from .config import Config
 from .discover import DISCOVERY_JS, LOADER_GONE_JS, build_report
 from .driver import BeforeSaveError, DriverUnavailable, SignInRequired
@@ -118,13 +121,29 @@ class SeleniumBooksyDriver:
                 raise SignInRequired("timed out waiting for a person to sign in; run the login command again")
             self._sleep(self._poll)
 
-    # ---- not yet verified against the live site -----------------------------------------
+    # ---- reading the calendar (parser tested offline against real captures; see README for live status) ---------
     def read_day(self, day: date) -> DaySnapshot:
-        raise DiscoveryRequired(
-            "calendar parsing has not been verified against the live page; run `python -m aria_booking discover` "
-            "while signed in, then the parsers can be written from the sanitized structure"
+        """Load that day's calendar and parse it. Anything not understood raises (never 'free')."""
+        browser = self._browser()
+        browser.get(self.cfg.calendar_url(day.isoformat()))
+        ready = self._wait_for_calendar(browser, 40.0)
+        if not BUSINESS_PATH_RE.search(browser.current_url or ""):
+            raise SignInRequired("the calendar did not open (signed out?); sign in and run again")
+        if not ready:
+            raise CalendarParseError("the calendar was still loading after 40 seconds")
+        self._sleep(1)  # let the grid finish painting after the overlay clears
+        raw = browser.execute_script(DISCOVERY_JS)
+        tz = ZoneInfo(self.cfg.timezone)
+        return parse_day(
+            normalize_nodes(raw),
+            day=day,
+            tz=tz,
+            staff=self.cfg.staff_name,
+            staff_confirmed=self.cfg.single_staff_confirmed,
+            captured_at=datetime.now(tz),
         )
 
+    # ---- not yet verified against the live site -----------------------------------------
     def create_appointment(self, spec: AppointmentSpec) -> None:
         raise DiscoveryRequired("appointment creation has not been verified against the live page; nothing was clicked")
 

@@ -13,7 +13,6 @@ If anything unexpected happens the run stops; ending it closes the browser, whic
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Optional
@@ -23,79 +22,16 @@ from .config import Config
 from .discover_interactive import NOT_IN_TOUR, InteractiveDiscovery, RunStopped
 from .models import AppointmentSpec, add_minutes
 from .safety import NOTE_PREFIX
+from .timeparse import day_from_label, parse_clock, parse_date_text
 
 DRAWER = '[data-testid="drawer-appointment-body"]'
 NOTE_BOX = '[data-testid="business_secret_note"]'
 DISCARD_MODAL = '[data-testid="discard-modal"]'
 
-_CLOCK_FORMATS = ("%I:%M %p", "%I:%M%p", "%H:%M")
-_DATE_FORMATS = (
-    "%a, %d %b", "%a, %b %d", "%A, %d %B", "%A, %B %d",
-    "%a, %d %b %Y", "%a, %b %d, %Y", "%A, %B %d, %Y",
-    "%d %b %Y", "%b %d, %Y", "%B %d, %Y", "%Y-%m-%d", "%m/%d/%Y",
-)
-_TIME_IN_LABEL = re.compile(r"\d{1,2}:\d{2}")
-
 
 # ---------------------------------------------------------------- pure helpers (unit-tested)
 def option_testid(hour: int, minute: int) -> str:
     return f"dropdown-option-{hour:02d}:{minute:02d}"
-
-
-def parse_clock(text: str) -> Optional[tuple[int, int]]:
-    cleaned = (text or "").strip().upper().replace(" ", " ").replace("\xa0", " ")
-    for fmt in _CLOCK_FORMATS:
-        try:
-            parsed = datetime.strptime(cleaned, fmt)
-            return parsed.hour, parsed.minute
-        except ValueError:
-            continue
-    return None
-
-
-def parse_date_text(text: str, today: date) -> Optional[date]:
-    """Understand the form's date text. None means 'cannot verify', never a guess."""
-    cleaned = (text or "").strip().replace("\xa0", " ")
-    low = cleaned.casefold()
-    if low == "today":
-        return today
-    if low == "tomorrow":
-        return today + timedelta(days=1)
-    for fmt in _DATE_FORMATS:
-        try:
-            parsed = datetime.strptime(cleaned, fmt)
-        except ValueError:
-            continue
-        if "%Y" in fmt:
-            return parsed.date()
-        # no year in the text: use the year that puts the date nearest to today
-        best: Optional[date] = None
-        for year in (today.year - 1, today.year, today.year + 1):
-            try:
-                candidate = date(year, parsed.month, parsed.day)
-            except ValueError:
-                continue
-            if best is None or abs((candidate - today).days) < abs((best - today).days):
-                best = candidate
-        return best
-    return None
-
-
-def parse_month_label(text: str) -> Optional[tuple[int, int]]:
-    cleaned = (text or "").strip()
-    for fmt in ("%B %Y", "%b %Y"):
-        try:
-            parsed = datetime.strptime(cleaned, fmt)
-            return parsed.year, parsed.month
-        except ValueError:
-            continue
-    return None
-
-
-def day_from_label(label: str, today: date) -> Optional[date]:
-    """'Mon, 12 Oct 10:00 AM - 7:00 PM' -> date(…, 10, 12): the part before the first clock time."""
-    head = _TIME_IN_LABEL.split(label or "", maxsplit=1)[0]
-    return parse_date_text(head.strip(), today)
 
 
 @dataclass

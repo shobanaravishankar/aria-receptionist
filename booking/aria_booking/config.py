@@ -55,6 +55,7 @@ class Config:
     local_dir: Path = field(default=DEFAULT_LOCAL_DIR)
     chromedriver_path: Optional[str] = None
     allow_driver_download: bool = False
+    single_staff_confirmed: bool = False
     sign_in_wait_seconds: int = 600
 
     @property
@@ -101,6 +102,7 @@ class Config:
             local_dir=local_dir,
             chromedriver_path=env.get("ARIA_CHROMEDRIVER_PATH") or None,
             allow_driver_download=_bool(env.get("ARIA_ALLOW_DRIVER_DOWNLOAD")),
+            single_staff_confirmed=_bool(env.get("ARIA_CONFIRM_SINGLE_STAFF")),
             sign_in_wait_seconds=_int(env, "ARIA_SIGN_IN_WAIT_SECONDS", base.sign_in_wait_seconds, minimum=10),
         )
 
@@ -125,4 +127,5 @@ class Config:
             "max_bookings_per_run": self.max_bookings_per_run,
             "local_dir": str(self.local_dir),
             "chromedriver": driver_note,
+            "single_staff_confirmed": self.single_staff_confirmed,
         }

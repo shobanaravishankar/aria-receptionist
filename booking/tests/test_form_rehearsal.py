@@ -10,16 +10,8 @@ import pytest
 from aria_booking import cli
 from aria_booking import form_rehearsal as module
 from aria_booking.config import Config
-from aria_booking.form_rehearsal import (
-    FormRehearsal,
-    FormState,
-    compare_with_plan,
-    day_from_label,
-    option_testid,
-    parse_clock,
-    parse_date_text,
-    parse_month_label,
-)
+from aria_booking.form_rehearsal import FormRehearsal, FormState, compare_with_plan, option_testid
+from aria_booking.timeparse import day_from_label, parse_clock, parse_date_text, parse_month_label
 from aria_booking.models import AppointmentSpec
 from aria_booking.safety import build_note
 
