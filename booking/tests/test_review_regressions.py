@@ -293,3 +293,55 @@ def test_r7_an_incomplete_note_read_is_never_proof_of_absence(setup):
     result = service.book(start)
     assert not result.ok and len(calendar.create_calls) == 1
     assert state_of(service, cfg, start) == State.VERIFIED, "an unreadable day does not rewrite history either"
+
+
+# ---------------------------------------------------------------- each identity field is checked on its own
+
+
+def saved_but_unconfirmed(calendar, make):
+    """Only the calendar record produced by `make(spec)` exists; the save itself reported an unknown outcome."""
+    calendar.create_mode = "unknown_not_saved"
+    calendar.on_create = lambda cal, spec: cal.appointments.append(make(spec))
+
+
+def test_a_record_for_a_different_staff_member_is_a_mismatch(setup):
+    cfg, calendar, service, start = setup
+    saved_but_unconfirmed(calendar, lambda spec: Appointment("Someone Else", spec.interval, spec.service_name, spec.note))
+    result = service.book(start)
+    assert result.status is Status.VERIFY_MISMATCH and any("staff" in d for d in result.details)
+    assert not service.verify(start).ok
+
+
+def test_a_record_with_the_wrong_length_is_a_mismatch(setup):
+    cfg, calendar, service, start = setup
+    saved_but_unconfirmed(
+        calendar,
+        lambda spec: Appointment(spec.staff, Interval(spec.start, spec.start + timedelta(minutes=60)), spec.service_name, spec.note),
+    )
+    result = service.book(start)
+    assert result.status is Status.VERIFY_MISMATCH and any("duration" in d for d in result.details)
+    assert not service.verify(start).ok
+
+
+def test_a_record_at_the_wrong_time_is_a_mismatch(setup):
+    cfg, calendar, service, start = setup
+    shifted = lambda spec: Appointment(spec.staff, Interval(spec.start + timedelta(minutes=30), spec.start + timedelta(minutes=180)), spec.service_name, spec.note)
+    saved_but_unconfirmed(calendar, shifted)
+    result = service.book(start)
+    assert result.status is Status.VERIFY_MISMATCH and any("start" in d for d in result.details)
+
+
+def test_the_card_list_shrinking_while_notes_are_read_makes_the_read_incomplete():
+    from test_creation import ReaderHarness
+
+    class Shrinking(ReaderHarness):
+        calls = 0
+
+        def _all(self, css):
+            Shrinking.calls += 1
+            cards = list(self.cards_)
+            return cards if Shrinking.calls <= 2 else cards[:1]  # a card vanished after the first one was read
+
+    Shrinking.calls = 0
+    with pytest.raises(DriverError, match="number of appointment cards changed"):
+        Shrinking([("11:00 AM", "1:30 PM"), ("3:15 PM", "5:45 PM")]).read_notes(tour_ok=True)
