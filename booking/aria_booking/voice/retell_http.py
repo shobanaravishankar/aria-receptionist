@@ -39,6 +39,8 @@ ROUTES = {
     "/tools/find_alternatives": "find_alternatives",
     "/tools/book_slot": "book_slot",
 }
+# The availability-only demo has NO writer route at all: a request to /tools/book_slot is a plain 404, not a refusal.
+READ_ONLY_ROUTES = {path: fn for path, fn in ROUTES.items() if fn != "book_slot"}
 SIGNATURE_RE = re.compile(r"v=(\d+),d=([0-9a-f]{64})")  # the official SDK's pattern, matched in full
 
 
@@ -68,19 +70,21 @@ class RetellEndpoint:
         api_key: str,
         *,
         bearer_token: Optional[str] = None,
+        routes: Optional[Mapping[str, str]] = None,
         now_ms: Callable[[], int] = lambda: int(time.time() * 1000),
         log: Callable[[str], None] = lambda message: None,
     ):
         if not api_key:
             raise ValueError("a Retell API key is required to verify requests; refusing to run without one")
         self._tools, self._key, self._bearer, self._now, self._log = tools, api_key, bearer_token, now_ms, log
+        self._routes = dict(ROUTES if routes is None else routes)
 
     def handle(self, method: str, path: str, headers: Mapping[str, str], raw_body: bytes) -> tuple[int, dict]:
         """(http status, JSON body). Order matters: nothing is parsed or executed before authentication."""
         lowered = {k.lower(): v for k, v in headers.items()}
         if method.upper() != "POST":
             return 405, {"status": "error", "ok": False, "speak": "", "error": "method_not_allowed"}
-        route = ROUTES.get(path.split("?", 1)[0])
+        route = self._routes.get(path.split("?", 1)[0])
         if route is None:
             return 404, {"status": "error", "ok": False, "speak": "", "error": "not_found"}
         if len(raw_body) > MAX_BODY_BYTES:

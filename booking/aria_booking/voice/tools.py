@@ -48,6 +48,7 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
 SUCCESS_STATUSES = frozenset({"booked_verified", "already_booked"})
 CONTACT = "Please contact the salon directly."
+AVAILABILITY_ONLY_NOTE = "I can only check availability on this line, so I can't book it. Please contact the salon directly to book."
 # how close a refused start is to being bookable: the most informative reason to give when nobody can take it
 REASON_RANK = {"not_working": 0, "outside_hours": 1, "ends_after_closing": 2, "too_soon": 3, "occupied": 4}
 
@@ -79,6 +80,7 @@ class VoiceTools:
         catalog: Catalog = DEFAULT_CATALOG,
         require_verified: bool = True,
         require_service_id: bool = False,
+        availability_only: bool = False,
         booking_enabled: bool = False,
         option_ttl_seconds: int = 900,
         confirm_ttl_seconds: int = 300,
@@ -91,7 +93,8 @@ class VoiceTools:
         self.cfg, self.driver, self._service_factory, self._clock = cfg, driver, service_factory, clock
         self.registry = registry if registry is not None else BookableRegistry.from_config(cfg)
         self.catalog, self._require_verified, self._require_service_id = catalog, require_verified, require_service_id
-        self.booking_enabled = booking_enabled
+        self.availability_only = availability_only
+        self.booking_enabled = booking_enabled and not availability_only  # availability-only can never write
         self._option_ttl = timedelta(seconds=option_ttl_seconds)
         self._confirm_ttl = timedelta(seconds=confirm_ttl_seconds)
         self._search_days, self._max_options, self._horizon_days = search_days, max_options, horizon_days
@@ -130,9 +133,7 @@ class VoiceTools:
 
     def _issue(self, call_id: str, start: datetime, service: BookableService, staff: str) -> dict:
         option = Option("opt_" + secrets.token_urlsafe(6), call_id, start, self._now(), service, staff, self._price(service))
-        self._options[option.option_id] = option
-        return {
-            "option_id": option.option_id,
+        view = {
             "label": f"{spoken_slot(start)} with {staff}",
             "start": start.isoformat(),
             "service_id": service.service_id,
@@ -141,6 +142,10 @@ class VoiceTools:
             "price_usd": option.price_usd,
             "technician": staff,
         }
+        if self.availability_only:
+            return view  # an availability answer, not an offer: no id is issued, so there is nothing to confirm or book
+        self._options[option.option_id] = option
+        return {"option_id": option.option_id, **view}
 
     def _with_lock(self, call_id: str, work: Callable[[], dict]) -> dict:
         if not isinstance(call_id, str) or not call_id.strip():
@@ -215,7 +220,16 @@ class VoiceTools:
             return [], _response("unknown", "I couldn't tell the technicians' schedules apart clearly enough to check, so I won't guess.", reason="ambiguous_roster")
         eligible = [sd.staff for sd in days if service.eligible(sd.staff)]
         if named:
-            present = [sd.staff for sd in days if staff_key(sd.staff) == staff_key(named)]
+            wanted = staff_key(named)
+            present = [sd.staff for sd in days if staff_key(sd.staff) == wanted]
+            if not present:  # "Lily" may mean "Lily Chen": match whole words of the name, never a fragment
+                words = set(wanted.split())
+                present = [sd.staff for sd in days if words and words <= set(staff_key(sd.staff).split())]
+            if len(present) > 1:
+                return [], _response(
+                    "needs_clarification", f"I see more than one {named} on the schedule: {join_choices(present)}. Which did you mean?",
+                    reason="ambiguous_staff", candidates=present,
+                )
             if not present:
                 return [], _response(
                     "staff_unavailable", f"I don't see {named} on the schedule for that day.", reason="staff_not_on_schedule",
@@ -306,8 +320,23 @@ class VoiceTools:
         technicians are considered, the reason closest to bookable is the most useful to give."""
         reasons = [self._why_not_one(snapshot, start, service, name) + (name,) for name in staffs]
         reason, text, extra, who = max(reasons, key=lambda r: REASON_RANK[r[0]])
-        if named and reason == "occupied":
-            text = f"{who} is already booked at {spoken_time(start)} on {spoken_day(start)}."
+        if named:  # a technician was asked for by name: speak about THEIR day, not the salon's
+            def at(hhmm: str) -> str:
+                hour, minute = (int(part) for part in hhmm.split(":"))
+                return spoken_time(start.replace(hour=hour, minute=minute))
+
+            if reason == "occupied":
+                text = f"{who} is already booked at {spoken_time(start)} on {spoken_day(start)}."
+            elif reason == "not_working":
+                text = f"{who} isn't working on {spoken_day(start)}."
+            elif reason == "outside_hours":
+                text = f"{who} works from {at(extra['opens'])} to {at(extra['closes'])} on {spoken_day(start)}, so {spoken_time(start)} is outside those hours."
+            elif reason == "ends_after_closing" and "latest_start" in extra:
+                length = spoken_duration(service.duration_minutes)
+                text = (
+                    f"The {length} service starting at {spoken_time(start)} would run past the end of {who}'s day at {at(extra['closes'])}. "
+                    f"The latest start that day is {at(extra['latest_start'])}."
+                )
         return reason, text, extra
 
     # ---- finding alternatives --------------------------------------------------------------
@@ -383,6 +412,8 @@ class VoiceTools:
             return _response("no_alternatives", f"{lead}I don't see any other openings{who} in the next few days.{more}", options=[])
         options = [self._issue(call_id, s.service.start.astimezone(self._tz), service, s.staff) for s in slots]
         labels = join_choices([o["label"] for o in options])
+        if self.availability_only:
+            return _response("alternatives", f"{lead}I do have {labels} open. {AVAILABILITY_ONLY_NOTE}", options=options)
         return _response("alternatives", f"{lead}I do have {labels}. Which would you prefer?", options=options)
 
     # ---- local information (never the calendar) ----------------------------------------------
@@ -457,6 +488,12 @@ class VoiceTools:
         length = spoken_duration(service.duration_minutes)
         if free:
             option = self._issue(call_id, start, service, free[0])
+            if self.availability_only:
+                return _response(
+                    "available",
+                    f"{spoken_slot(start)} is open for the full {length} of {service.booksy_name}, with {free[0]}. {AVAILABILITY_ONLY_NOTE}",
+                    options=[option],
+                )
             return _response(
                 "available",
                 f"{spoken_slot(start)} is open for the full {length} of {service.booksy_name}, with {free[0]}. Would you like me to book it?",
@@ -494,6 +531,12 @@ class VoiceTools:
         return self._with_lock(call_id, lambda: self._book_slot(call_id, args or {}))
 
     def _book_slot(self, call_id: str, args: dict) -> dict:
+        if self.availability_only:  # first, before any lookup: this line cannot write, whatever the caller or model says
+            return _response(
+                "refused",
+                "I can only check availability on this line, so I can't book, hold, change or cancel anything. Please contact the salon directly to book.",
+                reason="availability_only",
+            )
         option = self._options.get(str(args.get("option_id") or ""))
         earlier = self._booked_by_call.get(call_id)
         if earlier is not None:

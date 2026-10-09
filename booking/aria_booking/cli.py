@@ -300,14 +300,19 @@ def _serve(args, cfg: Config, now_fn, driver, out) -> int:
         # the per-request configuration comes from the bookable allowlist (service, duration, technician), never from a caller
         return BookingService(service_cfg or cfg, driver, Ledger(cfg.ledger_path, clock=now_fn), clock=now_fn)
 
-    tools = VoiceTools(cfg, driver, service_factory, now_fn, booking_enabled=args.booking_enabled, require_service_id=True)
+    tools = VoiceTools(
+        cfg, driver, service_factory, now_fn, booking_enabled=args.booking_enabled, require_service_id=True,
+        availability_only=not args.booking_enabled,  # no five approvals = the availability-only demo: it cannot write at all
+    )
     endpoint = retell_http.RetellEndpoint(
         tools, args.retell_key, bearer_token=args.tool_token,
+        routes=retell_http.ROUTES if args.booking_enabled else retell_http.READ_ONLY_ROUTES,
         log=lambda message: out("  " + message),
     )
     server = retell_http.make_http_server(endpoint, args.port)
     out(f"serving Retell function calls on 127.0.0.1:{args.port} (loopback only). Mode: "
-        + ("BOOKING ENABLED (a real, fictional ARIA TEST appointment can be created)" if args.booking_enabled else "READ-ONLY (booking refused)"))
+        + ("BOOKING ENABLED (a real, fictional ARIA TEST appointment can be created)" if args.booking_enabled
+           else "READ-ONLY (availability only: there is no booking route, and booking is refused)"))
     out(f"signatures: Retell's official v=<ms>,d=<hex> scheme only; extra bearer token: {'yes' if args.tool_token else 'no'}. Press Ctrl+C to stop.")
     try:
         server.serve_forever()
