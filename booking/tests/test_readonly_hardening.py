@@ -41,8 +41,10 @@ class HangingCalendar(FakeMultiCalendar):
         self.release = threading.Event()
         self.started = threading.Event()
         self.hang = True
+        self.attempts = 0  # reads that reached the driver (read_calls only counts reads that finished)
 
     def read_day(self, day, include_notes=False):
+        self.attempts += 1
         self.started.set()
         if self.hang:
             self.release.wait(10)

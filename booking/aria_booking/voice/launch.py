@@ -23,6 +23,8 @@ from .tools import VoiceTools
 # Worst case for one availability call = lock wait + read deadline, and the Retell tool timeouts in tools_availability_only.json exceed it.
 AVAILABILITY_LOCK_WAIT_SECONDS = 2.0  # an overlapping request says 'busy' after this long, never after tens of seconds
 READ_DEADLINE_SECONDS = 14.0  # one calendar read; on a miss the answer is 'cannot confirm', never a guess
+# The WHOLE request (lock wait + all day reads + processing) must finish before Retell's tool timeout (20 s) with margin; see catalog/render.py.
+REQUEST_BUDGET_SECONDS = 16.0
 READ_CACHE_SECONDS = 30.0  # availability-only demo: a reused read older than 15 s is described as such
 
 
@@ -43,6 +45,7 @@ def build_tools(
         kwargs.setdefault("read_cache_seconds", READ_CACHE_SECONDS)
         kwargs.setdefault("lock_timeout_seconds", AVAILABILITY_LOCK_WAIT_SECONDS)
         kwargs.setdefault("read_deadline_seconds", READ_DEADLINE_SECONDS)
+        kwargs.setdefault("request_budget_seconds", REQUEST_BUDGET_SECONDS)
     return VoiceTools(
         cfg, driver, service_factory, clock, registry=registry, require_service_id=True,
         booking_enabled=booking_approved, availability_only=not booking_approved, **kwargs,

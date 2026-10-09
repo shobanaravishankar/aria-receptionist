@@ -70,6 +70,13 @@ class ReadTimedOut(DriverError):
     """A calendar read did not finish inside its deadline. Nothing is known about the calendar; the answer must be 'cannot confirm'."""
 
 
+class ReadBudgetExhausted(DriverError):
+    """The whole request has used its time budget, so no further calendar read is even started."""
+
+
+MIN_READ_SECONDS = 1.5  # a read is not started with less than this left in the request budget: it could not finish
+
+
 class ReadStillRunning(DriverError):
     """An earlier read that missed its deadline is still using the one browser. This request fails at once instead of queueing behind it."""
 
@@ -100,6 +107,7 @@ class VoiceTools:
         max_bookings_total: int = 3,
         lock_timeout_seconds: float = 20.0,
         read_deadline_seconds: Optional[float] = None,
+        request_budget_seconds: Optional[float] = None,
         check_search_days: Optional[int] = None,
         read_cache_seconds: float = 0.0,
         monotonic: Callable[[], float] = time.monotonic,
@@ -135,6 +143,20 @@ class VoiceTools:
         # occupies the browser, every new read fails immediately as ReadStillRunning.
         self._read_deadline = read_deadline_seconds if read_deadline_seconds is None else max(0.05, float(read_deadline_seconds))
         self._abandoned: Optional[threading.Thread] = None
+        # The time budget of one WHOLE read-only request (lock wait + every day read + processing). It must sit below the voice platform's
+        # tool timeout, so the server never keeps reading Booksy and holding the lock after the caller's tool has given up. None = unbounded.
+        # None = the same as the per-read deadline (so a deadline alone can never let a multi-day search run for several deadlines in a row);
+        # 0 = explicitly unbounded.
+        if request_budget_seconds is None:
+            self._request_budget = self._read_deadline
+        elif request_budget_seconds == 0:
+            self._request_budget = None
+        else:
+            self._request_budget = max(MIN_READ_SECONDS, float(request_budget_seconds))
+        if self._request_budget is not None and self._read_deadline is None:
+            self._read_deadline = self._request_budget  # a budget needs the bounded (worker-thread) read path to be enforceable
+        # no read is started with less than this left: normally MIN_READ_SECONDS, but never more than half of a very small budget
+        self._min_read = MIN_READ_SECONDS if self._request_budget is None else min(MIN_READ_SECONDS, self._request_budget / 2)
 
     # ---- helpers ---------------------------------------------------------------------------
     @property
@@ -145,6 +167,11 @@ class VoiceTools:
     def last_timing(self, value: dict) -> None:
         self._thread_state.timing = value
 
+    def _budget_left(self) -> Optional[float]:
+        """Seconds left in this request's budget (None when unbounded). Per request thread."""
+        deadline = getattr(self._thread_state, "deadline", None)
+        return None if deadline is None else deadline - self._mono()
+
     def _driver_read(self, day: date) -> DaySnapshot:
         if self._read_deadline is None:
             return self.driver.read_day(day)
@@ -152,6 +179,10 @@ class VoiceTools:
             if self._abandoned.is_alive():
                 raise ReadStillRunning("an earlier calendar read is still running")
             self._abandoned = None
+        left = self._budget_left()
+        if left is not None and left < self._min_read:
+            raise ReadBudgetExhausted("this request has used its time budget; no further calendar read is started")
+        wait = self._read_deadline if left is None else min(self._read_deadline, left)
         outcome: dict = {}
 
         def work() -> None:
@@ -162,7 +193,7 @@ class VoiceTools:
 
         worker = threading.Thread(target=work, name="calendar-read", daemon=True)
         worker.start()
-        worker.join(self._read_deadline)
+        worker.join(wait)
         if worker.is_alive():
             self._abandoned = worker
             raise ReadTimedOut("the calendar read missed its deadline")
@@ -213,6 +244,7 @@ class VoiceTools:
         if not isinstance(call_id, str) or not call_id.strip():
             return _response("needs_clarification", "I could not identify this call, so I can't check the calendar.", reason="no_call_id")
         timer = PhaseTimer(self._mono)
+        self._thread_state.deadline = None if self._request_budget is None else self._mono() + self._request_budget
         with timer.phase("lock_wait"):
             acquired = self._lock.acquire(timeout=self._lock_timeout)
         if not acquired:
@@ -446,21 +478,27 @@ class VoiceTools:
     def _alternatives(
         self, first_day: date, preferred_minutes: int, first_snapshot: Optional[DaySnapshot], service: BookableService, named: Optional[str],
         days: Optional[int] = None,
-    ) -> tuple[list[Slot], int, Optional[dict], float]:
-        """(chosen slots, number of days that could not be read, why the FIRST day's technician choice failed, if it did, and the age in
-        seconds of the OLDEST read this call itself made or reused). Only slots find_slots returned from a real read."""
+    ) -> tuple[list[Slot], int, Optional[dict], float, bool]:
+        """(chosen slots, number of days that could not be read, why the FIRST day's technician choice failed, if it did, the age in
+        seconds of the OLDEST read this call itself made or reused, and whether the search was CUT SHORT by the request's time budget).
+        Only slots find_slots returned from a real read."""
         chosen: list[Slot] = []
         oldest = 0.0  # the first day's snapshot, when given, was read by the caller, who knows its age
         unreadable = 0
         first_error: Optional[dict] = None
         spec = self._spec(service)
-        for offset in range(self._search_days if days is None else days):
+        total_days = self._search_days if days is None else days
+        cut_short = False
+        for offset in range(total_days):
             day = first_day + timedelta(days=offset)
             if offset == 0 and first_snapshot is not None:
                 snapshot = first_snapshot
             else:
                 try:
                     snapshot, age = self._read(day)
+                except ReadBudgetExhausted:
+                    cut_short = True  # this day and every later one were never checked; _offer says so instead of claiming nothing was found
+                    break
                 except DriverError:
                     unreadable += 1
                     continue
@@ -503,12 +541,20 @@ class VoiceTools:
                 chosen.append(min(slots, key=lambda s: abs(minutes(s) - preferred_minutes)))
             if len(chosen) >= self._max_options:
                 break
-        return chosen[: self._max_options], unreadable, first_error, oldest
+        return chosen[: self._max_options], unreadable, first_error, oldest, cut_short
 
     def _offer(
-        self, call_id: str, slots: list[Slot], unreadable: int, service: BookableService, named: Optional[str], *, lead: str, days_searched: Optional[int] = None
+        self, call_id: str, slots: list[Slot], unreadable: int, service: BookableService, named: Optional[str], *, lead: str,
+        days_searched: Optional[int] = None, cut_short: bool = False,
     ) -> dict:
         if not slots:
+            if cut_short:
+                return _response(
+                    "unknown",
+                    f"{lead}I ran out of time before I could check all of those days, so I can't tell you whether there is anything else. "
+                    "Please try again in a moment, or contact the salon directly.",
+                    options=[], reason="search_incomplete",
+                )
             if unreadable:
                 return _response(
                     "unknown",
@@ -525,9 +571,10 @@ class VoiceTools:
             return _response("no_alternatives", f"{lead}I don't see any other openings{who} {scope}.{more}", options=[], days_searched=searched)
         options = [self._issue(call_id, s.service.start.astimezone(self._tz), service, s.staff) for s in slots]
         labels = join_choices([o["label"] for o in options])
+        partial = " I only had time to check part of the range." if cut_short else ""
         if self._read_only:
-            return _response("alternatives", f"{lead}I do have {labels} open. {AVAILABILITY_ONLY_NOTE}", options=options)
-        return _response("alternatives", f"{lead}I do have {labels}. Which would you prefer?", options=options)
+            return _response("alternatives", f"{lead}I do have {labels} open.{partial} {AVAILABILITY_ONLY_NOTE}", options=options, **({"search_incomplete": True} if cut_short else {}))
+        return _response("alternatives", f"{lead}I do have {labels}.{partial} Which would you prefer?", options=options, **({"search_incomplete": True} if cut_short else {}))
 
     # ---- local information (never the calendar) ----------------------------------------------
     def lookup_service(self, call_id: str, args: dict) -> dict:
@@ -588,7 +635,7 @@ class VoiceTools:
             snapshot, age = self._read(day)
         except SignInRequired:
             return _response("system_unavailable", "The scheduling system needs attention right now, so I can't check availability. Please contact the salon directly.")
-        except (ReadTimedOut, ReadStillRunning):
+        except (ReadTimedOut, ReadStillRunning, ReadBudgetExhausted):
             return _response(
                 "unknown",
                 "Checking the calendar is taking longer than it should, so I can't confirm that time right now. "
@@ -627,10 +674,10 @@ class VoiceTools:
             return _response("unknown", "I couldn't confirm the calendar for that day, so I can't tell you whether it's free. Let me not guess.")
         with self._timer.phase("search"):
             reason, explanation, extra = self._why_not(snapshot, start, service, staffs, named)
-            slots, unreadable, _error, alt_age = self._alternatives(
+            slots, unreadable, _error, alt_age, cut_short = self._alternatives(
                 day, start.hour * 60 + start.minute, snapshot, service, named, days=self._check_days
             )
-            offered = self._offer(call_id, slots, unreadable, service, named, lead=explanation + " ", days_searched=self._check_days)
+            offered = self._offer(call_id, slots, unreadable, service, named, lead=explanation + " ", days_searched=self._check_days, cut_short=cut_short)
         offered.update(extra)
         offered["unavailable_reason"] = reason
         offered["requested"] = start.isoformat()
@@ -648,10 +695,10 @@ class VoiceTools:
             return problem
         self._set_context(call_id, service, named)
         preferred = (start.hour * 60 + start.minute) if start else 10 * 60
-        slots, unreadable, first_error, oldest = self._alternatives(day, preferred, None, service, named)
+        slots, unreadable, first_error, oldest, cut_short = self._alternatives(day, preferred, None, service, named)
         if not slots and first_error is not None and first_error["status"] == "staff_unavailable":
             return self._stamp_age(first_error, oldest)
-        return self._stamp_age(self._offer(call_id, slots, unreadable, service, named, lead=""), oldest)
+        return self._stamp_age(self._offer(call_id, slots, unreadable, service, named, lead="", cut_short=cut_short), oldest)
 
     # ---- the one writer ---------------------------------------------------------------------------
     def book_slot(self, call_id: str, args: dict) -> dict:

@@ -54,7 +54,9 @@ a read may be reused for 30 s on the availability-only line and the reply says h
 server log as names and milliseconds only.
 
 Bounded and fail-fast (availability-only line): the server is threaded, so a local `lookup_service` answer never waits behind a slow
-calendar read; an overlapping calendar request gets a spoken "busy" after 2 s instead of queueing; one calendar read has a 14 s hard
+calendar read; an overlapping calendar request gets a spoken "busy" after 2 s instead of queueing; the WHOLE request (lock wait + every day read) has a 16 s budget, below Retell's 20 s tool timeout: no further day read is started
+once it is spent, and a search cut short says so ("I ran out of time before I could check all of those days") instead of claiming there
+are no openings; one calendar read has a 14 s hard
 deadline (the page itself gives up after 10 s) and on a miss the answer is "I can't confirm that right now", never a guess; while an
 abandoned read still occupies the browser, new reads fail immediately. Retell's tool timeouts for the demo are 5 s (lookup) and 20 s
 (check/find), above that worst case and far below 30-40 s. Each server log line also carries `received_ms`/`sent_ms` wall-clock marks so
