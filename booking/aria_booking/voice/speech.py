@@ -33,3 +33,7 @@ def join_choices(labels: list[str]) -> str:
     if len(labels) == 1:
         return labels[0]
     return ", ".join(labels[:-1]) + ", or " + labels[-1]
+
+
+def spoken_price(price_usd) -> str:
+    return "the price isn't listed" if price_usd is None else f"${price_usd}"

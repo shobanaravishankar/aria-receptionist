@@ -77,6 +77,7 @@ class SeleniumBooksyDriver:
         monotonic: Callable[[], float] = time.monotonic,
         poll_seconds: float = 2.0,
         approvals: frozenset = frozenset(),
+        allowed_services: Optional[frozenset] = None,
     ):
         self.cfg = cfg
         self._factory = webdriver_factory
@@ -87,6 +88,8 @@ class SeleniumBooksyDriver:
         self._driver: Optional[Any] = None
         self._staff_confirmed: Optional[bool] = None  # decided once per session from the Staff page
         self.approvals = frozenset(approvals)
+        # The live adapter books ONLY these Booksy service names, whatever a caller layer asks for (fail closed).
+        self.allowed_services = frozenset(allowed_services) if allowed_services is not None else frozenset({cfg.service_name})
         self._appointment_counts: dict = {}  # appointments seen by the latest read of each day
         self._frozen: Optional[str] = None  # set when a window was deliberately left open for a person
 
@@ -211,6 +214,10 @@ class SeleniumBooksyDriver:
         """Fill and save the New Appointment form. Before the Save click every failure is BeforeSaveError (nothing
         was created); from the Save click on every failure is SaveOutcomeUnknown and the window is left open."""
         self._require_not_frozen()
+        if spec.service_name not in self.allowed_services:
+            raise BeforeSaveError("this adapter is only cleared to book the verified test service; nothing was clicked")
+        if " ".join(spec.staff.casefold().split()) != " ".join(self.cfg.staff_name.casefold().split()):
+            raise BeforeSaveError("this adapter supports only the single verified staff member; nothing was clicked")
         expected = self._appointment_counts.get(spec.start.astimezone(ZoneInfo(self.cfg.timezone)).date())
         if expected is None:
             raise BeforeSaveError("the day was not read just before saving, so its appointment count is unknown")

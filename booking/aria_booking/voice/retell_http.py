@@ -33,7 +33,12 @@ from typing import Any, Callable, Mapping, Optional
 MAX_BODY_BYTES = 256 * 1024  # Retell includes the transcript so far in `call`; a long call must not be refused for size
 TOLERANCE_MS = 5 * 60 * 1000
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
-ROUTES = {"/tools/check_slot": "check_slot", "/tools/find_alternatives": "find_alternatives", "/tools/book_slot": "book_slot"}
+ROUTES = {
+    "/tools/lookup_service": "lookup_service",
+    "/tools/check_slot": "check_slot",
+    "/tools/find_alternatives": "find_alternatives",
+    "/tools/book_slot": "book_slot",
+}
 SIGNATURE_RE = re.compile(r"v=(\d+),d=([0-9a-f]{64})")  # the official SDK's pattern, matched in full
 
 

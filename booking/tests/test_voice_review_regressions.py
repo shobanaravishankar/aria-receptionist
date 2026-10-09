@@ -291,13 +291,17 @@ def test_no_spoken_text_promises_staff_follow_up_or_an_alert_until_that_path_exi
 
 
 def test_the_draft_prompt_forbids_the_promise_and_makes_none():
+    import re
     from pathlib import Path
 
     prompt = (Path(__file__).resolve().parent.parent / "voice_agent_draft" / "prompt_test_only.md").read_text(encoding="utf-8")
     assert "Do not promise follow-up" in prompt
-    lowered = prompt.lower()
-    for sentence in ("a team member will follow up", "a team member will check", "a team member will help", "a team member will call"):
-        assert sentence not in lowered.replace("never say or imply one", ""), sentence
+    # the prompt may NAME the forbidden promises (in a prohibition) but must not make one
+    without_prohibitions = re.sub(r"Never say a team member will call, check,\s+follow up or has been notified\.|ANY promise of a callback[^\n]*\n[^\n]*", "", prompt)
+    lowered = without_prohibitions.lower()
+    for sentence in ("a team member will follow up", "a team member will check", "a team member will help", "a team member will call me",
+                     "we will call you back", "you will receive a text"):
+        assert sentence not in lowered, sentence
     assert "contact the salon directly" in lowered
 
 

@@ -112,3 +112,46 @@ class FakeCalendar:
 
     def close(self) -> None:
         pass
+
+
+class FakeMultiCalendar(FakeCalendar):
+    """A SYNTHETIC calendar with several staff members, for the service/technician logic.
+
+    Nothing like it exists in the real Booksy test account (which has exactly one staff member); it only lets the
+    offline tests exercise rosters of any size, eligibility, duplicate names and cross-staff conflicts."""
+
+    def __init__(self, tz, roster, **kwargs):
+        roster = list(roster)
+        super().__init__(tz, staff=roster[0] if roster else "Nobody", **kwargs)
+        self.roster = roster
+        self.staff_hours: dict = {}
+
+    def set_staff_hours(self, staff: str, day: date, start_hour: int, end_hour: int) -> None:
+        self.staff_hours.setdefault((staff, day), []).append(Interval(self.at(day, start_hour), self.at(day, end_hour)))
+
+    def set_all_hours(self, day: date, start_hour: int = 9, end_hour: int = 20) -> None:
+        for name in dict.fromkeys(self.roster):
+            self.set_staff_hours(name, day, start_hour, end_hour)
+
+    def add_staff_appointment(self, staff: str, day: date, start: tuple, end: tuple, *, note="", service="Other", blocks=True) -> Appointment:
+        appt = Appointment(staff, Interval(self.at(day, *start), self.at(day, *end)), service, note, blocks)
+        self.appointments.append(appt)
+        return appt
+
+    def read_day(self, day: date, include_notes: bool = False) -> DaySnapshot:
+        self.read_calls += 1
+        if self.sign_in_required:
+            raise SignInRequired("session expired")
+        if self.read_failures > 0:
+            self.read_failures -= 1
+            raise DriverError("simulated read failure")
+        days = []
+        for name in self.roster:
+            mine = [a for a in self.appointments if a.staff == name and a.interval.start.date() == day]
+            days.append(StaffDay(
+                name,
+                None if self.unknown_working else tuple(self.staff_hours.get((name, day), ())),
+                None if self.unknown_time_off else (),
+                None if self.unknown_appointments else tuple(mine),
+            ))
+        return DaySnapshot(day, tuple(days), self.now)

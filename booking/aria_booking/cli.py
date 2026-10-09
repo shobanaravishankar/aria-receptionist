@@ -296,10 +296,11 @@ def _run(args, cfg: Config, tz: ZoneInfo, now_fn, driver, out) -> int:
 def _serve(args, cfg: Config, now_fn, driver, out) -> int:
     """Start the loopback endpoint. Blocks until interrupted. The signing key is never printed."""
 
-    def service_factory() -> BookingService:
-        return BookingService(cfg, driver, Ledger(cfg.ledger_path, clock=now_fn), clock=now_fn)
+    def service_factory(service_cfg=None) -> BookingService:
+        # the per-request configuration comes from the bookable allowlist (service, duration, technician), never from a caller
+        return BookingService(service_cfg or cfg, driver, Ledger(cfg.ledger_path, clock=now_fn), clock=now_fn)
 
-    tools = VoiceTools(cfg, driver, service_factory, now_fn, booking_enabled=args.booking_enabled)
+    tools = VoiceTools(cfg, driver, service_factory, now_fn, booking_enabled=args.booking_enabled, require_service_id=True)
     endpoint = retell_http.RetellEndpoint(
         tools, args.retell_key, bearer_token=args.tool_token,
         log=lambda message: out("  " + message),
