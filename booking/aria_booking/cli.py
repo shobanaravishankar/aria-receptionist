@@ -37,6 +37,7 @@ from .models import AppointmentSpec
 from .safety import SafetyViolation, build_note, check_request
 from .driver import DriverError
 from .ledger import Ledger, LedgerError
+from .playwright_driver import PlaywrightBooksyDriver
 from .selenium_driver import SeleniumBooksyDriver
 from .voice import retell_http
 from .voice.launch import build_endpoint
@@ -66,11 +67,19 @@ def _parse_day(text: Optional[str], tz: ZoneInfo, now: datetime) -> date:
     return date.fromisoformat(text)
 
 
+def _add_browser_flag(parser) -> None:
+    parser.add_argument(
+        "--browser", choices=("playwright", "selenium"), default=None,
+        help="the browser adapter: playwright (default; headful, read-only) or selenium (the original). Booking and discovery use selenium only.",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aria_booking", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("config")
-    sub.add_parser("login")
+    p = sub.add_parser("login", help="open the dedicated browser window and wait for a PERSON to sign in; verifies the business")
+    _add_browser_flag(p)
     p = sub.add_parser("discover")
     p.add_argument("--date", default="today")
     p = sub.add_parser("discover-steps", help="click-through discovery; every click type must be approved with --allow")
@@ -84,9 +93,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("find")
     p.add_argument("--from", dest="first", default="today")
     p.add_argument("--days", type=int, default=7)
+    _add_browser_flag(p)
     p = sub.add_parser("serve", help="serve Retell custom-function requests on the loopback interface; read-only unless booking is approved")
     p.add_argument("--confirm-business-id", required=True)
     p.add_argument("--port", type=int, default=8787)
+    _add_browser_flag(p)
     for flag, text in BOOK_APPROVALS.items():
         p.add_argument("--approve-" + flag, action="store_true", help=text + " (all five together enable booking; none = read-only)")
     p = sub.add_parser("mapping-check", help="validate the reviewed services/eligibility table offline (no browser, no network)")
@@ -225,7 +236,16 @@ def main(
             return EXIT_REFUSED
 
     approvals = getattr(args, "approvals", frozenset())
-    driver = driver_factory(cfg) if driver_factory else SeleniumBooksyDriver(cfg, approvals=approvals, load_timeout_seconds=SERVE_LOAD_TIMEOUT if args.command == "serve" else 40.0)
+    browser = _browser_for(args)
+    if browser == "refused":
+        out("refused: booking is not available on the Playwright adapter (it is read-only). Booking and discovery use --browser selenium.")
+        return EXIT_REFUSED
+    if driver_factory:
+        driver = driver_factory(cfg)
+    elif browser == "playwright":
+        driver = PlaywrightBooksyDriver(cfg, notify=out, load_timeout_seconds=SERVE_LOAD_TIMEOUT if args.command == "serve" else 40.0)
+    else:
+        driver = SeleniumBooksyDriver(cfg, approvals=approvals, load_timeout_seconds=SERVE_LOAD_TIMEOUT if args.command == "serve" else 40.0)
     try:
         return _run(args, cfg, tz, now_fn, driver, out)
     except (ConfigError, DriverError, LedgerError) as exc:
@@ -233,6 +253,18 @@ def main(
         return EXIT_REFUSED
     finally:
         driver.close()
+
+
+def _browser_for(args) -> str:
+    """Which adapter runs this command. The read-only commands (login, find, serve without booking) default to Playwright; everything that
+    clicks or discovers (discover, discover-steps, rehearse, verify, book, and serve WITH booking) stays on Selenium. 'refused' = the user
+    explicitly asked for the read-only adapter on a booking server."""
+    chosen = getattr(args, "browser", None)
+    if args.command == "serve" and getattr(args, "booking_enabled", False):
+        return "refused" if chosen == "playwright" else "selenium"
+    if args.command in ("login", "find", "serve"):
+        return chosen or "playwright"
+    return "selenium"
 
 
 def _run(args, cfg: Config, tz: ZoneInfo, now_fn, driver, out) -> int:

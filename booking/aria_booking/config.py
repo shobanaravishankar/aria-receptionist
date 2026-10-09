@@ -57,10 +57,16 @@ class Config:
     allow_driver_download: bool = False
     sign_in_wait_seconds: int = 600
     mapping_table: Optional[Path] = None  # the reviewed services/eligibility table (local, git-ignored); None = only the verified test service
+    browser_channel: Optional[str] = None  # Playwright only: None = Playwright's own Chromium; "chrome"/"msedge" = that INSTALLED browser (no download)
 
     @property
     def chrome_profile_dir(self) -> Path:
         return self.local_dir / "chrome-profile"
+
+    @property
+    def playwright_profile_dir(self) -> Path:
+        """The Playwright adapter's OWN profile: never the Selenium one, never a personal browser profile."""
+        return self.local_dir / "playwright-profile"
 
     @property
     def ledger_path(self) -> Path:
@@ -104,6 +110,7 @@ class Config:
             allow_driver_download=_bool(env.get("ARIA_ALLOW_DRIVER_DOWNLOAD")),
             sign_in_wait_seconds=_int(env, "ARIA_SIGN_IN_WAIT_SECONDS", base.sign_in_wait_seconds, minimum=10),
             mapping_table=Path(env["ARIA_MAPPING_TABLE"]) if (env.get("ARIA_MAPPING_TABLE") or "").strip() else None,
+            browser_channel=(env.get("ARIA_BROWSER_CHANNEL") or "").strip() or None,
         )
 
     def redacted_summary(self) -> dict:
@@ -128,4 +135,5 @@ class Config:
             "local_dir": str(self.local_dir),
             "mapping_table": str(self.mapping_table) if self.mapping_table else "(none: only the verified test service)",
             "chromedriver": driver_note,
+            "playwright_browser": self.browser_channel or "(Playwright's own Chromium)",
         }

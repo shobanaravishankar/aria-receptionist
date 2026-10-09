@@ -91,6 +91,40 @@ Manual test steps for Shobana (no booking can occur on this line):
    Expect: a yes/no with the technician's name, other free technicians, and a refusal to book that tells the caller to contact the salon.
 4. Read the server log line for each call: `total=... read=... cache_hit=...`. Send those numbers to Sol; they are the first real latency data.
 
+### Browser adapters: Playwright (default, headful, read-only) and Selenium (original)
+
+`login`, `find` and `serve` WITHOUT booking approvals use the Playwright adapter by default (`--browser selenium` selects the original for
+comparison). `discover`, `discover-steps`, `rehearse`, `verify`, `book` and `serve` WITH booking approvals stay on Selenium: the Playwright
+adapter is read-only and **refuses `create_appointment` before any UI action**, and `serve --browser playwright` with booking approvals is refused.
+
+Setup (the operator does these once):
+1. `python -m pip install -r requirements.txt` (installs the pinned `playwright==1.58.0`, `greenlet`, `pyee`; no browser is downloaded).
+2. Pick a browser: EITHER `python -m playwright install chromium` (an explicit download of about 150 MB), OR use the Chrome already installed
+   on this computer by setting `ARIA_BROWSER_CHANNEL=chrome` (or `msedge`). If neither is available the command says so and stops.
+3. `python -m aria_booking login` opens a visible (`headless=False`, stated explicitly) window on the app's OWN profile
+   (`booking/.local/playwright-profile`, git-ignored; never a personal browser profile, never copied cookies or sessions). A PERSON signs in;
+   the tool never types a password and sets nothing that disguises automation. Visibility is not claimed to change how the site treats the
+   browser: the Selenium adapter was also headful.
+4. `python -m aria_booking serve --confirm-business-id <id>` (read-only) keeps that one window open and reads calendars through it.
+
+Changed behaviour to know about: the Playwright window **closes when the command exits** (Selenium deliberately left it open); the sign-in is kept
+in the profile folder, so the next `login`/`serve` reuses it. Closing the window by hand makes the next read open a new one in the same profile.
+
+How it is built (why it is not a mechanical WebDriver swap): Playwright's sync API is not thread-safe, but the voice server reads from many
+threads. So the Playwright instance, the browser context and the page are created, used and closed ONLY on one owner thread
+(`aria_booking/owner_thread.py`); callers submit bounded jobs. Jobs run one at a time; a job that has not started by its deadline is never run;
+a caller that gives up discards the late result, and the voice tools never cache it; nothing starts a browser per request. Waits are Playwright's
+native waits (`goto`, `wait_for_function`, `wait_for_url`), not sleeps; the old fixed 1 s pause after the loading overlay is replaced by "the page
+has stopped changing for 0.3 s". The day-reading and staff-identity rules are the same code for both adapters (`aria_booking/day_reader.py`).
+
+Tests: `tests/test_owner_thread.py` (the threading rules, plain callables), `tests/test_playwright_driver.py` (logic with a fake page),
+`tests/test_playwright_cli.py` (which adapter each command uses) and `tests/test_playwright_smoke.py`: a REAL headful browser against
+SYNTHETIC local pages only (a loopback server; a guard aborts any request to anything but 127.0.0.1), driven through the voice tools' own
+per-read worker threads and real loopback HTTP: launch, repeated reads, many callers, timeout/busy recovery, sign-out, a never-loading page and
+cleanup. It opens a visible window for about 45 s; skip it with `ARIA_SKIP_BROWSER_TESTS=1`. Timings it prints (about 0.45 s per read, of
+which 0.3 s is the settle wait) are LOCAL synthetic-page timings, **not live Booksy latency and not end-to-end voice latency**; the 2-3 s
+meaningful-answer requirement remains unproven.
+
 ### Client history ("when was my last lash appointment?") — separate, offline design only
 
 `aria_booking/history/` and `HISTORY_DESIGN.md`: complete phone number -> exactly one client record -> the latest COMPLETED visit in the

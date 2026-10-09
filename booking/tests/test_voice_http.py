@@ -486,7 +486,7 @@ def test_the_real_driver_is_given_the_approvals_only_when_booking_is_enabled(mon
     monkeypatch.setattr(cli, "SeleniumBooksyDriver", Recording)
     monkeypatch.setattr(retell_http, "make_http_server", lambda endpoint, port, host="127.0.0.1": StubServer())
     lines = []
-    cli.main(SERVE, environ=ENV, clock=lambda: NOW, out=lines.append)
+    cli.main(SERVE + ["--browser", "selenium"], environ=ENV, clock=lambda: NOW, out=lines.append)  # read-only now defaults to Playwright
     cli.main(SERVE + FIVE, environ=ENV, clock=lambda: NOW, out=lines.append)
     assert seen[0] == frozenset() and seen[1] == frozenset(cli.BOOK_APPROVALS)
     assert timeouts == [cli.SERVE_LOAD_TIMEOUT, cli.SERVE_LOAD_TIMEOUT], "the voice server never waits 40 s for a page while a caller is on the line"

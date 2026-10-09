@@ -17,6 +17,7 @@ from typing import Callable, Iterator
 PHASES = frozenset({
     "lock_wait", "read", "cache_hit", "search", "total",
     "navigate", "page_ready", "paint_wait", "capture", "roster", "parse", "click_nav",
+    "launch", "runner_wait",  # Playwright adapter: starting the browser once, and the hand-off to its owner thread
 })
 
 
