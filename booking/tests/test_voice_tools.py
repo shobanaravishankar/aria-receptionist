@@ -526,3 +526,11 @@ def test_a_definite_non_booking_may_be_chosen_again_but_still_needs_a_fresh_conf
     assert again["status"] == "confirmation_required", "the earlier confirmation was used up"
     assert book(tools, option["option_id"], confirmed=True)["status"] == "booked_verified"
     assert len(calendar.saved_by_aria()) == 1
+
+
+def test_a_finished_booking_leaves_no_pending_confirmation_behind(tools, calendar):
+    (option,) = ask(tools, "11:00")["options"]
+    book(tools, option["option_id"], confirmed=False)
+    assert CALL in tools._pending
+    book(tools, option["option_id"], confirmed=True)
+    assert CALL not in tools._pending, "a used confirmation must not linger"

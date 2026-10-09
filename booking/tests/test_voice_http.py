@@ -62,7 +62,9 @@ def test_the_bare_body_hmac_is_not_accepted():
 def test_the_header_must_match_the_official_pattern_in_full():
     body = b"x"
     good = stamped(body)
-    assert not verify_signature(body, good.upper(), KEY, now_ms=NOW_MS), "the SDK accepts lowercase hex only"
+    prefix, digest = good.split("d=")
+    assert not verify_signature(body, prefix + "d=" + digest.upper(), KEY, now_ms=NOW_MS), "the SDK accepts lowercase hex only"
+    assert verify_signature(body, prefix + "d=" + digest, KEY, now_ms=NOW_MS), "(the same signature in lowercase is fine)"
     assert not verify_signature(body, " " + good, KEY, now_ms=NOW_MS)
     assert not verify_signature(body, good + " ", KEY, now_ms=NOW_MS)
     assert not verify_signature(body, good + ",extra=1", KEY, now_ms=NOW_MS)
