@@ -30,6 +30,7 @@ import inspect
 import re
 import secrets
 import threading
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Optional
@@ -42,6 +43,7 @@ from ..catalog.lookup import DEFAULT_CATALOG, Catalog, descriptive_label
 from ..config import Config
 from ..driver import DriverError, SignInRequired
 from ..models import DaySnapshot, ServiceSpec, Slot, add_minutes, to_utc
+from ..timing import PhaseTimer
 from .speech import join_choices, spoken_day, spoken_duration, spoken_price, spoken_slot, spoken_time
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -89,6 +91,9 @@ class VoiceTools:
         horizon_days: int = 60,
         max_bookings_total: int = 3,
         lock_timeout_seconds: float = 20.0,
+        check_search_days: Optional[int] = None,
+        read_cache_seconds: float = 0.0,
+        monotonic: Callable[[], float] = time.monotonic,
     ):
         self.cfg, self.driver, self._service_factory, self._clock = cfg, driver, service_factory, clock
         self.registry = registry if registry is not None else BookableRegistry.from_config(cfg)
@@ -107,6 +112,14 @@ class VoiceTools:
         self._booked_by_call: dict[str, tuple[str, Option, dict]] = {}  # call_id -> (option_id, option, response)
         self._booked_total = 0
         self._tz = ZoneInfo(cfg.timezone)
+        # How many days check_slot looks at when the asked time is not open. 1 = answer from the day already read (no extra page loads);
+        # find_alternatives is the wider search. Default: the same as search_days (the earlier, slower behaviour).
+        self._check_days = max(1, check_search_days) if check_search_days is not None else search_days
+        self._cache_seconds = max(0.0, float(read_cache_seconds))  # 0 = never reuse a read; read-only offers only, never the pre-save check
+        self._day_cache: dict = {}
+        self._mono = monotonic
+        self._timer = PhaseTimer(monotonic)
+        self.last_timing: dict = {}
 
     # ---- helpers ---------------------------------------------------------------------------
     @staticmethod
@@ -151,12 +164,18 @@ class VoiceTools:
     def _with_lock(self, call_id: str, work: Callable[[], dict]) -> dict:
         if not isinstance(call_id, str) or not call_id.strip():
             return _response("needs_clarification", "I could not identify this call, so I can't check the calendar.", reason="no_call_id")
-        if not self._lock.acquire(timeout=self._lock_timeout):
+        timer = PhaseTimer(self._mono)
+        with timer.phase("lock_wait"):
+            acquired = self._lock.acquire(timeout=self._lock_timeout)
+        if not acquired:
+            self.last_timing = timer.as_dict()
             return _response("busy", "I'm still working on the previous request. Please give me a moment and I'll try again.")
+        self._timer = timer
         try:
             self._prune()
             return work()
         finally:
+            self.last_timing = timer.as_dict()
             self._lock.release()
 
     def _set_context(self, call_id: str, service: BookableService, staff: Optional[str]) -> None:
@@ -167,6 +186,39 @@ class VoiceTools:
             self._options = {k: o for k, o in self._options.items() if o.call_id != call_id}
             self._pending.pop(call_id, None)
         self._context[call_id] = context
+
+    def _read(self, day: date) -> tuple[DaySnapshot, float]:
+        """(snapshot, age in seconds). A cached read is reused only while younger than read_cache_seconds, and only for READ-ONLY answers:
+        booking re-reads through BookingService, which never sees this cache. Failures are never cached."""
+        if self._cache_seconds:
+            hit = self._day_cache.get(day)
+            if hit is not None and self._mono() - hit[0] <= self._cache_seconds:
+                return hit[1], self._mono() - hit[0]
+        with self._timer.phase("read"):
+            snapshot = self.driver.read_day(day)
+        inner = getattr(self.driver, "last_read_ms", None)
+        if isinstance(inner, dict):
+            self._timer.merge(inner)
+        if self._cache_seconds:
+            if len(self._day_cache) >= 32:
+                self._day_cache.pop(min(self._day_cache, key=lambda d: self._day_cache[d][0]))
+            self._day_cache[day] = (self._mono(), snapshot)
+        return snapshot, 0.0
+
+    @staticmethod
+    def _stamp_age(response: dict, age: float) -> dict:
+        """A reply built from a reused read says how old it is. Under a few seconds it is simply current."""
+        if age >= 1:
+            response["as_of_seconds"] = int(age)
+        if age >= 15:
+            response["speak"] += f" (That was checked about {int(age)} seconds ago.)"
+        return response
+
+    @property
+    def last_timing_text(self) -> str:
+        """Phase names and durations of the latest request. Metadata only; safe to log."""
+        text = " ".join(f"{name}={ms}ms" for name, ms in self.last_timing.items() if name != "total")
+        return f"total={self.last_timing.get('total', 0)}ms" + (" " + text if text else "")
 
     # ---- choosing the service and technician --------------------------------------------------
     def _select(self, args: dict) -> tuple[Optional[BookableService], Optional[str], Optional[dict]]:
@@ -343,7 +395,8 @@ class VoiceTools:
 
     # ---- finding alternatives --------------------------------------------------------------
     def _alternatives(
-        self, first_day: date, preferred_minutes: int, first_snapshot: Optional[DaySnapshot], service: BookableService, named: Optional[str]
+        self, first_day: date, preferred_minutes: int, first_snapshot: Optional[DaySnapshot], service: BookableService, named: Optional[str],
+        days: Optional[int] = None,
     ) -> tuple[list[Slot], int, Optional[dict]]:
         """(chosen slots, number of days that could not be read, why the FIRST day's technician choice failed, if it did).
         Only slots find_slots returned from a real read."""
@@ -351,13 +404,13 @@ class VoiceTools:
         unreadable = 0
         first_error: Optional[dict] = None
         spec = self._spec(service)
-        for offset in range(self._search_days):
+        for offset in range(self._search_days if days is None else days):
             day = first_day + timedelta(days=offset)
             if offset == 0 and first_snapshot is not None:
                 snapshot = first_snapshot
             else:
                 try:
-                    snapshot = self.driver.read_day(day)
+                    snapshot, _age = self._read(day)
                 except DriverError:
                     unreadable += 1
                     continue
@@ -401,7 +454,9 @@ class VoiceTools:
                 break
         return chosen[: self._max_options], unreadable, first_error
 
-    def _offer(self, call_id: str, slots: list[Slot], unreadable: int, service: BookableService, named: Optional[str], *, lead: str) -> dict:
+    def _offer(
+        self, call_id: str, slots: list[Slot], unreadable: int, service: BookableService, named: Optional[str], *, lead: str, days_searched: Optional[int] = None
+    ) -> dict:
         if not slots:
             if unreadable:
                 return _response(
@@ -410,8 +465,13 @@ class VoiceTools:
                     options=[],
                 )
             who = f" for {named}" if named else ""
-            more = " Would you like me to check other technicians?" if named else " Would you like me to look further ahead?"
-            return _response("no_alternatives", f"{lead}I don't see any other openings{who} in the next few days.{more}", options=[])
+            searched = self._search_days if days_searched is None else days_searched
+            scope = "that day" if searched == 1 else "in the next few days"
+            if named:
+                more = " Would you like me to check other technicians?"
+            else:
+                more = " Would you like me to look at other days?" if searched == 1 else " Would you like me to look further ahead?"
+            return _response("no_alternatives", f"{lead}I don't see any other openings{who} {scope}.{more}", options=[], days_searched=searched)
         options = [self._issue(call_id, s.service.start.astimezone(self._tz), service, s.staff) for s in slots]
         labels = join_choices([o["label"] for o in options])
         if self._read_only:
@@ -474,7 +534,7 @@ class VoiceTools:
         if problem:
             return problem
         try:
-            snapshot = self.driver.read_day(day)
+            snapshot, age = self._read(day)
         except SignInRequired:
             return _response("system_unavailable", "The scheduling system needs attention right now, so I can't check availability. Please contact the salon directly.")
         except DriverError:
@@ -495,25 +555,26 @@ class VoiceTools:
         if free:
             option = self._issue(call_id, start, service, free[0])
             if self._read_only:
-                return _response(
+                return self._stamp_age(_response(
                     "available",
                     f"{spoken_slot(start)} is open for the full {length} of {service.booksy_name}, with {free[0]}. {AVAILABILITY_ONLY_NOTE}",
                     options=[option],
-                )
-            return _response(
+                ), age)
+            return self._stamp_age(_response(
                 "available",
                 f"{spoken_slot(start)} is open for the full {length} of {service.booksy_name}, with {free[0]}. Would you like me to book it?",
                 options=[option],
-            )
+            ), age)
         if unknown:
             return _response("unknown", "I couldn't confirm the calendar for that day, so I can't tell you whether it's free. Let me not guess.")
-        reason, explanation, extra = self._why_not(snapshot, start, service, staffs, named)
-        slots, unreadable, _error = self._alternatives(day, start.hour * 60 + start.minute, snapshot, service, named)
-        offered = self._offer(call_id, slots, unreadable, service, named, lead=explanation + " ")
+        with self._timer.phase("search"):
+            reason, explanation, extra = self._why_not(snapshot, start, service, staffs, named)
+            slots, unreadable, _error = self._alternatives(day, start.hour * 60 + start.minute, snapshot, service, named, days=self._check_days)
+            offered = self._offer(call_id, slots, unreadable, service, named, lead=explanation + " ", days_searched=self._check_days)
         offered.update(extra)
         offered["unavailable_reason"] = reason
         offered["requested"] = start.isoformat()
-        return offered
+        return self._stamp_age(offered, age)
 
     def find_alternatives(self, call_id: str, args: dict) -> dict:
         return self._with_lock(call_id, lambda: self._find_alternatives(call_id, args or {}))

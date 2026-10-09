@@ -121,7 +121,8 @@ class RetellEndpoint:
                 "status": "error", "ok": False,
                 "speak": "I'm not able to check that right now, so I can't confirm anything. Please try again shortly or contact the salon directly.",
             }
-        self._log(f"{route}: {result.get('status')}")
+        timing = getattr(self._tools, "last_timing_text", None)  # phase names and milliseconds only; never arguments or page content
+        self._log(f"{route}: {result.get('status')}" + (f" [{timing}]" if isinstance(timing, str) and timing else ""))
         return 200, result
 
 

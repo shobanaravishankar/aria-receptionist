@@ -20,6 +20,9 @@ from .retell_http import READ_ONLY_ROUTES, ROUTES, RetellEndpoint
 from .tools import VoiceTools
 
 
+READ_CACHE_SECONDS = 30.0  # availability-only demo: a reused read older than 15 s is described as such
+
+
 def build_tools(
     cfg: Config,
     driver: Any,
@@ -30,6 +33,11 @@ def build_tools(
     registry: Optional[BookableRegistry] = None,
     **kwargs: Any,
 ) -> VoiceTools:
+    if not booking_approved:
+        # Availability-only demo: answer the asked day from ONE page read (wider searches are find_alternatives), and let a read be
+        # reused for a short, SAID-ALOUD window. Booking mode keeps the cautious defaults: it never reuses a read.
+        kwargs.setdefault("check_search_days", 1)
+        kwargs.setdefault("read_cache_seconds", READ_CACHE_SECONDS)
     return VoiceTools(
         cfg, driver, service_factory, clock, registry=registry, require_service_id=True,
         booking_enabled=booking_approved, availability_only=not booking_approved, **kwargs,

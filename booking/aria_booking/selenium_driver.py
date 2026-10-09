@@ -30,6 +30,7 @@ from .driver import BeforeSaveError, DriverError, DriverUnavailable, SaveOutcome
 from .models import AppointmentSpec, DaySnapshot
 from .staff_census import LIST_TESTID, confirms_single_staff, parse_staff_list
 from .roster import ROSTER_JS, Roster, parse_roster
+from .timing import PhaseTimer
 
 # Any signed-in, business-scoped page, e.g. https://booksy.com/pro/en-us/<business id>/calendar?...
 # or a dashboard page under the same prefix. The login page has no business id in its path.
@@ -76,7 +77,10 @@ class SeleniumBooksyDriver:
         notify: Callable[[str], None] = print,
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
+        timing_clock: Callable[[], float] = time.monotonic,  # phase timing only; separate so it never consumes the logic clock
         poll_seconds: float = 2.0,
+        ready_poll_seconds: float = 0.25,
+        paint_wait_seconds: float = 1.0,
         approvals: frozenset = frozenset(),
         allowed_services: Optional[frozenset] = None,
     ):
@@ -85,7 +89,9 @@ class SeleniumBooksyDriver:
         self._notify = notify
         self._sleep = sleep
         self._monotonic = monotonic
-        self._poll = poll_seconds
+        self._poll = poll_seconds  # how often to look for a person to finish signing in
+        self._ready_poll = ready_poll_seconds  # how often to look at the loading overlay (a local page check, not a request to Booksy)
+        self._paint_wait = paint_wait_seconds  # pause after the overlay clears; unchanged until a MEASURED run shows it can be shorter
         self._driver: Optional[Any] = None
         self._staff_confirmed: Optional[bool] = None  # decided once per session from the Staff page
         self.approvals = frozenset(approvals)
@@ -94,6 +100,9 @@ class SeleniumBooksyDriver:
         self._appointment_counts: dict = {}  # appointments seen by the latest read of each day
         self._frozen: Optional[str] = None  # set when a window was deliberately left open for a person
         self.last_roster: Optional[Roster] = None  # the roster seen on the latest day read (None if the page had no staff filter)
+        self.last_read_ms: dict = {}  # phase name -> milliseconds for the latest read_day (metadata only; see timing.PHASES)
+        self._timing_clock = timing_clock
+        self._read_timer = PhaseTimer(timing_clock)
 
     # ---- lifecycle -----------------------------------------------------------------------
     def _browser(self):
@@ -175,18 +184,24 @@ class SeleniumBooksyDriver:
     def _load_day(self, day: date):
         """Open that day's calendar and capture it: (raw page nodes, roster or None). Raises if signed out or still loading."""
         browser = self._browser()
-        browser.get(self.cfg.calendar_url(day.isoformat()))
-        ready = self._wait_for_calendar(browser, 40.0)
+        timer = self._read_timer
+        with timer.phase("navigate"):
+            browser.get(self.cfg.calendar_url(day.isoformat()))
+        with timer.phase("page_ready"):
+            ready = self._wait_for_calendar(browser, 40.0)
         if not BUSINESS_PATH_RE.search(browser.current_url or ""):
             raise SignInRequired("the calendar did not open (signed out?); sign in and run again")
         if not ready:
             raise CalendarParseError("the calendar was still loading after 40 seconds")
-        self._sleep(1)  # let the grid finish painting after the overlay clears
-        raw = browser.execute_script(DISCOVERY_JS)
-        try:
-            roster = parse_roster(browser.execute_script(ROSTER_JS))
-        except Exception:  # an unreadable roster is simply no roster: the single-staff path (which fails closed) then decides
-            roster = None
+        with timer.phase("paint_wait"):
+            self._sleep(self._paint_wait)  # let the grid finish painting after the overlay clears
+        with timer.phase("capture"):
+            raw = browser.execute_script(DISCOVERY_JS)
+        with timer.phase("roster"):
+            try:
+                roster = parse_roster(browser.execute_script(ROSTER_JS))
+            except Exception:  # an unreadable roster is simply no roster: the single-staff path (which fails closed) then decides
+                roster = None
         return raw, roster
 
     def read_day(self, day: date, include_notes: bool = False) -> DaySnapshot:
@@ -200,26 +215,36 @@ class SeleniumBooksyDriver:
             raise DriverError("opening appointment details to read notes needs the note-readback approval")
         self._require_not_frozen()
         tz = ZoneInfo(self.cfg.timezone)
+        self._read_timer = PhaseTimer(self._timing_clock)
+        self.last_read_ms = {}
+        try:
+            return self._read_day(day, include_notes, tz)
+        finally:
+            self.last_read_ms = {name: ms for name, ms in self._read_timer.as_dict().items() if name != "total"}
+
+    def _read_day(self, day: date, include_notes: bool, tz) -> DaySnapshot:
         raw, roster = self._load_day(day)
         self.last_roster = roster
         if roster is not None and roster.complete and len(roster.members) >= 2:
             if include_notes:
                 raise DriverError("reading appointment notes is not supported on a multi-staff calendar; refusing to guess whose note is whose")
             self._appointment_counts.pop(day, None)  # creation is single-staff only: no count, so create_appointment refuses
-            return parse_day_multi(normalize_nodes(raw), day=day, tz=tz, roster=roster, captured_at=datetime.now(tz))
+            with self._read_timer.phase("parse"):
+                return parse_day_multi(normalize_nodes(raw), day=day, tz=tz, roster=roster, captured_at=datetime.now(tz))
 
         if self._staff_confirmed is None:
             self.verify_single_staff()  # may raise; once per session. It leaves the day page, so load the day again.
             raw, roster = self._load_day(day)
         browser = self._browser()
-        snapshot = parse_day(
-            normalize_nodes(raw),
-            day=day,
-            tz=tz,
-            staff=self.cfg.staff_name,
-            staff_confirmed=self._staff_confirmed,
-            captured_at=datetime.now(tz),
-        )
+        with self._read_timer.phase("parse"):
+            snapshot = parse_day(
+                normalize_nodes(raw),
+                day=day,
+                tz=tz,
+                staff=self.cfg.staff_name,
+                staff_confirmed=self._staff_confirmed,
+                captured_at=datetime.now(tz),
+            )
         staff_day = snapshot.for_staff(self.cfg.staff_name)
         if staff_day is not None and staff_day.appointments is not None:
             self._appointment_counts[day] = len(staff_day.appointments)
@@ -273,7 +298,7 @@ class SeleniumBooksyDriver:
                 return True
             if self._monotonic() >= deadline:
                 return False
-            self._sleep(self._poll)
+            self._sleep(self._ready_poll)
 
     def discover(self, day_text: str = "today", *, load_timeout: float = 40.0) -> dict[str, Any]:
         browser = self._browser()
