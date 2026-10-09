@@ -26,6 +26,53 @@ account** and nothing else.
 **No real appointment has ever been created by this prototype.** The tests prove the logic and the parser's
 behaviour on captured pages; they do not prove that a live Save behaves as assumed.
 
+## Issue #3: staff availability and latency (read-only voice availability)
+
+Branch `feature/service-booking-workflow`. This is the **availability-only demo**: Aria answers salon service/product questions from
+the website knowledge (no calendar call), and only on an appointment or availability intent does she read the Booksy calendar. It has
+**no write path of any kind**: the booking function is not in the demo's Retell tool file and the server has no booking route, so
+"book it" cannot create, change, hold or cancel anything. A reply never says "booked".
+
+What works (offline, tested; **nothing here has run against a live multi-staff Booksy account**):
+
+| question | how it is answered |
+|---|---|
+| "Is Amy available at 4?" | `check_slot` with the named technician; the name is matched against the live roster (any staff member, not a fixed list); an ambiguous first name asks which one |
+| "Who is available at 4?" | `check_slot` with no name: the first eligible technician who is actually free, plus the others free at that time |
+| "If Amy is busy, what is her next opening?" | the same call, same page read: her openings that day, nearest to the asked time |
+| "If Amy is busy, who else is available?" | other eligible technicians at that time, then `find_alternatives` for a wider search |
+
+Rules kept (fail closed): a staff column is attributed by its own stable staff id (`data-resource`), never by position; a roster that is
+incomplete, a column outside the roster, a duplicate id, a header that names someone else, a cut-short capture, or a header with no
+hours all make that person's availability **unknown**, and unknown is never offered as free. A single-staff identity check taken earlier
+is never reused when the page now contradicts it. Service-to-technician eligibility comes from a human-reviewed mapping table
+(`voice_agent_draft/mapping_table.example.json` shows the shape with synthetic ids); a service without a verified mapping is not offered.
+
+Latency work (structure only): a requested slot is answered from **one** page read; same-day alternatives come from that same read;
+a read may be reused for 30 s on the availability-only line and the reply says how old it is; the loading-overlay check polls every
+0.25 s instead of 2 s; per-phase timing (lock wait, navigate, page ready, paint wait, capture, parse, search, cache hit) is written to the
+server log as names and milliseconds only.
+
+**Measured latency: none yet.** The reported 30-40 second pauses have not been re-measured, and the 2-3 second target is **unproven**.
+The first honest number will come from ONE read-only run with the timing log on (cold and warm, an open slot and a taken slot).
+
+Remaining limitations / blockers:
+- Needs a reviewed live read-only capture before any claim of readiness: the real "Select All" control's test ids, time-off / blocked-time
+  card rendering, and whether the roster ever spans more than one view.
+- The real service-to-staff mapping table has not been written or reviewed; service variant (30 min / 1 h / 1 h 30) structure on the
+  Services tab is unverified, so Aria asks which length rather than inferring it.
+- Retell's signing of custom-function calls is assumed to follow its webhook scheme; if not, requests fail closed (401).
+- Cancel and reschedule are not built. Live real-customer booking stays disabled.
+
+Manual test steps for Shobana (no booking can occur on this line):
+1. From `booking`, run the offline suite: `python -m pytest` (about 1000 tests, no browser, no network).
+2. With the sign-in already done in the test browser, set `ARIA_MAPPING_TABLE` to the reviewed table (check it first with
+   `python -m aria_booking mapping-check`), then start the server: `python -m aria_booking serve --confirm-business-id <id>`
+   with NO `--approve-*` flags (it is availability-only unless all five booking approvals are given).
+3. Ask: "Is <a technician> available Monday at 4 for <a service>?", then "who else is free then?", then "book it".
+   Expect: a yes/no with the technician's name, other free technicians, and a refusal to book that tells the caller to contact the salon.
+4. Read the server log line for each call: `total=... read=... cache_hit=...`. Send those numbers to Sol; they are the first real latency data.
+
 ### The calendar reader's rules (`calendar_parser.py`)
 
 It is a pure function over the page's structure, so it is tested offline against sanitized real captures
