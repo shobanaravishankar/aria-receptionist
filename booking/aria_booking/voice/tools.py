@@ -18,6 +18,7 @@ Honesty rules enforced here, not left to the prompt:
 
 from __future__ import annotations
 
+import hashlib
 import re
 import secrets
 import threading
@@ -85,6 +86,11 @@ class VoiceTools:
     def service(self) -> ServiceSpec:
         c = self.cfg
         return ServiceSpec(c.service_name, c.service_duration_minutes, c.buffer_before_minutes, c.buffer_after_minutes)
+
+    @staticmethod
+    def _owner(call_id: str) -> str:
+        """An opaque, stable token for one call. The raw call id is not stored in the ledger."""
+        return "call-" + hashlib.sha256(call_id.encode("utf-8")).hexdigest()[:16]
 
     def _now(self) -> datetime:
         return self._clock().astimezone(self._tz)
@@ -226,7 +232,7 @@ class VoiceTools:
             if unreadable:
                 return _response(
                     "unknown",
-                    f"{lead}I couldn't read the calendar clearly enough to offer other times. A team member can help, or we can try again in a moment.",
+                    f"{lead}I couldn't read the calendar clearly enough to offer other times. We can try again in a moment, or you can contact the salon directly.",
                     options=[],
                 )
             return _response("no_alternatives", f"{lead}I don't see any other openings in the next few days. Would you like me to look further ahead?", options=[])
@@ -245,7 +251,7 @@ class VoiceTools:
         try:
             snapshot = self.driver.read_day(day)
         except SignInRequired:
-            return _response("system_unavailable", "The scheduling system needs attention right now, so I can't check availability. A team member will follow up.")
+            return _response("system_unavailable", "The scheduling system needs attention right now, so I can't check availability. Please contact the salon directly.")
         except DriverError:
             return _response("unknown", "I couldn't read the calendar clearly, so I can't tell you whether that time is free. Let me not guess.")
         verdict = validate_slot(snapshot, self.service, self.cfg.staff_name, start, now=self._now(), min_lead_minutes=self.cfg.min_lead_minutes)
@@ -286,15 +292,25 @@ class VoiceTools:
         option = self._options.get(str(args.get("option_id") or ""))
         earlier = self._booked_by_call.get(call_id)
         if earlier is not None:
-            earlier_option, _start, result = earlier
+            earlier_option, earlier_start, result = earlier
             if str(args.get("option_id") or "") == earlier_option:
-                return dict(result)  # a repeat or a retry: the earlier answer, never a second save
+                if result["status"] in SUCCESS_STATUSES:
+                    return self._reconfirm(earlier_start, result)  # a repeat may restate success only if it is STILL true
+                return dict(result)  # an unknown outcome stays unknown for the rest of the call
+            if result["status"] in SUCCESS_STATUSES:
+                return _response(
+                    "refused",
+                    "I made one booking earlier in this call, and I can only make one per call. Please contact the salon directly for anything else.",
+                    reason="one_booking_per_call",
+                )
             return _response(
-                "refused", "I can only make one booking per call, and that one is already done. A team member can help with anything else.",
-                reason="one_booking_per_call",
+                "refused",
+                "I couldn't confirm what happened with the earlier booking attempt in this call, so I won't start another. "
+                "Please don't treat anything as booked, and contact the salon directly to check.",
+                reason="earlier_outcome_unknown",
             )
         if not self.booking_enabled:
-            return _response("refused", "Booking isn't switched on for this line right now, so I can't book. A team member will follow up.", reason="booking_disabled")
+            return _response("refused", "Booking isn't switched on for this line right now, so I can't book. Please contact the salon directly.", reason="booking_disabled")
         if option is None or option.call_id != call_id:
             return _response(
                 "invalid_option",
@@ -302,7 +318,7 @@ class VoiceTools:
                 reason="unknown_or_expired_option",
             )
         if self._booked_total >= self._max_bookings_total:
-            return _response("refused", "This test line has reached its booking limit, so I can't book. A team member will follow up.", reason="session_limit")
+            return _response("refused", "This test line has reached its booking limit, so I can't book. Please contact the salon directly.", reason="session_limit")
 
         pending = self._pending.get(call_id)
         confirmed = args.get("confirmed") is True  # exactly the boolean true; "yes", 1 and "true" do not count
@@ -318,10 +334,28 @@ class VoiceTools:
 
         try:
             service = self._service_factory()
-            result = service.book(option.start)
+            result = service.book(option.start, owner=self._owner(call_id))
         except Exception:  # an unforeseen failure after the Save click could have saved; never claim either way
-            return self._remember(call_id, option, _response("needs_review", "Something went wrong and I can't confirm whether the booking went through. A team member will check; please don't rely on it.", reason="exception"))
+            return self._remember(call_id, option, _response("needs_review", "Something went wrong and I can't confirm whether the booking went through. Please don't rely on it, and contact the salon directly to check.", reason="exception"))
         return self._remember_or_return(call_id, option, result)
+
+    def _reconfirm(self, start: datetime, stored: dict) -> dict:
+        """A repeat of a successful booking: re-run the READ-ONLY verifier on the current calendar before repeating the
+        success. If the booking was cancelled, deleted, moved, duplicated, conflicted, or the calendar can't be read,
+        say so honestly. Nothing is ever recreated."""
+        try:
+            verdict = self._service_factory().verify(start)
+        except Exception:
+            verdict = None
+        if verdict is not None and verdict.status is Status.BOOKED_VERIFIED:
+            return dict(stored)
+        return _response(
+            "needs_review",
+            "I made that booking earlier in this call, but when I checked the calendar again I can't confirm it is still there as booked. "
+            "I haven't made another one. Please don't rely on it, and contact the salon directly to check.",
+            reason="reverification_failed",
+            reference=stored.get("reference"),
+        )
 
     def _remember(self, call_id: str, option: Option, response: dict) -> dict:
         self._booked_by_call[call_id] = (option.option_id, option.start, response)
@@ -352,14 +386,14 @@ class VoiceTools:
         if status is Status.UNKNOWN_AVAILABILITY:
             return _response("unknown", "I couldn't confirm the calendar just now, so I haven't booked anything. Let me not guess.", **ref)
         if status is Status.SIGN_IN_REQUIRED:
-            return _response("system_unavailable", "The scheduling system needs attention right now, so I haven't booked anything. A team member will follow up.", **ref)
+            return _response("system_unavailable", "The scheduling system needs attention right now, so I haven't booked anything. Please contact the salon directly.", **ref)
         if status is Status.REJECTED_BY_SAFETY:
-            return _response("refused", "I'm not able to book that one, so nothing was booked. A team member can help.", reason="safety_check", **ref)
+            return _response("refused", "I'm not able to book that one, so nothing was booked. Please contact the salon directly.", reason="safety_check", **ref)
         if status is Status.NOT_SAVED:
             return _response("not_saved", "The booking didn't go through, and nothing was saved. Shall I try again?", **ref)
         # uncertain / mismatch / conflict: something may exist but it cannot be confirmed as the requested booking
         return _response(
             "needs_review",
-            "I can't confirm that booking. Something may or may not have been saved, so please don't treat it as booked. A team member will check it.",
+            "I can't confirm that booking. Something may or may not have been saved, so please don't treat it as booked. Please contact the salon directly to check.",
             **ref,
         )

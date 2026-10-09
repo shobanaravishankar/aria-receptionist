@@ -107,7 +107,7 @@ class RetellEndpoint:
             self._log(f"{route} failed: {type(exc).__name__}")
             return 200, {
                 "status": "error", "ok": False,
-                "speak": "I'm not able to check that right now, so I can't confirm anything. A team member will follow up.",
+                "speak": "I'm not able to check that right now, so I can't confirm anything. Please try again shortly or contact the salon directly.",
             }
         self._log(f"{route}: {result.get('status')}")
         return 200, result

@@ -52,6 +52,10 @@ class Entry:
     # separate from `state`: the state describes the latest judgement, this records that the booking really existed,
     # so a later cancellation or move can never be mistaken for "the save never happened".
     observed: bool = False
+    # Who asked for this booking (an opaque token derived from a voice call id; empty for command-line bookings). It is
+    # what lets a SECOND caller who wants the same slot be told it is taken instead of being handed the first caller's
+    # appointment. Durable, so it survives a restart and an unknown save result.
+    owner: str = ""
 
 
 def request_key(business_id: str, staff: str, service: str, start: datetime, duration_minutes: int) -> str:
@@ -127,9 +131,11 @@ class Ledger:
         data[entry.key] = asdict(entry)
         self._save(data)
 
-    def create(self, key: str, ref: str, staff: str, service: str, start: str, end: str, state: str, detail: str = "") -> Entry:
+    def create(
+        self, key: str, ref: str, staff: str, service: str, start: str, end: str, state: str, detail: str = "", owner: str = ""
+    ) -> Entry:
         stamp = self._now_text()
-        entry = Entry(key, ref, state, staff, service, start, end, stamp, stamp, detail)
+        entry = Entry(key, ref, state, staff, service, start, end, stamp, stamp, detail, owner=owner)
         self.put(entry)
         return entry
 

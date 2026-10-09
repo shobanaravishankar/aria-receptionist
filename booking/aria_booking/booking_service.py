@@ -200,7 +200,12 @@ class BookingService:
         return results
 
     # ---- booking -------------------------------------------------------------------------
-    def book(self, start: datetime) -> BookingResult:
+    def book(self, start: datetime, *, owner: Optional[str] = None) -> BookingResult:
+        """Book one slot. ``owner`` (voice calls) is an opaque token for the asker: a slot whose ledger entry belongs to
+        someone else is reported as taken, never as "already booked" for this asker. ``None`` (command line) keeps the
+        single-operator behaviour.
+        """
+
         cfg = self.cfg
         key = request_key(cfg.business_id, cfg.staff_name, cfg.service_name, start, cfg.service_duration_minutes)
         ref = ref_from_key(key)
@@ -221,6 +226,18 @@ class BookingService:
 
         with self.ledger.locked():
             existing = self.ledger.get(key)
+            if (
+                existing is not None
+                and owner is not None
+                and existing.owner != owner
+                and not (existing.state == State.FAILED and not existing.observed)
+            ):
+                # Another asker (or the command line) already holds, or may hold, this slot. Report it taken. Never
+                # claim it as this asker's booking, and never create a second appointment for the same slot.
+                return BookingResult(
+                    Status.SLOT_UNAVAILABLE, "that time was taken by an earlier booking attempt", ref,
+                    ("this slot belongs to a different booking request",),
+                )
             if existing is not None:
                 early = self._handle_existing(existing, spec, ref, key)
                 if early is not None:
@@ -249,7 +266,7 @@ class BookingService:
 
             # 3. Record intent BEFORE acting, so a crash leaves evidence.
             end = spec.interval.end
-            self.ledger.create(key, ref, cfg.staff_name, cfg.service_name, start.isoformat(), end.isoformat(), State.SAVING)
+            self.ledger.create(key, ref, cfg.staff_name, cfg.service_name, start.isoformat(), end.isoformat(), State.SAVING, owner=owner or "")
 
             # 4. Save.
             try:
