@@ -541,3 +541,26 @@ def test_the_live_adapter_services_can_only_be_widened_explicitly():
 def test_the_real_registry_offers_only_the_verified_test_service():
     real = BookableRegistry.from_config(Config(business_id="1234567"))
     assert real.ids() == [DEFAULT_SERVICE_ID] and staff_key("  Shobs ") in real.get(DEFAULT_SERVICE_ID).eligible_staff
+
+
+# ---------------------------------------------------------------- gaps found by mutation checks
+
+
+def test_when_nobody_can_take_it_the_reason_closest_to_bookable_is_given(world):
+    tools, calendar, *_ = world
+    other_day = DAY + timedelta(days=1)
+    calendar.set_staff_hours("Ben", other_day, 9, 20)  # Ana and Cara do not work that day; Ben does but is busy at 11
+    calendar.add_staff_appointment("Ben", other_day, (11, 0), (12, 0))
+    resp = ask(tools, SWEDISH, "11:00", day=other_day)
+    assert resp["unavailable_reason"] == "occupied", "a technician who works but is busy beats 'not working'"
+    assert "already taken" in resp["speak"]
+
+
+def test_a_start_shared_by_several_free_technicians_is_assigned_to_the_first_eligible_one(world):
+    tools, *_ = world
+    resp = tools.find_alternatives(CALL, {"service_id": SWEDISH, "date": DAY.isoformat(), "time": "11:00"})
+    assert resp["status"] == "alternatives" and {o["technician"] for o in resp["options"]} == {"Ana"}, "Ana and Ben are both free; Ana is first"
+    ana_busy = world[1]
+    ana_busy.add_staff_appointment("Ana", DAY, (9, 0), (20, 0))
+    resp2 = tools.find_alternatives("caller_B", {"service_id": SWEDISH, "date": DAY.isoformat(), "time": "11:00"})
+    assert {o["technician"] for o in resp2["options"]} == {"Ben"}, "with Ana busy the same starts go to Ben"

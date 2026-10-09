@@ -205,3 +205,15 @@ def test_bare_numbers_in_a_request_are_lengths_not_service_words():
     assert r.kind == "variants" and [i.duration_minutes for i in r.items] == [30, 60, 90] and not r.hint_unmatched
     assert CAT.resolve("hybrid 3d 5d full set").kind == "variants", "digits inside a real service name still match"
     assert CAT.resolve("60").kind == "unknown", "a number alone names no service"
+
+
+def test_the_prompts_bookable_list_names_only_verified_services():
+    from aria_booking.catalog.render import render_knowledge
+
+    registry = BookableRegistry([
+        BookableService("verified-one", "Verified One", 60, verified=True),
+        BookableService("not-verified", "Not Verified", 45, verified=False),
+    ])
+    text = render_knowledge(registry=registry)
+    assert "`verified-one`" in text and "not-verified" not in text and "Not Verified" not in text
+    assert "Nothing. Online booking is not available" in render_knowledge(registry=None)

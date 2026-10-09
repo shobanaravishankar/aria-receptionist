@@ -468,6 +468,8 @@ def test_serve_with_all_five_approvals_says_booking_is_enabled(monkeypatch):
     monkeypatch.setattr(retell_http, "make_http_server", fake_make)
     code, text = run(SERVE + FIVE, ENV)
     assert code == cli.EXIT_OK and "BOOKING ENABLED" in text and captured["tools"].booking_enabled is True
+    assert captured["tools"]._require_service_id is True, "the served tools never fall back to a default service"
+    assert captured["tools"].registry.ids() == ["test-aria-salon"], "only the verified test service is bookable through serve"
     assert KEY not in text
 
 
