@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 import shutil
 import time
+from dataclasses import replace
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from typing import Any, Callable, Optional
@@ -229,13 +230,17 @@ class SeleniumBooksyDriver:
         self._single_staff_id = None
         self._appointment_counts.clear()  # a count taken under the old identity must never let a save proceed
 
-    def _check_single_staff_identity(self, nodes, roster) -> None:
+    def _check_single_staff_identity(self, nodes, roster) -> str:
         """The single-staff path trusts a census taken ONCE. Before reusing it, make sure the page in front of us does not contradict it.
 
         Refuses (and forgets the census, so the next read re-checks the Staff page) when: the staff filter exists but was not read as exactly
         one complete entry; that entry is not the configured staff member or not the id seen before; the single column carries a different
         id than the filter or than before; or a header names someone else. A page with no filter and no ids at all is the legacy case the
-        census was proven on, and keeps working."""
+        census was proven on, and keeps working.
+
+        Returns the staff id VERIFIED for the snapshot: the id of a complete one-member filter whose name is the configured staff member
+        (and which any column id on the page agrees with). Without that it returns "", i.e. unknown; a column id seen only on the page is
+        remembered to detect later changes but is not promoted to a verified id."""
         configured = " ".join(self.cfg.staff_name.casefold().split())
         roster_id: Optional[str] = None
         if roster is not None:
@@ -255,7 +260,7 @@ class SeleniumBooksyDriver:
                 raise CalendarParseError("a column header names someone other than the configured staff member; refusing to reuse an earlier single-staff check")
         seen = set(ids)
         if len(seen) > 1:
-            return  # several columns: parse_day refuses with its own message
+            return ""  # several columns: parse_day refuses with its own message
         known = {value for value in (roster_id, self._single_staff_id) if value}
         if (seen and known and seen != known) or (roster_id and self._single_staff_id and roster_id != self._single_staff_id):
             self._forget_single_staff()
@@ -263,6 +268,7 @@ class SeleniumBooksyDriver:
         current = roster_id or next(iter(seen), None)
         if current:
             self._single_staff_id = current
+        return roster_id or ""
 
     def _read_day(self, day: date, include_notes: bool, tz) -> DaySnapshot:
         raw, roster = self._load_day(day)
@@ -275,11 +281,11 @@ class SeleniumBooksyDriver:
             with self._read_timer.phase("parse"):
                 return parse_day_multi(normalize_nodes(raw), day=day, tz=tz, roster=roster, captured_at=datetime.now(tz))
 
-        self._check_single_staff_identity(normalize_nodes(raw), roster)
+        verified_id = self._check_single_staff_identity(normalize_nodes(raw), roster)
         if self._staff_confirmed is None:
             self.verify_single_staff()  # may raise; once per session. It leaves the day page, so load the day again.
             raw, roster = self._load_day(day)
-            self._check_single_staff_identity(normalize_nodes(raw), roster)
+            verified_id = self._check_single_staff_identity(normalize_nodes(raw), roster)
         browser = self._browser()
         with self._read_timer.phase("parse"):
             snapshot = parse_day(
@@ -290,6 +296,8 @@ class SeleniumBooksyDriver:
                 staff_confirmed=self._staff_confirmed,
                 captured_at=datetime.now(tz),
             )
+        if verified_id:  # the single-staff parser yields exactly one staff day
+            snapshot = replace(snapshot, staff_days=tuple(replace(day_, staff_id=verified_id) for day_ in snapshot.staff_days))
         staff_day = snapshot.for_staff(self.cfg.staff_name)
         if staff_day is not None and staff_day.appointments is not None:
             self._appointment_counts[day] = len(staff_day.appointments)

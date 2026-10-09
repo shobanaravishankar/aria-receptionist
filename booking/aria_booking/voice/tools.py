@@ -193,6 +193,7 @@ class VoiceTools:
         if self._cache_seconds:
             hit = self._day_cache.get(day)
             if hit is not None and self._mono() - hit[0] <= self._cache_seconds:
+                self._timer.add("cache_hit", 0)  # logged as cache_hit, with no read= for it: warm latency is not Booksy latency
                 return hit[1], self._mono() - hit[0]
         with self._timer.phase("read"):
             snapshot = self.driver.read_day(day)
@@ -397,10 +398,11 @@ class VoiceTools:
     def _alternatives(
         self, first_day: date, preferred_minutes: int, first_snapshot: Optional[DaySnapshot], service: BookableService, named: Optional[str],
         days: Optional[int] = None,
-    ) -> tuple[list[Slot], int, Optional[dict]]:
-        """(chosen slots, number of days that could not be read, why the FIRST day's technician choice failed, if it did).
-        Only slots find_slots returned from a real read."""
+    ) -> tuple[list[Slot], int, Optional[dict], float]:
+        """(chosen slots, number of days that could not be read, why the FIRST day's technician choice failed, if it did, and the age in
+        seconds of the OLDEST read this call itself made or reused). Only slots find_slots returned from a real read."""
         chosen: list[Slot] = []
+        oldest = 0.0  # the first day's snapshot, when given, was read by the caller, who knows its age
         unreadable = 0
         first_error: Optional[dict] = None
         spec = self._spec(service)
@@ -410,10 +412,11 @@ class VoiceTools:
                 snapshot = first_snapshot
             else:
                 try:
-                    snapshot, _age = self._read(day)
+                    snapshot, age = self._read(day)
                 except DriverError:
                     unreadable += 1
                     continue
+                oldest = max(oldest, age)
             staffs, error = self._eligible_staff(snapshot, service, named)
             if error is not None:
                 if error["status"] == "unknown":
@@ -452,7 +455,7 @@ class VoiceTools:
                 chosen.append(min(slots, key=lambda s: abs(minutes(s) - preferred_minutes)))
             if len(chosen) >= self._max_options:
                 break
-        return chosen[: self._max_options], unreadable, first_error
+        return chosen[: self._max_options], unreadable, first_error, oldest
 
     def _offer(
         self, call_id: str, slots: list[Slot], unreadable: int, service: BookableService, named: Optional[str], *, lead: str, days_searched: Optional[int] = None
@@ -569,12 +572,14 @@ class VoiceTools:
             return _response("unknown", "I couldn't confirm the calendar for that day, so I can't tell you whether it's free. Let me not guess.")
         with self._timer.phase("search"):
             reason, explanation, extra = self._why_not(snapshot, start, service, staffs, named)
-            slots, unreadable, _error = self._alternatives(day, start.hour * 60 + start.minute, snapshot, service, named, days=self._check_days)
+            slots, unreadable, _error, alt_age = self._alternatives(
+                day, start.hour * 60 + start.minute, snapshot, service, named, days=self._check_days
+            )
             offered = self._offer(call_id, slots, unreadable, service, named, lead=explanation + " ", days_searched=self._check_days)
         offered.update(extra)
         offered["unavailable_reason"] = reason
         offered["requested"] = start.isoformat()
-        return self._stamp_age(offered, age)
+        return self._stamp_age(offered, max(age, alt_age))
 
     def find_alternatives(self, call_id: str, args: dict) -> dict:
         return self._with_lock(call_id, lambda: self._find_alternatives(call_id, args or {}))
@@ -588,10 +593,10 @@ class VoiceTools:
             return problem
         self._set_context(call_id, service, named)
         preferred = (start.hour * 60 + start.minute) if start else 10 * 60
-        slots, unreadable, first_error = self._alternatives(day, preferred, None, service, named)
+        slots, unreadable, first_error, oldest = self._alternatives(day, preferred, None, service, named)
         if not slots and first_error is not None and first_error["status"] == "staff_unavailable":
-            return first_error
-        return self._offer(call_id, slots, unreadable, service, named, lead="")
+            return self._stamp_age(first_error, oldest)
+        return self._stamp_age(self._offer(call_id, slots, unreadable, service, named, lead=""), oldest)
 
     # ---- the one writer ---------------------------------------------------------------------------
     def book_slot(self, call_id: str, args: dict) -> dict:

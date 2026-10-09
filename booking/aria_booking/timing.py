@@ -15,7 +15,7 @@ from typing import Callable, Iterator
 
 # The only words a phase may be called. Anything else is refused, so a careless call can never smuggle content into a log.
 PHASES = frozenset({
-    "lock_wait", "read", "search", "total",
+    "lock_wait", "read", "cache_hit", "search", "total",
     "navigate", "page_ready", "paint_wait", "capture", "roster", "parse", "click_nav",
 })
 

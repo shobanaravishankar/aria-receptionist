@@ -169,7 +169,7 @@ def test_a_roster_of_one_keeps_using_the_live_proven_single_staff_path():
     browser = Browser(legacy_raw(load("empty_day_mon_12_oct.json")), roster_items([("900009", "Shobs")]), staff_nodes=load("staff_page_one_member.json"))
     snap = make(browser).read_day(DAY)
     (sd,) = snap.staff_days
-    assert sd.staff == "Shobs" and sd.staff_id == "" and browser.clicks == ["staff"]
+    assert sd.staff == "Shobs" and sd.staff_id == "900009" and browser.clicks == ["staff"], "a complete one-person filter vouches for the id"
     assert [w.label() for w in sd.working] == ["10:00-19:00"]
 
 
