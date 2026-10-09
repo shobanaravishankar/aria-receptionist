@@ -89,3 +89,20 @@ def test_the_prompt_is_clearly_test_only_and_carries_no_real_spa_information():
 def test_the_request_size_limit_leaves_room_for_a_long_transcript():
     """Retell sends the transcript so far in `call`; a very long call must not be refused for size alone."""
     assert MAX_BODY_BYTES >= 256 * 1024
+
+
+def test_the_handover_checklist_names_the_reviewed_commit_and_separates_permission_from_verification():
+    text = (DRAFT / "SUPERVISED_TEST_CHECKLIST.md").read_text(encoding="utf-8")
+    assert "f5f531263a0d162840362678d3101346be827e4a" in text and "525 passed" in text
+    assert "Permission is not verification" in text and "Authorization versus verification" in text
+    assert "**not yet; the main open question**" in text
+    assert text.count("- [ ]") >= 15 and "- [x]" not in text, "no step may be pre-ticked as done"
+    for secret_shape in (r"key_[A-Za-z0-9]{8,}", r"Bearer (?!<)[A-Za-z0-9._-]{8,}", r"\+?1?[ -]?\(?\d{3}\)?[ -]\d{3}[ -]\d{4}", r"https://(?!<)[a-z0-9.-]+\.[a-z]{2,}/"):
+        assert not re.search(secret_shape, text), secret_shape
+    assert "Do not ask for it again" in text or "do not ask for it again" in text.lower()
+
+
+def test_the_draft_readme_no_longer_says_nothing_is_authorized():
+    text = (DRAFT / "README.md").read_text(encoding="utf-8")
+    assert "No tunnel, public endpoint, credential or live Retell change is authorized yet" not in text
+    assert "Authorized" in text and "Verified:" in text and "none of it yet" in text

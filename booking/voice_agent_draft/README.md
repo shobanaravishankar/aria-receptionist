@@ -43,9 +43,17 @@ python -m aria_booking serve --confirm-business-id <id> --approve-save --approve
 - **Cost:** the account balance was reported as $1.42 and no top-up is authorized. Offline tests cost nothing. A live test call is billed per minute, so
   plan very short supervised calls only after review.
 
-## Open items before anything is connected
+## Status: authorization versus verification
 
-1. Hosting/tunnel decision (Shobana). No tunnel, public endpoint, credential or live Retell change is authorized yet.
-2. A dedicated test agent or unpublished draft for `prompt_test_only.md`, and where its three functions are added.
-3. Real timings of a live read and a live booking, to set the function timeouts (the values in `tools.json` are estimates).
-4. Sol's independent review of this branch.
+- **Authorized** (per Sol's direction `aria-retell-supervised-setup-direction-20261008-01`, relaying Shobana, with her present): connecting Retell and a
+  supervised demo, done by Sol: the reviewed server READ-ONLY, a temporary authenticated HTTPS tunnel, a separate test-only agent; then, only after
+  the read-only path works, one explicitly confirmed fictional booking.
+- **Verified:** none of it yet. This folder is still drafts; the previous note that nothing was authorized is superseded, but "authorized" is not "done".
+- The step-by-step plan, stop conditions and the authorization-versus-verification table are in `SUPERVISED_TEST_CHECKLIST.md`.
+
+## Still open
+
+1. Whether Retell signs *custom-function* calls with the same `v=<ms>,d=<hex>` scheme as webhooks (the main unknown; the server fails closed with 401 if not).
+2. Real timings of a live read and a live booking, to set the function timeouts (the values in `tools.json` are estimates).
+3. The hold cutoff and the owner SMS alert (mock only, separate, pending; no delivery exists).
+4. Cost: the account balance was reported as $1.42 and no top-up is authorized.
