@@ -91,6 +91,13 @@ Manual test steps for Shobana (no booking can occur on this line):
    Expect: a yes/no with the technician's name, other free technicians, and a refusal to book that tells the caller to contact the salon.
 4. Read the server log line for each call: `total=... read=... cache_hit=...`. Send those numbers to Sol; they are the first real latency data.
 
+### Client history ("when was my last lash appointment?") — separate, offline design only
+
+`aria_booking/history/` and `HISTORY_DESIGN.md`: complete phone number -> exactly one client record -> the latest COMPLETED visit in the
+asked service category (any category on the menu, not lash-only). Phone matching locates a record; it is not proof of identity. Tested with
+fictional records only. **Not connected to the voice endpoint or any Retell tool file, and no adapter for Booksy's client screens exists**:
+their structure has not been captured. `HISTORY_DESIGN.md` lists the read-only evidence needed first.
+
 ### The calendar reader's rules (`calendar_parser.py`)
 
 It is a pure function over the page's structure, so it is tested offline against sanitized real captures
