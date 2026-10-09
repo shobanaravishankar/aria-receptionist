@@ -77,7 +77,10 @@ class RetellEndpoint:
         if not api_key:
             raise ValueError("a Retell API key is required to verify requests; refusing to run without one")
         self._tools, self._key, self._bearer, self._now, self._log = tools, api_key, bearer_token, now_ms, log
-        self._routes = dict(ROUTES if routes is None else routes)
+        can_write = bool(getattr(tools, "booking_enabled", True))  # tools without the flag (test doubles) are treated as full
+        self._routes = dict(routes if routes is not None else (ROUTES if can_write else READ_ONLY_ROUTES))
+        if not can_write and "book_slot" in self._routes.values():
+            raise ValueError("a booking route cannot be served by tools that cannot write; use aria_booking.voice.launch.build_endpoint")
 
     def handle(self, method: str, path: str, headers: Mapping[str, str], raw_body: bytes) -> tuple[int, dict]:
         """(http status, JSON body). Order matters: nothing is parsed or executed before authentication."""

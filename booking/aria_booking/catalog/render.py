@@ -18,7 +18,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 from .bookable import BookableRegistry
-from .lookup import DEFAULT_CATALOG, Catalog
+from .lookup import DEFAULT_CATALOG, Catalog, descriptive_label
 from .website_data import NOT_PUBLISHED, SITE, duration_label
 
 CATEGORY_TITLES = OrderedDict([
@@ -56,6 +56,12 @@ def _short(minutes) -> str:
 
 
 def _variant_text(v) -> str:
+    label = descriptive_label(v)  # '2-week refill', 'initial set': equal lengths and prices must still be told apart
+    text = _variant_core(v)
+    return f"{label}: {text}" if label else text
+
+
+def _variant_core(v) -> str:
     if v.price_usd is None:
         text = f"{_short(v.duration_minutes)}, price not listed"
     elif v.category == "membership":

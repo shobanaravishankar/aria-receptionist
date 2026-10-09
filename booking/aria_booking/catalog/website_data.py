@@ -127,16 +127,16 @@ BODY_SCRUBS = _single("body-scrub", "body-scrub", [
 
 _LASH = "eyelash-extensions"
 EYELASHES = (
-    [_item("lash", _LASH, "Classic Full Set", 60, 99, "One extension per natural lash for added length and curl.", key="full-set")]
+    [_item("lash", _LASH, "Classic Full Set", 60, 99, "One extension per natural lash for added length and curl.", key="full-set", variant="initial set")]
     + [_item("lash", _LASH, "Classic Full Set", None, p, "Refill for a Classic Full Set.", key=f"refill-{w}w", variant=f"{w}-week refill",
              notes="Refill duration is not published.") for w, p in ((2, 55), (3, 70))]
-    + [_item("lash", _LASH, "Glamour Full Set", 75, 149, "Dense volume fans for a bold, dramatic, lightweight look (180 lashes).", key="full-set")]
+    + [_item("lash", _LASH, "Glamour Full Set", 75, 149, "Dense volume fans for a bold, dramatic, lightweight look (180 lashes).", key="full-set", variant="initial set")]
     + [_item("lash", _LASH, "Glamour Full Set", m, p, "Refill for a Glamour Full Set.", key=f"refill-{w}w", variant=f"{w}-week refill")
        for w, m, p in ((2, 60, 75), (3, 60, 90), (4, 75, 105))]
-    + [_item("lash", _LASH, "Natural Full Set", 75, 129, "A subtle, lightweight style that looks slightly longer and fuller (140 lashes).", key="full-set")]
+    + [_item("lash", _LASH, "Natural Full Set", 75, 129, "A subtle, lightweight style that looks slightly longer and fuller (140 lashes).", key="full-set", variant="initial set")]
     + [_item("lash", _LASH, "Natural Full Set", m, p, "Refill for a Natural Full Set.", key=f"refill-{w}w", variant=f"{w}-week refill")
        for w, m, p in ((2, 60, 65), (3, 60, 80), (4, 75, 95))]
-    + [_item("lash", _LASH, "Hybrid 3D / 5D Full Set", 90, 179, "Classic extensions combined with 3D-5D volume fans for a textured, fuller result.", key="full-set")]
+    + [_item("lash", _LASH, "Hybrid 3D / 5D Full Set", 90, 179, "Classic extensions combined with 3D-5D volume fans for a textured, fuller result.", key="full-set", variant="initial set")]
     + [_item("lash", _LASH, "Hybrid 3D / 5D Full Set", m, p, "Refill for a Hybrid 3D / 5D Full Set.", key=f"refill-{w}w", variant=f"{w}-week refill")
        for w, m, p in ((2, 60, 90), (3, 60, 110), (4, 75, 125))]
     + _single("lash", _LASH, [

@@ -384,10 +384,13 @@ def test_an_option_expires(tools, calendar, clock):
 
 def test_booking_can_be_switched_off(cfg, calendar, clock, ledger):
     tools = make_tools(cfg, calendar, clock, ledger, booking_enabled=False)
-    (option,) = ask(tools, "11:00")["options"]
-    resp = book(tools, option["option_id"], confirmed=False)
+    offered = ask(tools, "11:00")
+    assert offered["status"] == "available", "checking still works read-only"
+    (option,) = offered["options"]
+    assert "option_id" not in option, "a server that cannot write issues no id that could confirm a booking"
+    assert "would you like me to book" not in offered["speak"].lower() and "can't book it" in offered["speak"]
+    resp = tools.book_slot(CALL, {"option_id": "opt_anything", "confirmed": True})
     assert resp["status"] == "refused" and resp["reason"] == "booking_disabled" and calendar.create_calls == []
-    assert ask(tools, "11:00")["status"] == "available", "checking still works read-only"
 
 
 def test_a_server_wide_booking_cap_is_enforced(cfg, calendar, clock, ledger):

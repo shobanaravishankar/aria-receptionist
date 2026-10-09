@@ -25,6 +25,12 @@ class CatalogItem:
     original_price_usd: Optional[int] = None  # a struck-through price the page shows, if any
     notes: str = ""  # conditions or inconsistencies on the page, stated honestly
 
+    @property
+    def variant_label(self) -> str:
+        """The variant part of the name ('2-week refill', '1 hour'), or '' for an item that has none."""
+        prefix = self.family + ", "
+        return self.name[len(prefix):] if self.name.startswith(prefix) else ""
+
     def to_public(self) -> dict:
         """What a tool may return about this item. Informational facts only."""
         data = {

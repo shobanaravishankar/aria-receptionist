@@ -38,7 +38,7 @@ from zoneinfo import ZoneInfo
 from ..availability import find_slots, validate_slot
 from ..booking_service import BookingResult, BookingService, Status
 from ..catalog.bookable import BookableRegistry, BookableService, staff_key
-from ..catalog.lookup import DEFAULT_CATALOG, Catalog
+from ..catalog.lookup import DEFAULT_CATALOG, Catalog, descriptive_label
 from ..config import Config
 from ..driver import DriverError, SignInRequired
 from ..models import DaySnapshot, ServiceSpec, Slot, add_minutes, to_utc
@@ -95,6 +95,7 @@ class VoiceTools:
         self.catalog, self._require_verified, self._require_service_id = catalog, require_verified, require_service_id
         self.availability_only = availability_only
         self.booking_enabled = booking_enabled and not availability_only  # availability-only can never write
+        self._read_only = not self.booking_enabled  # no writer here: never invite a booking, never issue an id that could confirm one
         self._option_ttl = timedelta(seconds=option_ttl_seconds)
         self._confirm_ttl = timedelta(seconds=confirm_ttl_seconds)
         self._search_days, self._max_options, self._horizon_days = search_days, max_options, horizon_days
@@ -142,7 +143,7 @@ class VoiceTools:
             "price_usd": option.price_usd,
             "technician": staff,
         }
-        if self.availability_only:
+        if self._read_only:
             return view  # an availability answer, not an offer: no id is issued, so there is nothing to confirm or book
         self._options[option.option_id] = option
         return {"option_id": option.option_id, **view}
@@ -208,6 +209,7 @@ class VoiceTools:
         mapped = self.registry.for_catalog_item(item.item_id)
         return {
             "service_id": item.item_id, "name": item.name, "duration_minutes": item.duration_minutes, "price_usd": item.price_usd,
+            **({"variant": descriptive_label(item)} if descriptive_label(item) else {}),
             "bookable": bool(mapped and (mapped.verified or not self._require_verified)),
             **({"bookable_service_id": mapped.service_id} if mapped and (mapped.verified or not self._require_verified) else {}),
         }
@@ -412,7 +414,7 @@ class VoiceTools:
             return _response("no_alternatives", f"{lead}I don't see any other openings{who} in the next few days.{more}", options=[])
         options = [self._issue(call_id, s.service.start.astimezone(self._tz), service, s.staff) for s in slots]
         labels = join_choices([o["label"] for o in options])
-        if self.availability_only:
+        if self._read_only:
             return _response("alternatives", f"{lead}I do have {labels} open. {AVAILABILITY_ONLY_NOTE}", options=options)
         return _response("alternatives", f"{lead}I do have {labels}. Which would you prefer?", options=options)
 
@@ -437,7 +439,11 @@ class VoiceTools:
                 families=families, items=[self._lite(i) for i in resolution.items][:8],
             )
         if resolution.kind == "variants":
-            parts = [f"{spoken_duration(i.duration_minutes) if i.duration_minutes else 'no listed length'} for {spoken_price(i.price_usd)}" for i in resolution.items]
+            parts = [
+                (f"{descriptive_label(i)}: " if descriptive_label(i) else "")
+                + f"{spoken_duration(i.duration_minutes) if i.duration_minutes else 'no listed length'} for {spoken_price(i.price_usd)}"
+                for i in resolution.items
+            ]
             family = resolution.items[0].family
             prefix = f"I don't see that length for {family}. " if resolution.hint_unmatched else ""
             return _response(
@@ -488,7 +494,7 @@ class VoiceTools:
         length = spoken_duration(service.duration_minutes)
         if free:
             option = self._issue(call_id, start, service, free[0])
-            if self.availability_only:
+            if self._read_only:
                 return _response(
                     "available",
                     f"{spoken_slot(start)} is open for the full {length} of {service.booksy_name}, with {free[0]}. {AVAILABILITY_ONLY_NOTE}",

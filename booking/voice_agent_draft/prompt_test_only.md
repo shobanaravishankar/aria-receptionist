@@ -163,10 +163,10 @@ Source: the salon's official website, read on 2026-10-08. Prices and lengths are
 - Lavender Sugar Body Scrub with Seaweed Mask: 1 hr $119. A mineral-rich seaweed treatment followed by a 20-minute wrap meant to detoxify and nourish. Note: The page's name and description for this item disagree (the description covers only the seaweed treatment); confirm with the salon.
 
 **Eyelashes and brows**
-- Classic Full Set: 1 hr $99 | length not listed $55 | length not listed $70. One extension per natural lash for added length and curl. Note: Refill duration is not published.
-- Glamour Full Set: 1 hr 15 min $149 | 1 hr $75 | 1 hr $90 | 1 hr 15 min $105. Dense volume fans for a bold, dramatic, lightweight look (180 lashes).
-- Natural Full Set: 1 hr 15 min $129 | 1 hr $65 | 1 hr $80 | 1 hr 15 min $95. A subtle, lightweight style that looks slightly longer and fuller (140 lashes).
-- Hybrid 3D / 5D Full Set: 1 hr 30 min $179 | 1 hr $90 | 1 hr $110 | 1 hr 15 min $125. Classic extensions combined with 3D-5D volume fans for a textured, fuller result.
+- Classic Full Set: initial set: 1 hr $99 | 2-week refill: length not listed $55 | 3-week refill: length not listed $70. One extension per natural lash for added length and curl. Note: Refill duration is not published.
+- Glamour Full Set: initial set: 1 hr 15 min $149 | 2-week refill: 1 hr $75 | 3-week refill: 1 hr $90 | 4-week refill: 1 hr 15 min $105. Dense volume fans for a bold, dramatic, lightweight look (180 lashes).
+- Natural Full Set: initial set: 1 hr 15 min $129 | 2-week refill: 1 hr $65 | 3-week refill: 1 hr $80 | 4-week refill: 1 hr 15 min $95. A subtle, lightweight style that looks slightly longer and fuller (140 lashes).
+- Hybrid 3D / 5D Full Set: initial set: 1 hr 30 min $179 | 2-week refill: 1 hr $90 | 3-week refill: 1 hr $110 | 4-week refill: 1 hr 15 min $125. Classic extensions combined with 3D-5D volume fans for a textured, fuller result.
 - Eyelash Tinting: 30 min $39. A gentle dye darkens natural lashes so they look more defined.
 - Eyebrow Tinting: 30 min $39. A semi-permanent dye adds color and fills in sparse areas of the brows.
 - Eyelash Lifting: 45 min $79. A semi-permanent treatment that curls natural lashes from the base for several weeks.
