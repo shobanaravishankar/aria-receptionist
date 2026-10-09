@@ -120,10 +120,11 @@ class FakeMultiCalendar(FakeCalendar):
     Nothing like it exists in the real Booksy test account (which has exactly one staff member); it only lets the
     offline tests exercise rosters of any size, eligibility, duplicate names and cross-staff conflicts."""
 
-    def __init__(self, tz, roster, **kwargs):
+    def __init__(self, tz, roster, *, ids=None, **kwargs):
         roster = list(roster)
         super().__init__(tz, staff=roster[0] if roster else "Nobody", **kwargs)
         self.roster = roster
+        self.ids = dict(ids or {})  # display name -> stable staff id (empty when not given, like single-staff data)
         self.staff_hours: dict = {}
 
     def set_staff_hours(self, staff: str, day: date, start_hour: int, end_hour: int) -> None:
@@ -153,5 +154,6 @@ class FakeMultiCalendar(FakeCalendar):
                 None if self.unknown_working else tuple(self.staff_hours.get((name, day), ())),
                 None if self.unknown_time_off else (),
                 None if self.unknown_appointments else tuple(mine),
+                self.ids.get(name, ""),
             ))
         return DaySnapshot(day, tuple(days), self.now)

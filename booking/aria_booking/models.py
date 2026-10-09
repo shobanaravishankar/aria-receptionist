@@ -87,6 +87,7 @@ class StaffDay:
     working: Optional[tuple[Interval, ...]]
     time_off: Optional[tuple[Interval, ...]]
     appointments: Optional[tuple[Appointment, ...]]
+    staff_id: str = ""  # the stable id from the calendar column (data-resource), when known; empty for single-staff/fake data
 
 
 @dataclass(frozen=True)

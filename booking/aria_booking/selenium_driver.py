@@ -22,13 +22,14 @@ from zoneinfo import ZoneInfo
 from typing import Any, Callable, Optional
 
 from .appointment_creator import AppointmentCreator, LeaveWindowOpen, NoteReader, attach_notes
-from .calendar_parser import CalendarParseError, normalize_nodes, parse_day
+from .calendar_parser import CalendarParseError, normalize_nodes, parse_day, parse_day_multi
 from .config import Config
 from .discover import DISCOVERY_JS, LOADER_GONE_JS, build_report
 from .discover_interactive import RunStopped, click_refusal
 from .driver import BeforeSaveError, DriverError, DriverUnavailable, SaveOutcomeUnknown, SignInRequired
 from .models import AppointmentSpec, DaySnapshot
 from .staff_census import LIST_TESTID, confirms_single_staff, parse_staff_list
+from .roster import ROSTER_JS, Roster, parse_roster
 
 # Any signed-in, business-scoped page, e.g. https://booksy.com/pro/en-us/<business id>/calendar?...
 # or a dashboard page under the same prefix. The login page has no business id in its path.
@@ -92,6 +93,7 @@ class SeleniumBooksyDriver:
         self.allowed_services = frozenset(allowed_services) if allowed_services is not None else frozenset({cfg.service_name})
         self._appointment_counts: dict = {}  # appointments seen by the latest read of each day
         self._frozen: Optional[str] = None  # set when a window was deliberately left open for a person
+        self.last_roster: Optional[Roster] = None  # the roster seen on the latest day read (None if the page had no staff filter)
 
     # ---- lifecycle -----------------------------------------------------------------------
     def _browser(self):
@@ -170,13 +172,8 @@ class SeleniumBooksyDriver:
         if self._frozen:
             raise DriverError(f"the browser window was left open for a person ({self._frozen}); not touching it")
 
-    def read_day(self, day: date, include_notes: bool = False) -> DaySnapshot:
-        """Load that day's calendar and parse it. Anything not understood raises (never 'free').
-        include_notes opens each appointment's details (read-only) to fill in its internal note."""
-        if include_notes and "note-readback" not in self.approvals:
-            raise DriverError("opening appointment details to read notes needs the note-readback approval")
-        self._require_not_frozen()
-        self.verify_single_staff()  # may raise; once per session
+    def _load_day(self, day: date):
+        """Open that day's calendar and capture it: (raw page nodes, roster or None). Raises if signed out or still loading."""
         browser = self._browser()
         browser.get(self.cfg.calendar_url(day.isoformat()))
         ready = self._wait_for_calendar(browser, 40.0)
@@ -186,7 +183,35 @@ class SeleniumBooksyDriver:
             raise CalendarParseError("the calendar was still loading after 40 seconds")
         self._sleep(1)  # let the grid finish painting after the overlay clears
         raw = browser.execute_script(DISCOVERY_JS)
+        try:
+            roster = parse_roster(browser.execute_script(ROSTER_JS))
+        except Exception:  # an unreadable roster is simply no roster: the single-staff path (which fails closed) then decides
+            roster = None
+        return raw, roster
+
+    def read_day(self, day: date, include_notes: bool = False) -> DaySnapshot:
+        """Load that day's calendar and parse it. Anything not understood raises (never 'free').
+
+        Two paths. A page whose staff filter lists a COMPLETE roster of two or more people is read by staff id (parse_day_multi): each
+        column is bound to its roster entry by its own data-resource id. Anything else takes the single-staff path proven live: it
+        needs the Staff-page census to confirm exactly one staff member, and refuses otherwise.
+        include_notes opens each appointment's details (read-only) to fill in its internal note (single-staff path only)."""
+        if include_notes and "note-readback" not in self.approvals:
+            raise DriverError("opening appointment details to read notes needs the note-readback approval")
+        self._require_not_frozen()
         tz = ZoneInfo(self.cfg.timezone)
+        raw, roster = self._load_day(day)
+        self.last_roster = roster
+        if roster is not None and roster.complete and len(roster.members) >= 2:
+            if include_notes:
+                raise DriverError("reading appointment notes is not supported on a multi-staff calendar; refusing to guess whose note is whose")
+            self._appointment_counts.pop(day, None)  # creation is single-staff only: no count, so create_appointment refuses
+            return parse_day_multi(normalize_nodes(raw), day=day, tz=tz, roster=roster, captured_at=datetime.now(tz))
+
+        if self._staff_confirmed is None:
+            self.verify_single_staff()  # may raise; once per session. It leaves the day page, so load the day again.
+            raw, roster = self._load_day(day)
+        browser = self._browser()
         snapshot = parse_day(
             normalize_nodes(raw),
             day=day,

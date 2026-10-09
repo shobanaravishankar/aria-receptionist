@@ -220,7 +220,7 @@ class VoiceTools:
         keys = [staff_key(sd.staff) for sd in days]
         if len(set(keys)) != len(keys):  # two columns with one display name cannot be attributed; never guess
             return [], _response("unknown", "I couldn't tell the technicians' schedules apart clearly enough to check, so I won't guess.", reason="ambiguous_roster")
-        eligible = [sd.staff for sd in days if service.eligible(sd.staff)]
+        eligible = [sd.staff for sd in days if service.eligible(sd.staff, sd.staff_id)]
         if named:
             wanted = staff_key(named)
             present = [sd.staff for sd in days if staff_key(sd.staff) == wanted]
@@ -237,7 +237,7 @@ class VoiceTools:
                     "staff_unavailable", f"I don't see {named} on the schedule for that day.", reason="staff_not_on_schedule",
                     available_staff=eligible,
                 )
-            if not service.eligible(present[0]):
+            if not service.eligible(present[0], next(sd.staff_id for sd in days if sd.staff == present[0])):
                 return [], _response(
                     "staff_unavailable", f"{present[0]} doesn't do {service.booksy_name}.", reason="staff_not_eligible", available_staff=eligible,
                 )

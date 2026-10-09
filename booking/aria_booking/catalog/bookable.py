@@ -33,12 +33,17 @@ class BookableService:
     buffer_after_minutes: int = 0
     # staff keys allowed to perform it; None means "any staff member the calendar verifiably lists"; empty means nobody
     eligible_staff: Optional[frozenset] = None
+    # STABLE staff ids allowed to perform it (from the calendar's own ids). When set it takes precedence over names: a person is
+    # eligible only if their column's id is listed, so a rename, or two people with one display name, cannot change who qualifies.
+    eligible_staff_ids: Optional[frozenset] = None
     verified: bool = False  # confirmed against the real account (name, duration, eligibility), not just configured
     catalog_item: Optional[str] = None  # the website item it corresponds to, if any
     test_only: bool = False
     price_usd: Optional[int] = None
 
-    def eligible(self, staff_name: str) -> bool:
+    def eligible(self, staff_name: str, staff_id: str = "") -> bool:
+        if self.eligible_staff_ids is not None:
+            return bool(staff_id) and staff_id in self.eligible_staff_ids  # a person whose id is unknown is never eligible
         return self.eligible_staff is None or staff_key(staff_name) in self.eligible_staff
 
     def booking_config(self, cfg: Config, staff_name: str) -> Config:

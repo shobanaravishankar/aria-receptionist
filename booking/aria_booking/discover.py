@@ -119,7 +119,9 @@ DISCOVERY_JS = r"""
 const out = [];
 const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
 let count = 0;
-while (walker.nextNode() && count < 6000) {
+let truncated = false;
+while (walker.nextNode()) {
+  if (count >= 12000) { truncated = true; break; }
   const el = walker.currentNode;
   const r = el.getBoundingClientRect();
   if (r.width === 0 || r.height === 0) continue;
@@ -130,10 +132,12 @@ while (walker.nextNode() && count < 6000) {
     cls: (el.getAttribute('class') || '').split(/\s+/).filter(Boolean).slice(0, 6),
     attrs: el.getAttributeNames().filter(a => a !== 'class' && a !== 'style'),
     role: el.getAttribute('role'), testid: el.getAttribute('data-testid'),
+    res: el.getAttribute('data-resource'),
     aria: el.getAttribute('aria-label'), text: own.slice(0, 120),
     x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height)
   });
   count++;
 }
+if (truncated) out.push({tag: '__truncated__', depth: 0, cls: [], attrs: [], role: null, testid: null, res: null, aria: null, text: null, x: 0, y: 0, w: 0, h: 0});
 return out;
 """

@@ -1,0 +1,59 @@
+{
+  "_comment": "SYNTHETIC EXAMPLE ONLY. Staff ids, names and the review below are made up. A real table is captured by a read-only discovery run, reviewed by a person row by row, and kept in the git-ignored local folder (ARIA_MAPPING_TABLE). A verified row must name who reviewed it and when; the table goes stale after max_age_days and then every row counts as unverified.",
+  "version": 1,
+  "captured_at": "2026-10-09T09:00:00-04:00",
+  "max_age_days": 14,
+  "staff": {
+    "900001": "Example Lily",
+    "900002": "Example Maya",
+    "900003": "Example Noor"
+  },
+  "rows": [
+    {
+      "service_id": "massage-deep-tissue-massage-30",
+      "booksy_name": "Deep Tissue Massage",
+      "variant": "30 min",
+      "duration_minutes": 30,
+      "catalog_item": "massage-deep-tissue-massage-30",
+      "eligible_staff_ids": ["900001", "900002"],
+      "verified": true,
+      "reviewed_by": "EXAMPLE-ONLY",
+      "reviewed_on": "2026-10-09",
+      "notes": "Example row."
+    },
+    {
+      "service_id": "massage-deep-tissue-massage-60",
+      "booksy_name": "Deep Tissue Massage",
+      "variant": "1 hr",
+      "duration_minutes": 60,
+      "catalog_item": "massage-deep-tissue-massage-60",
+      "eligible_staff_ids": ["900001", "900002"],
+      "verified": true,
+      "reviewed_by": "EXAMPLE-ONLY",
+      "reviewed_on": "2026-10-09",
+      "notes": "Example row."
+    },
+    {
+      "service_id": "massage-deep-tissue-massage-90",
+      "booksy_name": "Deep Tissue Massage",
+      "variant": "1 hr 30 min",
+      "duration_minutes": 90,
+      "catalog_item": "massage-deep-tissue-massage-90",
+      "eligible_staff_ids": ["900001"],
+      "verified": true,
+      "reviewed_by": "EXAMPLE-ONLY",
+      "reviewed_on": "2026-10-09",
+      "notes": "Example row: only one example person does the longest length."
+    },
+    {
+      "service_id": "facial-signature-facial-60",
+      "booksy_name": "Signature Facial",
+      "variant": "1 hr",
+      "duration_minutes": 60,
+      "catalog_item": "facial-signature-facial-60",
+      "eligible_staff_ids": ["900003"],
+      "verified": false,
+      "notes": "Example of a row that is listed but NOT yet reviewed: it cannot be checked."
+    }
+  ]
+}

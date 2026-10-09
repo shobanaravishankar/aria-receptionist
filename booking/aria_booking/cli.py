@@ -40,6 +40,7 @@ from .ledger import Ledger, LedgerError
 from .selenium_driver import SeleniumBooksyDriver
 from .voice import retell_http
 from .voice.launch import build_endpoint
+from .catalog.mapping_table import MappingTableError, load_mapping_table
 
 EXIT_OK, EXIT_REFUSED, EXIT_REVIEW, EXIT_NOT_SAVED = 0, 2, 3, 4
 
@@ -86,6 +87,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=8787)
     for flag, text in BOOK_APPROVALS.items():
         p.add_argument("--approve-" + flag, action="store_true", help=text + " (all five together enable booking; none = read-only)")
+    p = sub.add_parser("mapping-check", help="validate the reviewed services/eligibility table offline (no browser, no network)")
+    p.add_argument("path", nargs="?", help="the table file; defaults to ARIA_MAPPING_TABLE")
     p = sub.add_parser("verify", help="READ-ONLY: find a previously booked slot by its reference and check it; creates nothing")
     p.add_argument("--start", required=True, help='local start of the recorded booking, e.g. "2026-10-12 11:00"')
     p.add_argument("--confirm-business-id", required=True)
@@ -120,6 +123,9 @@ def main(
     if args.command == "config":
         out(json.dumps(cfg.redacted_summary(), indent=2))
         return EXIT_OK
+
+    if args.command == "mapping-check":
+        return _mapping_check(args, cfg, now_fn, out)
 
     if args.command == "book":
         # Refuse BEFORE any browser is created.
@@ -164,6 +170,14 @@ def main(
         args.approvals = frozenset(BOOK_APPROVALS) if args.booking_enabled else frozenset()
         args.retell_key = key
         args.tool_token = (env.get("ARIA_RETELL_TOOL_TOKEN") or "").strip() or None
+        args.registry = None  # None: only the verified test service is checkable/bookable
+        if cfg.mapping_table is not None:
+            try:
+                args.registry, report = load_mapping_table(cfg.mapping_table, now=now_fn())
+            except MappingTableError as exc:
+                out(f"refused: the mapping table cannot be used ({exc}). Fix it or unset ARIA_MAPPING_TABLE.")
+                return EXIT_REFUSED
+            out("mapping table: " + report.summary())
 
     if args.command == "verify":
         if not cfg.business_id or args.confirm_business_id != cfg.business_id:
@@ -303,7 +317,7 @@ def _serve(args, cfg: Config, now_fn, driver, out) -> int:
     # no five approvals = the availability-only demo: tools and routes are built together and cannot write
     endpoint = build_endpoint(
         cfg, driver, service_factory, now_fn, args.retell_key,
-        booking_approved=args.booking_enabled, bearer_token=args.tool_token, log=lambda message: out("  " + message),
+        booking_approved=args.booking_enabled, bearer_token=args.tool_token, registry=args.registry, log=lambda message: out("  " + message),
     )
     server = retell_http.make_http_server(endpoint, args.port)
     out(f"serving Retell function calls on 127.0.0.1:{args.port} (loopback only). Mode: "
@@ -317,3 +331,20 @@ def _serve(args, cfg: Config, now_fn, driver, out) -> int:
     finally:
         server.server_close()
     return EXIT_OK
+
+
+def _mapping_check(args, cfg: Config, now_fn, out) -> int:
+    """Offline validation of the reviewed table: 0 = loaded, fresh, with verified rows; 3 = loaded but stale or nothing usable; 2 = malformed."""
+    path = args.path or (str(cfg.mapping_table) if cfg.mapping_table else None)
+    if not path:
+        out("refused: give the table path, or set ARIA_MAPPING_TABLE.")
+        return EXIT_REFUSED
+    try:
+        registry, report = load_mapping_table(path, now=now_fn())
+    except MappingTableError as exc:
+        out(f"invalid: {exc}")
+        return EXIT_REFUSED
+    out(report.summary())
+    for line in report.unverified:
+        out(f"  not usable: {line}")
+    return EXIT_REVIEW if (report.stale or report.verified == 0) else EXIT_OK

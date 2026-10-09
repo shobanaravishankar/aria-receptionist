@@ -239,4 +239,13 @@ def test_non_working_blocks_alone_define_working_time_when_the_displayed_hours_a
 
 def test_normalize_turns_the_live_script_shape_into_the_stored_shape():
     raw = [{"tag": "div", "depth": 3, "cls": ["a"], "attrs": ["data-x"], "role": None, "testid": "t", "aria": None, "text": "hi", "x": 1, "y": 2, "w": 3, "h": 4}]
-    assert normalize_nodes(raw) == [{"tag": "div", "depth": 3, "cls": ["a"], "attrs": ["data-x"], "role": None, "testid": "t", "aria": None, "text": "hi", "box": [1, 2, 3, 4]}]
+    assert normalize_nodes(raw) == [
+        {"tag": "div", "depth": 3, "cls": ["a"], "attrs": ["data-x"], "role": None, "testid": "t", "aria": None, "text": "hi", "box": [1, 2, 3, 4], "res": None}
+    ]
+
+
+def test_normalize_keeps_only_the_staff_id_value_the_reader_needs():
+    raw = [{"tag": "div", "depth": 3, "cls": [], "attrs": ["data-resource"], "role": None, "testid": None, "aria": None, "text": None,
+            "x": 0, "y": 0, "w": 1, "h": 1, "res": "900001", "data-other": "secret", "href": "x"}]
+    (node,) = normalize_nodes(raw)
+    assert node["res"] == "900001" and "data-other" not in node and "href" not in node

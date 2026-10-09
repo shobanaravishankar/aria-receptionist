@@ -56,6 +56,7 @@ class Config:
     chromedriver_path: Optional[str] = None
     allow_driver_download: bool = False
     sign_in_wait_seconds: int = 600
+    mapping_table: Optional[Path] = None  # the reviewed services/eligibility table (local, git-ignored); None = only the verified test service
 
     @property
     def chrome_profile_dir(self) -> Path:
@@ -102,6 +103,7 @@ class Config:
             chromedriver_path=env.get("ARIA_CHROMEDRIVER_PATH") or None,
             allow_driver_download=_bool(env.get("ARIA_ALLOW_DRIVER_DOWNLOAD")),
             sign_in_wait_seconds=_int(env, "ARIA_SIGN_IN_WAIT_SECONDS", base.sign_in_wait_seconds, minimum=10),
+            mapping_table=Path(env["ARIA_MAPPING_TABLE"]) if (env.get("ARIA_MAPPING_TABLE") or "").strip() else None,
         )
 
     def redacted_summary(self) -> dict:
@@ -124,5 +126,6 @@ class Config:
             "min_lead_minutes": self.min_lead_minutes,
             "max_bookings_per_run": self.max_bookings_per_run,
             "local_dir": str(self.local_dir),
+            "mapping_table": str(self.mapping_table) if self.mapping_table else "(none: only the verified test service)",
             "chromedriver": driver_note,
         }
