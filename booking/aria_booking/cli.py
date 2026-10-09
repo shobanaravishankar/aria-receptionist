@@ -6,6 +6,9 @@
     python -m aria_booking find [--from D] [--days N]  list free slots (unknown days are reported, never "free")
     python -m aria_booking verify --start "YYYY-MM-DD HH:MM" --confirm-business-id ID --approve-tour-popups --approve-note-readback
                                                        READ-ONLY: find a recorded booking by its reference; creates nothing
+    python -m aria_booking serve --confirm-business-id ID [--port N] [the five --approve-* flags to ALLOW booking]
+                                                       Retell function endpoint on 127.0.0.1 only; READ-ONLY unless all five
+                                                       booking approvals are given. Needs ARIA_LIVE_BOOKSY=1 and ARIA_RETELL_API_KEY.
     python -m aria_booking book --start "YYYY-MM-DD HH:MM" --confirm-business-id ID --approve-save --approve-note-typing
            --approve-tour-popups --approve-not-now --approve-note-readback
                                                        create ONE fictional test booking (needs ARIA_LIVE_BOOKSY=1)
@@ -35,6 +38,8 @@ from .safety import SafetyViolation, build_note, check_request
 from .driver import DriverError
 from .ledger import Ledger, LedgerError
 from .selenium_driver import SeleniumBooksyDriver
+from .voice import retell_http
+from .voice.tools import VoiceTools
 
 EXIT_OK, EXIT_REFUSED, EXIT_REVIEW, EXIT_NOT_SAVED = 0, 2, 3, 4
 
@@ -76,6 +81,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("find")
     p.add_argument("--from", dest="first", default="today")
     p.add_argument("--days", type=int, default=7)
+    p = sub.add_parser("serve", help="serve Retell custom-function requests on the loopback interface; read-only unless booking is approved")
+    p.add_argument("--confirm-business-id", required=True)
+    p.add_argument("--port", type=int, default=8787)
+    for flag, text in BOOK_APPROVALS.items():
+        p.add_argument("--approve-" + flag, action="store_true", help=text + " (all five together enable booking; none = read-only)")
     p = sub.add_parser("verify", help="READ-ONLY: find a previously booked slot by its reference and check it; creates nothing")
     p.add_argument("--start", required=True, help='local start of the recorded booking, e.g. "2026-10-12 11:00"')
     p.add_argument("--confirm-business-id", required=True)
@@ -129,6 +139,31 @@ def main(
         except ValueError:
             out('refused: --start must look like "2026-10-12 10:00" (local time).')
             return EXIT_REFUSED
+
+    if args.command == "serve":
+        if not _truthy(env.get("ARIA_LIVE_BOOKSY")):
+            out("refused: serving needs ARIA_LIVE_BOOKSY=1 in the environment.")
+            return EXIT_REFUSED
+        if not cfg.business_id or args.confirm_business_id != cfg.business_id:
+            out("refused: --confirm-business-id must equal the configured ARIA_BOOKSY_BUSINESS_ID.")
+            return EXIT_REFUSED
+        key = (env.get("ARIA_RETELL_API_KEY") or "").strip()
+        if not key:
+            out("refused: ARIA_RETELL_API_KEY must be set in the environment (never on the command line, in chat or in the repo). "
+                "Use a Retell API key that has the webhook badge.")
+            return EXIT_REFUSED
+        if not 1 <= args.port <= 65535:
+            out("refused: --port must be between 1 and 65535.")
+            return EXIT_REFUSED
+        given = [flag for flag in BOOK_APPROVALS if getattr(args, "approve_" + flag.replace("-", "_"))]
+        if given and len(given) != len(BOOK_APPROVALS):
+            missing = [f"--approve-{flag}" for flag in BOOK_APPROVALS if flag not in given]
+            out("refused: booking needs ALL five approvals (or none, for read-only). Missing: " + ", ".join(missing))
+            return EXIT_REFUSED
+        args.booking_enabled = len(given) == len(BOOK_APPROVALS)
+        args.approvals = frozenset(BOOK_APPROVALS) if args.booking_enabled else frozenset()
+        args.retell_key = key
+        args.tool_token = (env.get("ARIA_RETELL_TOOL_TOKEN") or "").strip() or None
 
     if args.command == "verify":
         if not cfg.business_id or args.confirm_business_id != cfg.business_id:
@@ -228,6 +263,9 @@ def _run(args, cfg: Config, tz: ZoneInfo, now_fn, driver, out) -> int:
         out(f"done: {len(paths)} redacted capture(s) in {cfg.evidence_dir} (local, git-ignored)")
         return EXIT_OK
 
+    if args.command == "serve":
+        return _serve(args, cfg, now_fn, driver, out)
+
     service = BookingService(cfg, driver, Ledger(cfg.ledger_path, clock=now_fn), clock=now_fn)
 
     if args.command == "find":
@@ -253,3 +291,27 @@ def _run(args, cfg: Config, tz: ZoneInfo, now_fn, driver, out) -> int:
     if result.status is Status.NOT_SAVED:
         return EXIT_NOT_SAVED
     return EXIT_REFUSED
+
+
+def _serve(args, cfg: Config, now_fn, driver, out) -> int:
+    """Start the loopback endpoint. Blocks until interrupted. The signing key is never printed."""
+
+    def service_factory() -> BookingService:
+        return BookingService(cfg, driver, Ledger(cfg.ledger_path, clock=now_fn), clock=now_fn)
+
+    tools = VoiceTools(cfg, driver, service_factory, now_fn, booking_enabled=args.booking_enabled)
+    endpoint = retell_http.RetellEndpoint(
+        tools, args.retell_key, bearer_token=args.tool_token,
+        log=lambda message: out("  " + message),
+    )
+    server = retell_http.make_http_server(endpoint, args.port)
+    out(f"serving Retell function calls on 127.0.0.1:{args.port} (loopback only). Mode: "
+        + ("BOOKING ENABLED (a real, fictional ARIA TEST appointment can be created)" if args.booking_enabled else "READ-ONLY (booking refused)"))
+    out(f"signatures: Retell's official v=<ms>,d=<hex> scheme only; extra bearer token: {'yes' if args.tool_token else 'no'}. Press Ctrl+C to stop.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        out("stopped.")
+    finally:
+        server.server_close()
+    return EXIT_OK

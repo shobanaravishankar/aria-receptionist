@@ -21,6 +21,7 @@ account** and nothing else.
 | Create an appointment (the Save click and what follows) | **Run live ONCE (2026-10-08): created exactly one fictional ARIA TEST appointment, Mon 12 Oct 2026 11:00 AM-1:30 PM.** After Save the new-client prompt appeared and NOT NOW was clicked. The run then stopped on a false alarm of the dialog detector (the calendar's always-present 'confirmed'/'unconfirmed' labels were mistaken for a dialog; fixed and tested) and left the window open, as designed. The appointment was confirmed by a person looking at the calendar. Only this one path has been run live |
 | Read a saved appointment's internal note back for verification | **Run live (read-only `verify`): found the saved appointment by its reference, and the time, duration and service matched.** The ledger entry went from uncertain to verified |
 | Reschedule, cancel, expired-sign-in recovery against the real site | **NOT implemented / NOT run** |
+| Voice-agent (Retell) integration: tools, signed HTTP boundary, `serve`, test-only prompt (`voice_agent_draft/`) | implemented and independently reviewed **offline** (reviewed commit `f5f5312`). **NOT configured in Retell, NOT run live, no tunnel.** Permission to run a supervised connection test is not verification: see `voice_agent_draft/SUPERVISED_TEST_CHECKLIST.md` |
 
 **No real appointment has ever been created by this prototype.** The tests prove the logic and the parser's
 behaviour on captured pages; they do not prove that a live Save behaves as assumed.
