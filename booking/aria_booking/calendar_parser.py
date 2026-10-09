@@ -321,6 +321,29 @@ def _header_for(nodes: list[Node], headers: list[int], column: Node) -> Optional
     return (name["text"] if name else None, hours["text"] if hours else None)
 
 
+def single_column_identity(nodes: Iterable[Node]) -> tuple[list[str], list[str]]:
+    """(data-resource ids of the overlay columns that carry one, header names) on a page read by the single-staff path.
+
+    Used only to CHECK that the page does not contradict the staff member the session believes it is reading; it adds no trust of its own."""
+    nodes = list(nodes)
+    overlay_index = next((i for i, n in enumerate(nodes) if _has_prefix(n, "_calendarGrid--overlay_")), None)
+    ids: list[str] = []
+    if overlay_index is not None:
+        overlay = nodes[overlay_index]
+        for i in range(overlay_index + 1, _column_end(nodes, overlay_index)):
+            if _has_prefix(nodes[i], "_calendarColumn_") and nodes[i]["depth"] == overlay["depth"] + 1:
+                res = nodes[i].get("res")
+                if isinstance(res, str) and res:
+                    ids.append(res)
+    names: list[str] = []
+    for i, node in enumerate(nodes):
+        if node["testid"] == "resource":
+            name = _first(_subtree(nodes, i), lambda n: _has_prefix(n, "_name_") and n["text"])
+            if name:
+                names.append(normalise_name(name["text"]))
+    return ids, names
+
+
 def parse_day_multi(nodes: Iterable[Node], *, day: date, tz: ZoneInfo, roster: Roster, captured_at: datetime) -> DaySnapshot:
     """One StaffDay per calendar column, each bound to the roster by the column's data-resource id.
 

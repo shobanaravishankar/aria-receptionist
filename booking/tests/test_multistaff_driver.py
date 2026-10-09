@@ -131,23 +131,36 @@ def test_a_page_that_cannot_be_attributed_is_refused_not_guessed(problem):
 # ---------------------------------------------------------------- everything else takes the proven single-staff path, which fails closed
 
 
-def test_an_incomplete_roster_never_takes_the_multi_path():
+def test_an_incomplete_roster_never_takes_the_multi_path_and_never_falls_back_to_the_single_staff_census():
     bad = roster_items(ROSTER5) + [{"testid": "filtersValue_1006-input", "label_testid": None, "name": None, "checked": True}]
     browser = Browser(to_raw(build_page(STAFF)), bad, staff_nodes=load("staff_page_one_member.json"))
-    with pytest.raises(CalendarParseError, match="3 staff columns"):
+    with pytest.raises(CalendarParseError, match="not read as one complete entry"):
         make(browser).read_day(DAY)
-    assert browser.clicks == ["staff"], "it fell back to the single-staff census, which then refused the three-column page"
+    assert browser.clicks == [], "an incomplete filter is refused outright; the Staff page is not even opened to vouch for it"
 
 
-@pytest.mark.parametrize("roster", [None, [], "garbage"])
-def test_a_page_with_no_usable_roster_takes_the_single_staff_path_and_refuses_a_multi_column_page(roster):
-    browser = Browser(to_raw(build_page(STAFF)), roster, staff_nodes=load("staff_page_one_member.json"))
+@pytest.mark.parametrize("roster", [[], "garbage"])
+def test_an_unusable_but_present_filter_is_refused_not_ignored(roster):
+    browser = Browser(to_raw(build_page(STAFF, headers=False)), roster, staff_nodes=load("staff_page_one_member.json"))
+    with pytest.raises(CalendarParseError, match="not read as one complete entry"):
+        make(browser).read_day(DAY)
+
+
+def test_a_page_with_no_filter_at_all_takes_the_single_staff_path_and_refuses_a_multi_column_page():
+    browser = Browser(to_raw(build_page(STAFF, headers=False)), None, staff_nodes=load("staff_page_one_member.json"))
     with pytest.raises(CalendarParseError, match="3 staff columns"):
         make(browser).read_day(DAY)
+
+
+def test_a_page_with_no_filter_whose_headers_name_other_people_is_refused_before_the_census_is_trusted():
+    browser = Browser(to_raw(build_page(STAFF)), None, staff_nodes=load("staff_page_one_member.json"))
+    with pytest.raises(CalendarParseError, match="names someone other than the configured staff member"):
+        make(browser).read_day(DAY)
+    assert browser.clicks == []
 
 
 def test_a_failing_roster_script_is_treated_as_no_roster():
-    browser = Browser(to_raw(build_page(STAFF)), roster_items(ROSTER5), staff_nodes=load("staff_page_one_member.json"), roster_raises=True)
+    browser = Browser(to_raw(build_page(STAFF, headers=False)), roster_items(ROSTER5), staff_nodes=load("staff_page_one_member.json"), roster_raises=True)
     with pytest.raises(CalendarParseError, match="3 staff columns"):
         make(browser).read_day(DAY)
 

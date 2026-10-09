@@ -7,7 +7,8 @@ STABLE numeric staff id and a label carrying the display name:
     input[type=checkbox][data-testid="filtersValue_<id>-input"]   label[data-testid="filtersValue_<id>"]   (label for= the input's id)
 
 The panel is mounted even when closed, with a zero-size box, so the normal page capture (which skips zero-size elements) never sees
-it: ROSTER_JS reads it directly. A "select all" entry is not a staff member and is ignored.
+it: ROSTER_JS reads it directly. The "Select All" control is not a staff member and is skipped, but ONLY that control: any other entry that is not a
+recognisable staff checkbox makes the roster incomplete.
 
 Fail closed: anything that does not fit (no panel, a checkbox without its label, a label under the wrong id, an empty name, a repeated
 id) makes the roster INCOMPLETE, and callers must then treat staff as unknown, never guess. A repeated DISPLAY NAME is allowed in the
@@ -21,6 +22,8 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Optional
 
 INPUT_RE = re.compile(r"^filtersValue_(\d+)-input$")
+STAFF_SHAPED_RE = re.compile(r"^filtersValue_\d+(-input)?$")  # anything that looks like it belongs to a staff member
+SELECT_ALL_RE = re.compile(r"^filtersValue_?select_?all(-input)?$", re.IGNORECASE)
 
 # Collected in the page. Returns null when the filter panel is not on the page at all.
 ROSTER_JS = r"""
@@ -68,6 +71,16 @@ def normalise_name(text: Optional[str]) -> str:
     return " ".join((text or "").split())
 
 
+def _is_select_all(entry: dict[str, Any]) -> bool:
+    """The "Select All" control, recognised explicitly. Anything that looks like a staff entry is NEVER Select All, whatever its name says."""
+    ids = [entry.get("testid"), entry.get("label_testid")]
+    if any(isinstance(v, str) and STAFF_SHAPED_RE.match(v) for v in ids):
+        return False
+    if any(isinstance(v, str) and SELECT_ALL_RE.match(v) for v in ids):
+        return True
+    return normalise_name(entry.get("name")).casefold() == "select all"
+
+
 def parse_roster(items: Optional[Iterable[dict[str, Any]]]) -> Optional[Roster]:
     """None when the page has no filter panel (roster unavailable); otherwise a Roster, complete or not."""
     if items is None:
@@ -86,7 +99,11 @@ def parse_roster(items: Optional[Iterable[dict[str, Any]]]) -> Optional[Roster]:
         testid = entry.get("testid")
         match = INPUT_RE.match(testid) if isinstance(testid, str) else None
         if match is None:
-            continue  # "select all" and anything else that is not a staff checkbox
+            if _is_select_all(entry):
+                continue
+            # Not a staff checkbox and not Select All: it may be a staff member the page failed to identify, so the roster is NOT complete.
+            problems.append("an entry in the staff filter is neither a recognised staff member nor Select All")
+            continue
         staff_id = match.group(1)
         name = normalise_name(entry.get("name"))
         if staff_id in seen:

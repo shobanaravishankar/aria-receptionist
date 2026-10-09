@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 from typing import Any, Callable, Optional
 
 from .appointment_creator import AppointmentCreator, LeaveWindowOpen, NoteReader, attach_notes
-from .calendar_parser import CalendarParseError, normalize_nodes, parse_day, parse_day_multi
+from .calendar_parser import CalendarParseError, normalize_nodes, parse_day, parse_day_multi, single_column_identity
 from .config import Config
 from .discover import DISCOVERY_JS, LOADER_GONE_JS, build_report
 from .discover_interactive import RunStopped, click_refusal
@@ -94,6 +94,7 @@ class SeleniumBooksyDriver:
         self._paint_wait = paint_wait_seconds  # pause after the overlay clears; unchanged until a MEASURED run shows it can be shorter
         self._driver: Optional[Any] = None
         self._staff_confirmed: Optional[bool] = None  # decided once per session from the Staff page
+        self._single_staff_id: Optional[str] = None  # the staff id first seen on that single column (trust on first use; later changes refuse)
         self.approvals = frozenset(approvals)
         # The live adapter books ONLY these Booksy service names, whatever a caller layer asks for (fail closed).
         self.allowed_services = frozenset(allowed_services) if allowed_services is not None else frozenset({cfg.service_name})
@@ -222,19 +223,63 @@ class SeleniumBooksyDriver:
         finally:
             self.last_read_ms = {name: ms for name, ms in self._read_timer.as_dict().items() if name != "total"}
 
+    def _forget_single_staff(self) -> None:
+        """Contradictory or missing identity evidence: the earlier Staff-page census no longer vouches for what the page shows now."""
+        self._staff_confirmed = None
+        self._single_staff_id = None
+        self._appointment_counts.clear()  # a count taken under the old identity must never let a save proceed
+
+    def _check_single_staff_identity(self, nodes, roster) -> None:
+        """The single-staff path trusts a census taken ONCE. Before reusing it, make sure the page in front of us does not contradict it.
+
+        Refuses (and forgets the census, so the next read re-checks the Staff page) when: the staff filter exists but was not read as exactly
+        one complete entry; that entry is not the configured staff member or not the id seen before; the single column carries a different
+        id than the filter or than before; or a header names someone else. A page with no filter and no ids at all is the legacy case the
+        census was proven on, and keeps working."""
+        configured = " ".join(self.cfg.staff_name.casefold().split())
+        roster_id: Optional[str] = None
+        if roster is not None:
+            if not (roster.complete and len(roster.members) == 1):
+                self._forget_single_staff()
+                why = "; ".join(roster.problems) or "it does not list exactly one staff member"
+                raise CalendarParseError(f"the staff filter was not read as one complete entry ({why}); refusing to reuse an earlier single-staff check")
+            member = roster.members[0]
+            roster_id = member.staff_id
+            if " ".join(member.name.casefold().split()) != configured:
+                self._forget_single_staff()
+                raise CalendarParseError("the staff filter lists someone other than the configured staff member; refusing to reuse an earlier single-staff check")
+        ids, header_names = single_column_identity(nodes)
+        for name in header_names:
+            if " ".join(name.casefold().split()) != configured:
+                self._forget_single_staff()
+                raise CalendarParseError("a column header names someone other than the configured staff member; refusing to reuse an earlier single-staff check")
+        seen = set(ids)
+        if len(seen) > 1:
+            return  # several columns: parse_day refuses with its own message
+        known = {value for value in (roster_id, self._single_staff_id) if value}
+        if (seen and known and seen != known) or (roster_id and self._single_staff_id and roster_id != self._single_staff_id):
+            self._forget_single_staff()
+            raise CalendarParseError("the staff id on this page differs from the one seen before; refusing to attribute it to the configured staff member")
+        current = roster_id or next(iter(seen), None)
+        if current:
+            self._single_staff_id = current
+
     def _read_day(self, day: date, include_notes: bool, tz) -> DaySnapshot:
         raw, roster = self._load_day(day)
         self.last_roster = roster
         if roster is not None and roster.complete and len(roster.members) >= 2:
+            self._forget_single_staff()  # an account that shows several people no longer has a single-staff identity to reuse
             if include_notes:
                 raise DriverError("reading appointment notes is not supported on a multi-staff calendar; refusing to guess whose note is whose")
             self._appointment_counts.pop(day, None)  # creation is single-staff only: no count, so create_appointment refuses
             with self._read_timer.phase("parse"):
                 return parse_day_multi(normalize_nodes(raw), day=day, tz=tz, roster=roster, captured_at=datetime.now(tz))
 
+        self._check_single_staff_identity(normalize_nodes(raw), roster)
         if self._staff_confirmed is None:
             self.verify_single_staff()  # may raise; once per session. It leaves the day page, so load the day again.
             raw, roster = self._load_day(day)
+            self._check_single_staff_identity(normalize_nodes(raw), roster)
         browser = self._browser()
         with self._read_timer.phase("parse"):
             snapshot = parse_day(
