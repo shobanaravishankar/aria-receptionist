@@ -65,8 +65,10 @@ itself, so caller-perceived latency still has to be read from Retell's call reco
 The first honest number will come from ONE read-only run with the timing log on (cold and warm, an open slot and a taken slot).
 
 Remaining limitations / blockers:
-- Needs a reviewed live read-only capture before any claim of readiness: the real "Select All" control's test ids, time-off / blocked-time
-  card rendering, and whether the roster ever spans more than one view.
+- Needs a reviewed live read-only capture before any claim of readiness: time-off / blocked-time card rendering (not yet seen; any
+  unrecognised card makes that person's time off unknown) and whether the roster ever spans more than one view. The real staff filter
+  holds the staff plus three non-staff controls ("Select All", "Only me", "Working Staff Members"); each is recognised only by its
+  complete observed structure and anything else makes the roster incomplete (the reader then refuses).
 - The real service-to-staff mapping table has not been written or reviewed; service variant (30 min / 1 h / 1 h 30) structure on the
   Services tab is unverified, so Aria asks which length rather than inferring it.
 - Retell's signing of custom-function calls is assumed to follow its webhook scheme; if not, requests fail closed (401).

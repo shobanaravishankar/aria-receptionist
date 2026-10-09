@@ -163,9 +163,16 @@ def build_page(
     return nodes
 
 
+REAL_CONTROLS = [  # the non-staff controls of the real filter panel (observed 2026-10-09): two mode switches, then Select All
+    {"testid": "filtersValue-input", "label_testid": "filtersValue", "name": "Only me", "checked": False},
+    {"testid": "filtersValue-input", "label_testid": "filtersValue", "name": "Working Staff Members", "checked": True},
+    {"testid": "filtersValue_all-input", "label_testid": "filtersValue_all", "name": "Select All", "checked": False},
+]
+
+
 def roster_items(members: list[tuple], *, select_all: bool = True) -> list[dict]:
     """What ROSTER_JS returns for a filter panel listing these (id, name[, checked]) members."""
-    items = [{"testid": "filtersValue_selectAll-input", "label_testid": "filtersValue_selectAll", "name": "Select All", "checked": True}] if select_all else []
+    items = [dict(control) for control in REAL_CONTROLS] if select_all else []
     for member in members:
         staff_id, name, *rest = member
         items.append({"testid": f"filtersValue_{staff_id}-input", "label_testid": f"filtersValue_{staff_id}", "name": name, "checked": bool(rest[0]) if rest else True})

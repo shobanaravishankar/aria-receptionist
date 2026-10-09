@@ -169,10 +169,8 @@ def test_the_problem_names_no_one():
 
 
 @pytest.mark.parametrize("select_all", [
-    {"testid": "filtersValue_selectAll-input", "label_testid": "filtersValue_selectAll", "name": "Select All", "checked": True},
-    {"testid": "filtersValue_select_all-input", "label_testid": None, "name": None, "checked": False},
-    {"testid": None, "label_testid": None, "name": "  select   ALL ", "checked": True},
-    {"testid": "filtersValue_SelectAll-input", "label_testid": "filtersValue_SelectAll", "name": "Everyone", "checked": True},
+    {"testid": "filtersValue_all-input", "label_testid": "filtersValue_all", "name": "Select All", "checked": False},
+    {"testid": "filtersValue_all-input", "label_testid": "filtersValue_all", "name": "  Select   All ", "checked": True},
 ])
 def test_the_real_select_all_control_is_still_skipped(select_all):
     roster = parse_roster([select_all, *roster_items([("1001", "Ana Test")], select_all=False)])
