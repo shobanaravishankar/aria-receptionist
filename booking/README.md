@@ -63,6 +63,12 @@ abandoned read still occupies the browser, new reads fail immediately. Retell's 
 a call can be lined up with Retell's own call log (user stops speaking -> tool call -> first audio); the server cannot see speech start
 itself, so caller-perceived latency still has to be read from Retell's call record during the supervised run.
 
+While the calendar is checked, the tool config and the prompt ask Aria for ONE short acknowledgement when the lookup starts ("One moment
+while I check Lily's availability."; the technician or service is named only if the caller already gave it), with no time estimate, no
+repeating, no "um"/"uh" fillers and normal interruption behaviour. After a timeout or failure she says she could not confirm it; the
+server's own wording never implies a finished check is still running. These are instructions to the model; how it actually speaks can only
+be confirmed in a supervised call.
+
 **Measured latency: none yet.** The reported 30-40 second pauses have not been re-measured, and the 2-3 second target is **unproven**.
 The first honest number will come from ONE read-only run with the timing log on (cold and warm, an open slot and a taken slot).
 

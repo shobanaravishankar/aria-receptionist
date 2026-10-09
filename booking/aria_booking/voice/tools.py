@@ -249,7 +249,7 @@ class VoiceTools:
             acquired = self._lock.acquire(timeout=self._lock_timeout)
         if not acquired:
             self.last_timing = timer.as_dict()
-            return _response("busy", "I'm still working on the previous request. Please give me a moment and I'll try again.")
+            return _response("busy", "The calendar is busy with another check right now, so I can't confirm anything yet. Please try again in a moment, or contact the salon directly.")
         self._timer = timer
         try:
             self._prune()
@@ -638,7 +638,7 @@ class VoiceTools:
         except (ReadTimedOut, ReadStillRunning, ReadBudgetExhausted):
             return _response(
                 "unknown",
-                "Checking the calendar is taking longer than it should, so I can't confirm that time right now. "
+                "The calendar didn't respond in time, so I can't confirm that time right now. "
                 "Please try again in a moment, or contact the salon directly.",
                 reason="read_timeout",
             )

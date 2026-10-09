@@ -44,7 +44,7 @@
       "timeout_ms": 20000,
       "max_retry": 0,
       "speak_during_execution": true,
-      "execution_message_description": "Tell the caller you are checking the calendar and it may take a few seconds.",
+      "execution_message_description": "Say ONE short sentence, once, as the check starts: 'One moment while I check <technician>'s availability.' if the caller already named a technician, 'One moment while I check availability for <service>.' if only the service is known, otherwise 'One moment while I check availability.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -83,7 +83,7 @@
       "timeout_ms": 20000,
       "max_retry": 0,
       "speak_during_execution": true,
-      "execution_message_description": "Tell the caller you are looking at the calendar for other times.",
+      "execution_message_description": "Say ONE short sentence, once, as the search starts: 'One moment while I look for other times with <technician>.' if the caller named a technician, otherwise 'One moment while I look for other times.' Never guess a name the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh.",
       "parameters": {
         "type": "object",
         "properties": {
