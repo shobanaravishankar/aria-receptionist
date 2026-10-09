@@ -274,7 +274,7 @@ def test_tools_without_timing_still_log_normally(tmp_path):
     endpoint = RetellEndpoint(Bare(), KEY, now_ms=lambda: TS, log=lines.append)
     body = json.dumps({"call": {"call_id": CALL}, "args": {}}).encode()
     endpoint.handle("POST", "/tools/check_slot", signed(body), body)
-    assert lines == ["check_slot: unknown"]
+    assert len(lines) == 1 and lines[0].startswith("check_slot: unknown received_ms=") and "[" not in lines[0]
 
 
 # ---------------------------------------------------------------- the live driver: phases recorded, no needless waiting

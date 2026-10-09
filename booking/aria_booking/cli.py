@@ -44,6 +44,8 @@ from .catalog.mapping_table import MappingTableError, load_mapping_table
 
 EXIT_OK, EXIT_REFUSED, EXIT_REVIEW, EXIT_NOT_SAVED = 0, 2, 3, 4
 
+SERVE_LOAD_TIMEOUT = 10.0  # the voice server gives up on a day page sooner than the interactive commands do: a caller is on the line
+
 # Every one of these must be given for `book`; each names one thing the run is allowed to do to the real account.
 BOOK_APPROVALS = {
     "save": "allow the ONE click on Save that creates the appointment",
@@ -223,7 +225,7 @@ def main(
             return EXIT_REFUSED
 
     approvals = getattr(args, "approvals", frozenset())
-    driver = driver_factory(cfg) if driver_factory else SeleniumBooksyDriver(cfg, approvals=approvals)
+    driver = driver_factory(cfg) if driver_factory else SeleniumBooksyDriver(cfg, approvals=approvals, load_timeout_seconds=SERVE_LOAD_TIMEOUT if args.command == "serve" else 40.0)
     try:
         return _run(args, cfg, tz, now_fn, driver, out)
     except (ConfigError, DriverError, LedgerError) as exc:

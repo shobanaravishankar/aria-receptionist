@@ -27,7 +27,7 @@ import hmac
 import json
 import re
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from typing import Any, Callable, Mapping, Optional
 
 MAX_BODY_BYTES = 256 * 1024  # Retell includes the transcript so far in `call`; a long call must not be refused for size
@@ -112,6 +112,7 @@ class RetellEndpoint:
         call_id = call.get("call_id") if isinstance(call, dict) else None
         if not isinstance(call_id, str) or not call_id.strip() or not isinstance(args, dict):
             return 400, {"status": "error", "ok": False, "speak": "", "error": "bad_shape"}
+        received_ms = self._now()  # wall clock, so the line can be lined up with Retell's own call log (user stopped speaking -> first audio)
         try:
             result = getattr(self._tools, route)(call_id, args)
             json.dumps(result)  # must be serialisable
@@ -122,13 +123,17 @@ class RetellEndpoint:
                 "speak": "I'm not able to check that right now, so I can't confirm anything. Please try again shortly or contact the salon directly.",
             }
         timing = getattr(self._tools, "last_timing_text", None)  # phase names and milliseconds only; never arguments or page content
-        self._log(f"{route}: {result.get('status')}" + (f" [{timing}]" if isinstance(timing, str) and timing else ""))
+        self._log(
+            f"{route}: {result.get('status')}" + (f" [{timing}]" if isinstance(timing, str) and timing else "")
+            + f" received_ms={received_ms} sent_ms={self._now()}"
+        )
         return 200, result
 
 
 def make_http_server(endpoint: RetellEndpoint, port: int, host: str = "127.0.0.1") -> HTTPServer:
-    """A single-threaded server bound to the loopback interface only (requests are served one at a time, which also
-    keeps the one dedicated browser from being driven twice at once)."""
+    """A threaded server bound to the loopback interface only. Each request gets its own thread so a slow calendar read never makes the
+    next request wait before it reaches the tools; the tools' own lock keeps the one dedicated browser from being driven twice at once
+    and answers 'busy' quickly instead of queueing."""
     if host not in LOOPBACK:
         raise ValueError("the booking endpoint binds to the loopback interface only; expose it with a tunnel you control")
 
@@ -160,4 +165,6 @@ def make_http_server(endpoint: RetellEndpoint, port: int, host: str = "127.0.0.1
         def log_message(self, *args: Any) -> None:  # request lines can carry call ids; keep the console quiet
             return
 
-    return HTTPServer((host, port), Handler)
+    server = ThreadingHTTPServer((host, port), Handler)
+    server.daemon_threads = True  # a hung request thread must not keep the process alive
+    return server

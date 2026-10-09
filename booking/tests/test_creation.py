@@ -596,9 +596,11 @@ def test_book_with_no_approvals_at_all_names_every_missing_one():
 
 def test_the_real_driver_gets_the_approvals_that_were_given(monkeypatch):
     seen = {}
+    timeouts = []
 
     class Recording:
-        def __init__(self, cfg, approvals=frozenset()):
+        def __init__(self, cfg, approvals=frozenset(), load_timeout_seconds=40.0):
+            timeouts.append(load_timeout_seconds)
             seen["approvals"] = approvals
 
         def verify_business(self):
@@ -610,7 +612,7 @@ def test_the_real_driver_gets_the_approvals_that_were_given(monkeypatch):
     monkeypatch.setattr(cli, "SeleniumBooksyDriver", Recording)
     lines = []
     cli.main(BOOK + FLAGS, environ=ENV, clock=lambda: datetime(2026, 10, 8, 12, 0, tzinfo=TZ), out=lines.append)
-    assert seen["approvals"] == REQUIRED_APPROVALS
+    assert seen["approvals"] == REQUIRED_APPROVALS and timeouts == [40.0], "the interactive command keeps its longer page wait"
 
 
 # ---------------------------------------------------------------- the dialog detector and the read-only verify command

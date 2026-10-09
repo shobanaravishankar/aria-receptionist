@@ -475,9 +475,11 @@ def test_serve_with_all_five_approvals_says_booking_is_enabled(monkeypatch):
 
 def test_the_real_driver_is_given_the_approvals_only_when_booking_is_enabled(monkeypatch):
     seen = []
+    timeouts = []
 
     class Recording(Spy):
-        def __init__(self, cfg, approvals=frozenset()):
+        def __init__(self, cfg, approvals=frozenset(), load_timeout_seconds=40.0):
+            timeouts.append(load_timeout_seconds)
             seen.append(approvals)
             super().__init__(cfg)
 
@@ -487,6 +489,7 @@ def test_the_real_driver_is_given_the_approvals_only_when_booking_is_enabled(mon
     cli.main(SERVE, environ=ENV, clock=lambda: NOW, out=lines.append)
     cli.main(SERVE + FIVE, environ=ENV, clock=lambda: NOW, out=lines.append)
     assert seen[0] == frozenset() and seen[1] == frozenset(cli.BOOK_APPROVALS)
+    assert timeouts == [cli.SERVE_LOAD_TIMEOUT, cli.SERVE_LOAD_TIMEOUT], "the voice server never waits 40 s for a page while a caller is on the line"
 
 
 def test_a_wrong_signed_in_business_stops_serve_before_any_port_is_opened(monkeypatch):

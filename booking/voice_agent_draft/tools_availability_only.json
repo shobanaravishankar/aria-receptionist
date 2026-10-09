@@ -17,7 +17,7 @@
       "headers": {
         "Authorization": "Bearer <set in the Retell dashboard>"
       },
-      "timeout_ms": 15000,
+      "timeout_ms": 5000,
       "max_retry": 0,
       "speak_during_execution": false,
       "parameters": {
@@ -41,7 +41,7 @@
       "headers": {
         "Authorization": "Bearer <set in the Retell dashboard>"
       },
-      "timeout_ms": 90000,
+      "timeout_ms": 20000,
       "max_retry": 0,
       "speak_during_execution": true,
       "execution_message_description": "Tell the caller you are checking the calendar and it may take a few seconds.",
@@ -80,7 +80,7 @@
       "headers": {
         "Authorization": "Bearer <set in the Retell dashboard>"
       },
-      "timeout_ms": 90000,
+      "timeout_ms": 20000,
       "max_retry": 0,
       "speak_during_execution": true,
       "execution_message_description": "Tell the caller you are looking at the calendar for other times.",

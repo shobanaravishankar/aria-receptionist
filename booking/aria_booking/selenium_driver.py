@@ -81,6 +81,7 @@ class SeleniumBooksyDriver:
         timing_clock: Callable[[], float] = time.monotonic,  # phase timing only; separate so it never consumes the logic clock
         poll_seconds: float = 2.0,
         ready_poll_seconds: float = 0.25,
+        load_timeout_seconds: float = 40.0,
         paint_wait_seconds: float = 1.0,
         approvals: frozenset = frozenset(),
         allowed_services: Optional[frozenset] = None,
@@ -91,6 +92,7 @@ class SeleniumBooksyDriver:
         self._sleep = sleep
         self._monotonic = monotonic
         self._poll = poll_seconds  # how often to look for a person to finish signing in
+        self._load_timeout = load_timeout_seconds  # how long a day page may take to finish loading before the read gives up (fails closed)
         self._ready_poll = ready_poll_seconds  # how often to look at the loading overlay (a local page check, not a request to Booksy)
         self._paint_wait = paint_wait_seconds  # pause after the overlay clears; unchanged until a MEASURED run shows it can be shorter
         self._driver: Optional[Any] = None
@@ -110,6 +112,11 @@ class SeleniumBooksyDriver:
     def _browser(self):
         if self._driver is None:
             self._driver = self._factory(self.cfg)
+            for setter in ("set_page_load_timeout", "set_script_timeout"):  # a hung page or script ends in an error, not a silent stall
+                try:
+                    getattr(self._driver, setter)(self._load_timeout + 5)
+                except Exception:  # a fake or older driver without the setter simply keeps its defaults
+                    pass
         return self._driver
 
     def browser(self):
@@ -190,11 +197,11 @@ class SeleniumBooksyDriver:
         with timer.phase("navigate"):
             browser.get(self.cfg.calendar_url(day.isoformat()))
         with timer.phase("page_ready"):
-            ready = self._wait_for_calendar(browser, 40.0)
+            ready = self._wait_for_calendar(browser, self._load_timeout)
         if not BUSINESS_PATH_RE.search(browser.current_url or ""):
             raise SignInRequired("the calendar did not open (signed out?); sign in and run again")
         if not ready:
-            raise CalendarParseError("the calendar was still loading after 40 seconds")
+            raise CalendarParseError(f"the calendar was still loading after {self._load_timeout:g} seconds")
         with timer.phase("paint_wait"):
             self._sleep(self._paint_wait)  # let the grid finish painting after the overlay clears
         with timer.phase("capture"):

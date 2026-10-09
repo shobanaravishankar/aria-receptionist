@@ -138,6 +138,10 @@ def build_prompt(template: str, catalog: Catalog = DEFAULT_CATALOG, registry: Bo
     return apply_mode(template, mode).replace(MARKER, render_knowledge(catalog, registry, mode).rstrip("\n"))
 
 
+# Retell gives up on a tool after this long. Above the server's worst case (lock wait + read deadline, see voice/launch.py), far below 90 s.
+AVAILABILITY_TIMEOUTS_MS = {"lookup_service": 5000, "check_slot": 20000, "find_alternatives": 20000}
+
+
 def build_availability_tools(tools: dict) -> dict:
     """tools.json minus every writer, with descriptions that say the functions only check. Nothing here can book."""
     kept = []
@@ -147,6 +151,8 @@ def build_availability_tools(tools: dict) -> dict:
         tool = dict(tool)
         if tool["name"] in AVAILABILITY_DESCRIPTIONS:
             tool["description"] = AVAILABILITY_DESCRIPTIONS[tool["name"]]
+        if tool["name"] in AVAILABILITY_TIMEOUTS_MS:
+            tool["timeout_ms"] = AVAILABILITY_TIMEOUTS_MS[tool["name"]]
         kept.append(tool)
     out = {k: v for k, v in tools.items() if k != "tools"}
     out["_status"] = "AVAILABILITY-ONLY demo tools: no booking function exists in this file. " + tools["_status"]

@@ -66,6 +66,14 @@ class Option:
     price_usd: Optional[int]
 
 
+class ReadTimedOut(DriverError):
+    """A calendar read did not finish inside its deadline. Nothing is known about the calendar; the answer must be 'cannot confirm'."""
+
+
+class ReadStillRunning(DriverError):
+    """An earlier read that missed its deadline is still using the one browser. This request fails at once instead of queueing behind it."""
+
+
 def _response(status: str, speak: str, **data: Any) -> dict:
     return {"status": status, "ok": status in SUCCESS_STATUSES, "speak": speak, **data}
 
@@ -91,6 +99,7 @@ class VoiceTools:
         horizon_days: int = 60,
         max_bookings_total: int = 3,
         lock_timeout_seconds: float = 20.0,
+        read_deadline_seconds: Optional[float] = None,
         check_search_days: Optional[int] = None,
         read_cache_seconds: float = 0.0,
         monotonic: Callable[[], float] = time.monotonic,
@@ -119,9 +128,48 @@ class VoiceTools:
         self._day_cache: dict = {}
         self._mono = monotonic
         self._timer = PhaseTimer(monotonic)
-        self.last_timing: dict = {}
+        self._thread_state = threading.local()  # last_timing is per request thread: overlapping requests must not overwrite each other's log
+        self.last_timing = {}
+        # A hard bound on one calendar read (None = call the driver directly, as before). The read runs in a worker thread so a hung browser
+        # page cannot hold the call; a read that misses the deadline is abandoned (its late result is never used or cached) and, while it still
+        # occupies the browser, every new read fails immediately as ReadStillRunning.
+        self._read_deadline = read_deadline_seconds if read_deadline_seconds is None else max(0.05, float(read_deadline_seconds))
+        self._abandoned: Optional[threading.Thread] = None
 
     # ---- helpers ---------------------------------------------------------------------------
+    @property
+    def last_timing(self) -> dict:
+        return getattr(self._thread_state, "timing", {})
+
+    @last_timing.setter
+    def last_timing(self, value: dict) -> None:
+        self._thread_state.timing = value
+
+    def _driver_read(self, day: date) -> DaySnapshot:
+        if self._read_deadline is None:
+            return self.driver.read_day(day)
+        if self._abandoned is not None:
+            if self._abandoned.is_alive():
+                raise ReadStillRunning("an earlier calendar read is still running")
+            self._abandoned = None
+        outcome: dict = {}
+
+        def work() -> None:
+            try:
+                outcome["snapshot"] = self.driver.read_day(day)
+            except BaseException as exc:  # handed back to the requesting thread, never swallowed
+                outcome["error"] = exc
+
+        worker = threading.Thread(target=work, name="calendar-read", daemon=True)
+        worker.start()
+        worker.join(self._read_deadline)
+        if worker.is_alive():
+            self._abandoned = worker
+            raise ReadTimedOut("the calendar read missed its deadline")
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome["snapshot"]
+
     @staticmethod
     def _spec(service: BookableService) -> ServiceSpec:
         return ServiceSpec(service.booksy_name, service.duration_minutes, service.buffer_before_minutes, service.buffer_after_minutes)
@@ -196,7 +244,7 @@ class VoiceTools:
                 self._timer.add("cache_hit", 0)  # logged as cache_hit, with no read= for it: warm latency is not Booksy latency
                 return hit[1], self._mono() - hit[0]
         with self._timer.phase("read"):
-            snapshot = self.driver.read_day(day)
+            snapshot = self._driver_read(day)
         inner = getattr(self.driver, "last_read_ms", None)
         if isinstance(inner, dict):
             self._timer.merge(inner)
@@ -540,6 +588,13 @@ class VoiceTools:
             snapshot, age = self._read(day)
         except SignInRequired:
             return _response("system_unavailable", "The scheduling system needs attention right now, so I can't check availability. Please contact the salon directly.")
+        except (ReadTimedOut, ReadStillRunning):
+            return _response(
+                "unknown",
+                "Checking the calendar is taking longer than it should, so I can't confirm that time right now. "
+                "Please try again in a moment, or contact the salon directly.",
+                reason="read_timeout",
+            )
         except DriverError:
             return _response("unknown", "I couldn't read the calendar clearly, so I can't tell you whether that time is free. Let me not guess.")
         staffs, problem = self._eligible_staff(snapshot, service, named)

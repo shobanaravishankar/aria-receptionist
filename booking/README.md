@@ -53,6 +53,14 @@ a read may be reused for 30 s on the availability-only line and the reply says h
 0.25 s instead of 2 s; per-phase timing (lock wait, navigate, page ready, paint wait, capture, parse, search, cache hit) is written to the
 server log as names and milliseconds only.
 
+Bounded and fail-fast (availability-only line): the server is threaded, so a local `lookup_service` answer never waits behind a slow
+calendar read; an overlapping calendar request gets a spoken "busy" after 2 s instead of queueing; one calendar read has a 14 s hard
+deadline (the page itself gives up after 10 s) and on a miss the answer is "I can't confirm that right now", never a guess; while an
+abandoned read still occupies the browser, new reads fail immediately. Retell's tool timeouts for the demo are 5 s (lookup) and 20 s
+(check/find), above that worst case and far below 30-40 s. Each server log line also carries `received_ms`/`sent_ms` wall-clock marks so
+a call can be lined up with Retell's own call log (user stops speaking -> tool call -> first audio); the server cannot see speech start
+itself, so caller-perceived latency still has to be read from Retell's call record during the supervised run.
+
 **Measured latency: none yet.** The reported 30-40 second pauses have not been re-measured, and the 2-3 second target is **unproven**.
 The first honest number will come from ONE read-only run with the timing log on (cold and warm, an open slot and a taken slot).
 
