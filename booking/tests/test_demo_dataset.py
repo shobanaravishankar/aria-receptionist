@@ -231,3 +231,98 @@ def test_an_extra_person_can_be_added_for_ambiguity_tests_without_touching_the_r
     ds = DemoDataset(TODAY, extra_staff=[twin])
     assert len(ds.roster) == len(ROSTER) + 1 and len(ROSTER) == 10
     assert ds.registry.get("massage-swedish-massage-60").eligible("x", "910099")
+
+
+# ---------------------------------------------------------------- review MD1/MD2 (Sol): restarts and labels
+
+
+def _subprocess_json(script: str, seed: str) -> str:
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    env = dict(os.environ, PYTHONHASHSEED=seed, PYTHONPATH=str(Path.cwd()))
+    result = subprocess.run([sys.executable, "-c", script], env=env, cwd=Path.cwd(), capture_output=True, text=True, check=True, timeout=60)
+    return result.stdout
+
+
+def test_same_demo_day_repeats_after_process_restart():  # Sol's MD1 reproduction, unchanged in substance
+    script = '''
+import json
+from datetime import date
+from aria_booking.demo.dataset import DemoDataset
+plan = DemoDataset(date(2026, 10, 13)).day_plan(date(2026, 10, 16))
+print(json.dumps([(p.staff.name, p.hours,
+                  [(v.start, v.end, v.service, v.client) for v in p.visits])
+                 for p in plan.plans]))
+'''
+    import json
+
+    schedules = [json.loads(_subprocess_json(script, seed)) for seed in ("1", "2")]
+    assert schedules[0] == schedules[1], "The same demo date changes when Python hash randomization changes across launches"
+
+
+def test_scripted_appointment_label_agrees_with_its_block_length():  # Sol's MD2 reproduction, unchanged in substance
+    from aria_booking.catalog.lookup import duration_hint
+
+    ds = DemoDataset(TODAY)
+    mismatches = []
+    for day in ds.scripted_days:
+        for plan in ds.day_plan(day).plans:
+            for visit in plan.visits:
+                stated = duration_hint(visit.service)
+                actual = visit.end - visit.start
+                if stated is not None and stated != actual:
+                    mismatches.append((day.isoformat(), plan.staff.name, visit.service, stated, actual))
+    assert not mismatches, mismatches
+
+
+def test_the_whole_window_and_the_page_are_identical_under_any_hash_seed():
+    script = '''
+import hashlib
+from datetime import date, timedelta
+from aria_booking.demo.dataset import DemoDataset
+from aria_booking.demo.page import render_page
+ds = DemoDataset(date(2026, 10, 13))
+digest = hashlib.sha256()
+day = ds.first_day
+while day <= ds.last_day:
+    digest.update(repr([(p.staff.staff_id, p.hours, p.breaks, p.visits) for p in ds.day_plan(day).plans]).encode())  # data only: a frozenset's repr order is not data
+    digest.update(render_page(ds, day).encode())
+    day += timedelta(days=1)
+print(digest.hexdigest())
+'''
+    digests = {_subprocess_json(script, seed).strip() for seed in ("0", "1", "2", "3", "random")}
+    assert len(digests) == 1, "every covered day (schedule AND page) must be the same in every fresh process"
+
+
+def test_the_service_pool_is_built_in_a_fixed_order_not_from_a_set(dataset):
+    import inspect
+
+    from aria_booking.demo import dataset as module
+
+    assert "sorted(staff.categories)" in inspect.getsource(module.DemoDataset._generated)
+
+
+def test_every_visit_label_is_a_real_demo_service_whose_length_matches_its_block(dataset):
+    lengths = {dataset.registry.get(i).booksy_name: dataset.registry.get(i).duration_minutes for i in dataset.registry.ids()}
+    checked = 0
+    day = dataset.first_day
+    while day <= dataset.last_day:
+        for plan in dataset.day_plan(day).plans:
+            for visit in plan.visits:
+                assert visit.service in lengths, f"{visit.service!r} is not a demo service name"
+                assert lengths[visit.service] == visit.end - visit.start, (day, plan.staff.name, visit)
+                checked += 1
+        day += timedelta(days=1)
+    assert checked > 500
+
+
+def test_the_scripted_four_pm_examples_still_hold_after_the_label_fix(dataset):
+    first = dataset.scripted_days[0]
+    lily = plan_of(dataset, first, "Lily Xie")
+    assert [(v.start, v.end, v.service) for v in lily.visits] == [(690, 750, "Swedish Massage, 1 hour")]
+    assert all(v.end <= minute("15:00") for v in lily.visits), "she is still free from 3 PM, so 4 PM stays available"
+    linda = plan_of(dataset, first, "Linda Chen")
+    assert [(v.start, v.end, v.service) for v in linda.visits] == [(600, 615, "Eyebrows")]

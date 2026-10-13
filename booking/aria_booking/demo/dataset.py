@@ -197,7 +197,8 @@ class DemoDataset:
         visits: list[Visit] = []
         if staff.hours_known:
             utilisation = 0.7 if day.weekday() >= 5 else 0.5
-            pool = [s for c in staff.categories for s in self._services.get(c, [])]
+            # canonical order (categories sorted, services in the registry's fixed order): iterating the frozenset would reorder with Python's per-process hash seed
+            pool = [s for c in sorted(staff.categories) for s in self._services.get(c, [])]
             cursor = start
             while pool and cursor + 30 <= end:
                 blocked = next((b for b in breaks if b.start <= cursor < b.end), None)
@@ -247,10 +248,10 @@ class DemoDataset:
 # (a 60-minute massage at 4:00 fits the gap only without its 15-minute buffer, a 90-minute one crosses the visit);  Linda on a 3-5 PM break;
 # Amy Wu is off; Fiona's hours are not shown (unknown).
 _SCRIPT_FIRST: dict = {
-    "Lily Xie": ((600, 1200), (), [(690, 780, "Swedish Massage, 1 hour", "massage")]),
+    "Lily Xie": ((600, 1200), (), [(690, 750, "Swedish Massage, 1 hour", "massage")]),
     "Elva": ((600, 1200), (), [(600, 660, "Hot Stone Massage, 1 hour", "massage"), (945, 1035, "Deep Tissue Massage, 1 hour 30 minutes", "massage")]),
-    "Pinny Du": ((600, 1200), (), [(660, 720, "Signature Facial, 1 hour", "facial"), (1020, 1080, "Back Facial, 1 hour", "facial")]),
-    "Linda Chen": ((600, 1200), ((900, 1020, "Break"),), [(600, 630, "Eyebrows", "waxing")]),
+    "Pinny Du": ((600, 1200), (), [(660, 720, "Signature Facial", "facial"), (1020, 1080, "Back Facial", "facial")]),
+    "Linda Chen": ((600, 1200), ((900, 1020, "Break"),), [(600, 615, "Eyebrows", "waxing")]),
     "Amy Wu": "off",
     "Fiona Tsao": ((600, 1200), (), []),
 }
