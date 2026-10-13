@@ -1,0 +1,13 @@
+{
+  "_about": "Copy to a folder OUTSIDE Git (or a git-ignored one), fill in, and point ARIA_DEMO_CONFIG at it. Non-secret settings only: the Retell API key, the tool token and the browser public key are supplied separately (environment variables, or ARIA_SECRET_DIR encrypted files).",
+  "tunnel_url": "https://your-tunnel-host.example",
+  "agent_name": "Aria - Simulated Calendar Demo",
+  "voice_id": "retell-Cimo",
+  "model": "gpt-4.1",
+  "model_temperature": 0.2,
+  "language": "en-US",
+  "max_call_duration_ms": 300000,
+  "data_storage_retention_days": 7,
+  "calendar_port": 8790,
+  "tools_port": 8787
+}

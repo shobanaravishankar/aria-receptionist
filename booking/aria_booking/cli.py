@@ -105,6 +105,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--site-port", type=int, default=8790, help="the demo calendar page's loopback port")
     p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today); 'tomorrow' means the day after it")
     p.add_argument("--via-page", action="store_true", help="answer by reading the demo PAGE in a Playwright window (the live code path) instead of the dataset")
+    p = sub.add_parser("demo-agent", help="operate the demo's SEPARATE Retell test agent and voice page (plan, create once, verify, preflight, prepare-web); never places a call")
+    p.add_argument("action", choices=("plan", "store-secret", "create", "verify", "preflight", "prepare-web", "call-summary"))
+    p.add_argument("--config", default=None, help="a JSON file of non-secret settings kept outside Git (see demo_agent.example.json); or set ARIA_DEMO_CONFIG")
+    p.add_argument("--tunnel-url", default=None, help="the public https address of YOUR tunnel to the tool port (or ARIA_DEMO_TUNNEL_URL)")
+    p.add_argument("--state-dir", default=None, help="where created ids, markers and results are kept (default: .local/demo-agent, git-ignored)")
+    p.add_argument("--web-dir", default=None, help="where prepare-web writes the page (default: <state dir>/web)")
+    p.add_argument("--template-dir", default=None, help="the website template folder (default: the repository root)")
+    p.add_argument("--calendar-port", type=int, default=None, help="the demo calendar page's port, for the link in the page banner (default 8790)")
+    p.add_argument("--confirm-create", action="store_true", help="required by `create`, which makes one Retell LLM and one agent")
+    p.add_argument("--secret-name", default="retell_api_key", help="for store-secret: retell_api_key, tool_token or retell_public_key")
+    p.add_argument("--base-url", default=None, help="for preflight: check this loopback or https address instead of the tunnel, e.g. http://127.0.0.1:8787")
     p = sub.add_parser("demo-day", help="print who works and what is booked on one demo day (invented data), so a demo can ask grounded questions")
     p.add_argument("--date", default=None, help="YYYY-MM-DD (default: the day after the demo date)")
     p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today)")
@@ -153,6 +164,15 @@ def main(
 
     if args.command == "mapping-check":
         return _mapping_check(args, cfg, now_fn, out)
+
+    if args.command == "demo-agent":
+        from .demo.agent_ops import run as run_demo_agent
+
+        return run_demo_agent(
+            args.action, env, out, config_file=args.config, confirm_create=args.confirm_create, secret_name=args.secret_name, base_url=args.base_url,
+            overrides={"tunnel_url": args.tunnel_url, "state_dir": args.state_dir, "web_dir": args.web_dir, "template_dir": args.template_dir,
+                       "calendar_port": args.calendar_port},
+        )
 
     if args.command in ("demo-screenshots", "demo-compare", "demo-day"):
         return _demo_visual(args, cfg, out)
@@ -396,9 +416,11 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
     from .demo.dataset import DemoDataset
     from .demo.server import calendar_url, make_site
 
-    key = (env.get("ARIA_RETELL_API_KEY") or "").strip()
+    from .demo.secret_store import serve_credentials
+
+    key, tool_token = serve_credentials(env)  # environment variables, or the encrypted-file folder ARIA_SECRET_DIR (the same source `demo-agent` uses)
     if not key:
-        out("refused: ARIA_RETELL_API_KEY must be set in the environment (never on the command line, in chat or in the repo).")
+        out("refused: ARIA_RETELL_API_KEY must be set in the environment (never on the command line, in chat or in the repo), or stored with `demo-agent store-secret` under ARIA_SECRET_DIR.")
         return EXIT_REFUSED
     if not (1 <= args.port <= 65535 and 1 <= args.site_port <= 65535 and args.port != args.site_port):
         out("refused: --port and --site-port must be different numbers between 1 and 65535.")
@@ -411,6 +433,9 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
     tz = ZoneInfo(cfg.timezone)
     clock = demo_clock(today, tz)
     dataset = DemoDataset(clock().date())
+    if today is not None and today != datetime.now(tz).date():
+        out(f"WARNING: --today {today.isoformat()} is not the real date. A Retell agent's own clock is the real date, so for a live voice test leave --today off; "
+            "otherwise 'tomorrow' will mean different days to the agent and to the calendar.")
     site = make_site(dataset, args.site_port)
     threading.Thread(target=site.serve_forever, name="demo-site", daemon=True).start()
     driver = None
@@ -427,7 +452,7 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
                 out("refused: the demo page did not identify itself as the demo business.")
                 return EXIT_REFUSED
         endpoint, driver, dataset = build_demo(
-            key, today=today, timezone=cfg.timezone, bearer_token=(env.get("ARIA_RETELL_TOOL_TOKEN") or "").strip() or None,
+            key, today=today, timezone=cfg.timezone, bearer_token=tool_token or None,
             log=lambda message: out("  " + message), driver=driver, dataset=dataset,
         )
         server = retell_http.make_http_server(endpoint, args.port)

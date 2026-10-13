@@ -99,6 +99,10 @@ simulated availability" banner and every availability reply says it is the demo 
 route. A real-browser test proves the page, read by the live reader, equals what the voice tools answer from. Geometry follows a redacted capture of the real
 day view; colours, fonts and icons are approximations (no reference screenshot yet; `demo-compare` will measure one). Spoken-call latency is not measured.
 
+`python -m aria_booking demo-agent plan|create|verify|preflight|prepare-web` is the portable operator tooling for the demo's SEPARATE Retell test agent and
+voice page (one-time `create --confirm-create` with read-back, signed preflight, page preparer). Credentials come from environment variables or an
+encrypted-file folder outside the repo, never from Git; it can start no call, service, tunnel or browser. See "Operator setup" in `DEMO_CALENDAR.md`.
+
 ### Browser adapters: Playwright (default, headful, read-only) and Selenium (original)
 
 `login`, `find` and `serve` WITHOUT booking approvals use the Playwright adapter by default (`--browser selenium` selects the original for

@@ -44,6 +44,53 @@ It prints the page address, e.g. `http://127.0.0.1:8790/pro/en-us/9000001/calend
 3. **Page:** open the demo page next to the voice page. Pointing the existing website's voice widget at the new agent id is a change outside this repository
    and is not made here; the old own-account demo and any live agent stay as they are.
 
+## Operator setup: reproduce the mock voice demo on a clean machine
+
+Everything the demo needs except secrets and live account state is in this repository. `python -m aria_booking demo-agent <action>` replaces the
+operator's earlier out-of-repo scripts. **It never places a call, starts a service, starts a tunnel or opens a browser**; creating the agent, serving,
+tunnelling and calling are separate, deliberate steps you take yourself. Actions: `plan`, `store-secret`, `create`, `verify`, `preflight`, `prepare-web`, `call-summary`.
+
+**Inputs you supply (none of these is in Git):**
+
+| Input | What it is | How it is supplied |
+|---|---|---|
+| `ARIA_RETELL_API_KEY` | the Retell private API key, which is also the signing key for custom-function calls | environment variable, **or** an encrypted file in `ARIA_SECRET_DIR` (Windows) |
+| `ARIA_RETELL_TOOL_TOKEN` | the bearer token the three functions send; the same value must be in the environment of `demo-serve` | environment variable, or generated once into `ARIA_SECRET_DIR` by `create` |
+| `ARIA_RETELL_PUBLIC_KEY` | the Retell browser (public) key for the voice page; it must start with `public_key` | environment variable, or encrypted file |
+| `ARIA_SECRET_DIR` | a folder **outside the repository** for Windows-encrypted secret files (`retell-api-key.dpapi` etc., readable only by your Windows user) | environment variable; fill with `demo-agent store-secret --secret-name retell_api_key` (typed hidden, never echoed, never overwrites) |
+| `ARIA_DEMO_TUNNEL_URL` | the public `https://` address of YOUR tunnel to the tool port 8787 (no path, no credentials) | environment variable, `--tunnel-url`, or `tunnel_url` in the config file |
+| `ARIA_DEMO_CONFIG` | optional JSON file of non-secret settings (agent name, voice, model, call cap, retention days, ports, folders) | copy `demo_agent.example.json` somewhere outside Git, edit, point this at it |
+| `ARIA_DEMO_STATE_DIR` | where ids, "create pending" markers and results are written (default `booking/.local/demo-agent`, git-ignored) | optional |
+
+**Steps** (each is separate; stop at any refusal and read it):
+
+1. `python -m aria_booking demo-agent plan` — offline. Prints exactly what `create` would send (tool URLs, prompt hash, caps), which secrets and state exist,
+   and nothing secret. No network.
+2. Serve the demo yourself, in a shell where `ARIA_RETELL_API_KEY` and `ARIA_RETELL_TOOL_TOKEN` hold the same values the operator uses: `python -m aria_booking demo-serve` (see above).
+3. `python -m aria_booking demo-agent preflight --base-url http://127.0.0.1:8787` — signed requests: the three tools answer from the demo calendar, an unsigned
+   request is 401, a booking route is 404. Records seconds per call (**tool latency, not spoken-call latency**). Run it again with the tunnel address (omit
+   `--base-url`) once your tunnel exists.
+4. `python -m aria_booking demo-agent create --confirm-create` — **the one-time creation** of one Retell LLM and one agent named "Aria - Simulated Calendar
+   Demo" (separate from any live agent). It refuses without the flag. A `*-create-pending.json` marker is written before each Retell call: if the outcome is
+   uncertain (network error, timeout, HTTP 5xx) the next run stops and tells you to inspect the Retell account; it never retries blindly. Both steps end in a
+   read-back, and so does `demo-agent verify` at any time: the prompt must equal `prompt_demo_calendar.md` plus the clock line, only the three read-only
+   functions exist (no `book_slot`), their URLs, headers, parameters and spoken-wait fields match, the call cap is 5 minutes, retention 7 days, contact
+   memory off. Any difference is a refusal that lists what differs.
+5. `python -m aria_booking demo-agent prepare-web` — builds the isolated voice page from the repository's website template plus a public-only
+   `demo-config.js` (agent id, version, public key; never a secret), with the "Demo calendar: simulated availability · Booking disabled" banner and the
+   retention sentence. Serve the folder it prints with any static server; the template files in the repository are never modified.
+6. A supervised call, after Sol or Shobana start it. `call-summary` can then list the newest call's tool events and timings (no transcript text is kept).
+
+**Intentionally local (not and never in Git):** the Retell API key, tool token and public key; encrypted `.dpapi` files and their folder; the config file with
+the real tunnel address; `booking/.local/` (created ids, markers, preflight and call-summary results, the generated page); the generated `demo-config.js`;
+tunnel logs; Booksy login profiles and session files; real account and agent ids; call recordings and transcripts. The repository's `.gitignore` covers the
+state folder and `demo-config.js`, and a test fails if anything of that kind becomes trackable.
+
+**Not verified, and not claimed:** that Retell signs custom-function calls exactly as `verify_signature` expects (it fails closed with 401 if not; Retell's
+documentation now says to verify with the raw body and the API key); the field names in `call-summary`'s read of a call (copied from the operator's draft,
+not checked against Retell's documentation); spoken-call latency; the connection of the test agent to the page; and any voice test. Updating a tunnel address
+in an existing agent is not automated (the update call is not on the allow-list); create a new agent or change it in the Retell dashboard, then run `verify`.
+
 ## What to ask (the scripted days: the demo date + 1 and + 2)
 
 On the demo date + 1 (a massage at 4 PM unless stated). `python -m aria_booking demo-day [--date YYYY-MM-DD] [--today YYYY-MM-DD]` prints who works and what is booked on any covered day:

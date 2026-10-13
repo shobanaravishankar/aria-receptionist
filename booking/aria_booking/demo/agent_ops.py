@@ -1,0 +1,515 @@
+"""Operator tooling for the demo's SEPARATE Retell test agent and its voice page. Portable and secret-free: nothing here is a key, a token, a machine
+path or live configuration; all of that is supplied at run time (environment, an operator-named secret folder, a JSON file kept outside Git).
+
+What each action does (and the hard limits):
+  plan          offline. Shows what ``create`` would send (tool URLs, prompt hash, settings) and which secrets/state exist. No network.
+  store-secret  Windows only. Encrypts one secret you type (hidden prompt) into your secret folder. Never overwrites.
+  create        the ONE-TIME creation of the test agent: refuses without --confirm-create. Writes a 'pending' marker before each Retell call, so an
+                uncertain outcome is never retried blindly. Ends with the same read-back as ``verify``.
+  verify        reads the agent and its LLM back from Retell and compares every field that matters with what the reviewed source says it must be.
+  preflight     signed requests to the tool server (your loopback address or your tunnel): the three tools answer, an unsigned request is 401 and a
+                booking route is 404. Records seconds per call (tool latency, NOT spoken-call latency).
+  prepare-web   builds the isolated voice page from the repository's website template plus a PUBLIC-only config, with a simulated-calendar banner.
+  call-summary  reads the newest call's TOOL events and timings (no transcript text is kept) to help line up a supervised call.
+
+Nothing here can place a call: the Retell client only accepts an allow-list of paths, and no path that starts, registers or schedules a call is on it.
+Creating, calling and paying are the operator's separate, deliberate acts.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import ipaddress
+import json
+import re
+import shutil
+import subprocess
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Callable, Mapping, Optional
+from zoneinfo import ZoneInfo
+
+from .secret_store import DpapiSecrets, SecretMissing, provider_from_environment
+
+BOOKING = Path(__file__).resolve().parents[2]
+REPO_ROOT = BOOKING.parent
+RETELL_API = "https://api.retellai.com/"
+TOOL_NAMES = frozenset({"lookup_service", "check_slot", "find_alternatives"})
+SOURCE_PROMPT = "voice_agent_draft/prompt_demo_calendar.md"
+SOURCE_TOOLS = "voice_agent_draft/tools_availability_only.json"
+CLOCK_SECTION = (
+    "\n\n## Session clock\nCurrent salon date and time: {{current_time_America/New_York}}. "
+    "The demo uses today's actual date in America/New_York. Resolve tomorrow from this date.\n"
+)
+# The only Retell paths this module can ever call. Nothing that creates a call, a phone call, a batch or a schedule is here.
+ALLOWED = (
+    ("POST", re.compile(r"^create-retell-llm$")), ("POST", re.compile(r"^create-agent$")),
+    ("GET", re.compile(r"^get-agent/[A-Za-z0-9_.-]+$")), ("GET", re.compile(r"^get-retell-llm/[A-Za-z0-9_.-]+$")),
+    ("POST", re.compile(r"^v3/list-calls$")), ("GET", re.compile(r"^v2/get-call/[A-Za-z0-9_.-]+$")),
+)
+CONFIG_KEYS = frozenset({
+    "tunnel_url", "agent_name", "voice_id", "model", "model_temperature", "language", "max_call_duration_ms", "data_storage_retention_days",
+    "begin_message", "state_dir", "template_dir", "web_dir", "calendar_port", "tools_port",
+})
+
+
+class OperatorError(Exception):
+    """A refusal or a failed check. The message never contains a secret value."""
+
+
+class RetellApiError(OperatorError):
+    def __init__(self, path: str, status: Optional[int], definite: bool):
+        super().__init__(f"Retell {path}: " + (f"HTTP {status}" if status else "no answer (network error or timeout)"))
+        self.path, self.status = path, status
+        self.definite = definite  # True: Retell ANSWERED with a client error, so nothing was created by that call
+
+
+class RetellApi:
+    """A minimal Retell client: allow-listed paths only, bodies never logged, errors carry a status and nothing else."""
+
+    def __init__(self, key: Callable[[], str], *, base: str = RETELL_API, opener: Callable[..., Any] = urllib.request.urlopen, timeout: float = 45.0):
+        self._key, self._base, self._open, self._timeout = key, base, opener, timeout
+
+    def request(self, path: str, data: Optional[dict] = None, method: Optional[str] = None) -> dict:
+        verb = method or ("POST" if data is not None else "GET")
+        if not any(v == verb and pattern.match(path) for v, pattern in ALLOWED):
+            raise OperatorError(f"this tool does not call Retell's {verb} {path.split('/')[0]}")
+        request = urllib.request.Request(
+            self._base + path, data=json.dumps(data).encode("utf-8") if data is not None else None, method=verb,
+            headers={"Authorization": "Bearer " + self._key(), "Content-Type": "application/json"},
+        )
+        try:
+            with self._open(request, timeout=self._timeout) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as exc:  # the body may echo what was sent (headers included): it is dropped, only the status survives
+            raise RetellApiError(path, exc.code, definite=400 <= exc.code < 500) from None
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            raise RetellApiError(path, None, definite=False) from None
+
+
+# ---------------------------------------------------------------- configuration
+
+
+@dataclass(frozen=True)
+class OperatorConfig:
+    tunnel_url: str = ""
+    agent_name: str = "Aria - Simulated Calendar Demo"
+    voice_id: str = "retell-Cimo"
+    model: str = "gpt-4.1"
+    model_temperature: float = 0.2
+    language: str = "en-US"
+    max_call_duration_ms: int = 300_000
+    data_storage_retention_days: int = 7
+    begin_message: str = ("Hi, I'm Aria, your AI receptionist for Glamour Day Spa. I can explain our services and check our simulated demo calendar. "
+                          "What would you like to know?")
+    state_dir: Path = field(default_factory=lambda: BOOKING / ".local" / "demo-agent")
+    template_dir: Path = field(default_factory=lambda: REPO_ROOT)
+    web_dir: Optional[Path] = None
+    calendar_port: int = 8790
+    tools_port: int = 8787
+
+    @property
+    def web_out(self) -> Path:
+        return self.web_dir or (self.state_dir / "web")
+
+
+def validate_tunnel(url: str) -> str:
+    """A public https address with nothing else on it. Loopback and private addresses are refused: Retell cannot reach them."""
+    text = (url or "").strip()
+    if not text:
+        raise OperatorError("no tunnel address: set ARIA_DEMO_TUNNEL_URL or tunnel_url in the config file (a public https address of your tunnel to the tool port)")
+    parts = urllib.parse.urlsplit(text)
+    host = parts.hostname or ""
+    if parts.scheme != "https" or not host or parts.username or parts.password or parts.query or parts.fragment or parts.path not in ("", "/"):
+        raise OperatorError("the tunnel address must look like https://your-host (https, no path, no credentials)")
+    if host == "localhost" or host.endswith(".local") or host.endswith(".internal"):
+        raise OperatorError("the tunnel address must be public: Retell cannot reach localhost")
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise OperatorError("the tunnel address must be public: Retell cannot reach a private or loopback address")
+    return f"https://{host}" + (f":{parts.port}" if parts.port else "")
+
+
+def load_config(env: Mapping[str, str], *, file: Optional[str] = None, overrides: Optional[Mapping[str, Any]] = None) -> OperatorConfig:
+    """Defaults, then the JSON file (ARIA_DEMO_CONFIG or --config), then the environment, then command-line overrides. Unknown keys are refused."""
+    values: dict[str, Any] = {}
+    path = file or (env.get("ARIA_DEMO_CONFIG") or "").strip()
+    if path:
+        try:
+            raw = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError) as exc:
+            raise OperatorError(f"the config file could not be read ({type(exc).__name__})") from None
+        if not isinstance(raw, dict):
+            raise OperatorError("the config file must hold one JSON object")
+        unknown = sorted(k for k in raw if k not in CONFIG_KEYS and not k.startswith("_"))
+        if unknown:
+            raise OperatorError("unknown config keys: " + ", ".join(unknown))
+        values.update({k: v for k, v in raw.items() if k in CONFIG_KEYS})
+    if (env.get("ARIA_DEMO_TUNNEL_URL") or "").strip():
+        values["tunnel_url"] = env["ARIA_DEMO_TUNNEL_URL"].strip()
+    if (env.get("ARIA_DEMO_STATE_DIR") or "").strip():
+        values["state_dir"] = env["ARIA_DEMO_STATE_DIR"].strip()
+    values.update({k: v for k, v in (overrides or {}).items() if v not in (None, "")})
+    for key in ("state_dir", "template_dir", "web_dir"):
+        if key in values and values[key] is not None:
+            values[key] = Path(values[key])
+    try:
+        return replace(OperatorConfig(), **values)
+    except TypeError as exc:  # a wrongly typed value
+        raise OperatorError(f"the configuration is not valid ({exc})") from None
+
+
+# ---------------------------------------------------------------- what the agent must be (from the reviewed source)
+
+
+def source_commit() -> str:
+    try:
+        out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=BOOKING, capture_output=True, text=True, timeout=10)
+        return out.stdout.strip() if out.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", out.stdout.strip()) else "unknown"
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
+
+
+def expected_prompt(root: Path = BOOKING) -> str:
+    text = (root / SOURCE_PROMPT).read_text(encoding="utf-8")
+    if text.count("## Who you are") != 1:
+        raise OperatorError("the reviewed prompt must contain the '## Who you are' section exactly once")
+    return text[text.index("## Who you are"):] + CLOCK_SECTION
+
+
+def expected_tools(tunnel: str, token: str, root: Path = BOOKING) -> list[dict]:
+    custom = json.loads((root / SOURCE_TOOLS).read_text(encoding="utf-8"))["tools"]
+    if {t["name"] for t in custom} != TOOL_NAMES:
+        raise OperatorError("the reviewed tool file must hold exactly the three read-only functions")
+    for tool in custom:
+        tool.update(type="custom", url=f"{tunnel}/tools/{tool['name']}", headers={"Authorization": "Bearer " + token}, speak_after_execution=True, args_at_root=False)
+    return custom + [{"type": "end_call", "name": "end_call", "description": "End when the caller says goodbye or is finished."}]
+
+
+def prompt_digest(prompt: str) -> str:
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
+
+
+# ---------------------------------------------------------------- local state (all of it under the git-ignored .local folder)
+
+
+class State:
+    def __init__(self, directory: Path):
+        self.dir = Path(directory)
+
+    def path(self, name: str) -> Path:
+        return self.dir / name
+
+    def exists(self, name: str) -> bool:
+        return self.path(name).exists()
+
+    def read(self, name: str) -> dict:
+        return json.loads(self.path(name).read_text(encoding="utf-8"))
+
+    def write(self, name: str, data: dict) -> None:
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.path(name).write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def remove(self, name: str) -> None:
+        self.path(name).unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------- actions
+
+
+def plan(config: OperatorConfig, secrets: Any, out: Callable[[str], None]) -> int:
+    """Everything ``create`` would do, with no network and no secret read."""
+    state = State(config.state_dir)
+    try:
+        tunnel = validate_tunnel(config.tunnel_url)
+    except OperatorError as exc:
+        tunnel = f"(not set: {exc})"
+    prompt = expected_prompt()
+    tools = expected_tools(tunnel if tunnel.startswith("https://") else "https://<your-tunnel-host>", "<tool token>")
+    out("PLAN (nothing is created or contacted)")
+    out(f"  agent name        : {config.agent_name}  (a SEPARATE test agent; no existing agent is changed)")
+    out(f"  tunnel            : {tunnel}")
+    out(f"  functions         : {', '.join(sorted(t['name'] for t in tools if t['type'] == 'custom'))} + end_call; no booking function")
+    out(f"  prompt            : {SOURCE_PROMPT} from '## Who you are' + a session-clock line, {len(prompt)} characters, sha256 {prompt_digest(prompt)}")
+    out(f"  settings          : model {config.model}, voice {config.voice_id}, {config.max_call_duration_ms // 1000}s call cap, {config.data_storage_retention_days}-day retention, contact memory off")
+    out(f"  secrets from      : {secrets.describe()}")
+    for name in ("retell_api_key", "tool_token", "retell_public_key"):
+        out(f"    {name:18}: " + ("available" if secrets.has(name) else "NOT available"))
+    out(f"  local state       : {config.state_dir}  (" + (", ".join(sorted(p.name for p in config.state_dir.glob('*') if p.is_file())) or "empty") + ")")
+    out(f"  source commit     : {source_commit()}")
+    out("  to create it      : python -m aria_booking demo-agent create --confirm-create   (one time; this plan did not do it)")
+    return 0
+
+
+def store_secret(name: str, secrets: Any, prompt: Callable[[str], str], out: Callable[[str], None]) -> int:
+    if not isinstance(secrets, DpapiSecrets):
+        raise OperatorError("store-secret needs ARIA_SECRET_DIR (an encrypted-file folder); otherwise supply the value as an environment variable")
+    from .secret_store import NAMES
+
+    if name not in NAMES:
+        raise OperatorError("name must be one of: " + ", ".join(NAMES))
+    value = prompt(f"{name} (typed hidden, never echoed): ")
+    path = secrets.put(name, value)
+    out(f"stored {name} encrypted at {path}")
+    return 0
+
+
+def _marker_name(step: str) -> str:
+    return f"{step}-create-pending.json"
+
+
+def _create_once(state: State, step: str, make: Callable[[], dict], keep: Callable[[dict], dict], note: dict) -> dict:
+    """Create something at most once. A result file means done; a pending marker without one means 'outcome uncertain': stop and look."""
+    result_file = f"{step}.json"
+    if state.exists(result_file):
+        return state.read(result_file)
+    if state.exists(_marker_name(step)):
+        raise OperatorError(f"an earlier {step} create has an uncertain outcome: check the Retell account, then delete {_marker_name(step)} or write {result_file} by hand")
+    state.write(_marker_name(step), {"started": time.time(), **note})
+    try:
+        created = make()
+    except RetellApiError as exc:
+        if exc.definite:
+            state.remove(_marker_name(step))  # Retell refused it outright, so nothing exists: a retry is safe
+        raise
+    state.write(result_file, keep(created))
+    return state.read(result_file)
+
+
+def _check(problems: list[str], label: str, expected: Any, actual: Any) -> None:
+    if expected != actual:
+        problems.append(label)
+
+
+def verify(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[str], None]) -> int:
+    state = State(config.state_dir)
+    if not state.exists("agent.json") or not state.exists("llm.json"):
+        raise OperatorError("no created agent is recorded here: run `create --confirm-create` first")
+    agent_state, llm_id = state.read("agent.json"), state.read("llm.json")["llm_id"]
+    tunnel = validate_tunnel(config.tunnel_url)
+    token = secrets.get("tool_token")
+    prompt, tools = expected_prompt(), expected_tools(tunnel, token)
+    agent, llm = api.request("get-agent/" + agent_state["agent_id"]), api.request("get-retell-llm/" + llm_id)
+    problems: list[str] = []
+    _check(problems, "the agent does not use the recorded LLM", llm_id, (agent.get("response_engine") or {}).get("llm_id"))
+    _check(problems, "the agent's name", config.agent_name, agent.get("agent_name"))
+    _check(problems, "the call-length cap", config.max_call_duration_ms, agent.get("max_call_duration_ms"))
+    _check(problems, "the retention days", config.data_storage_retention_days, agent.get("data_storage_retention_days"))
+    memory = agent.get("contact_memory_config") or {}
+    _check(problems, "contact memory is not off", (False, False), (memory.get("enable_read"), memory.get("enable_update")))
+    _check(problems, "the prompt differs from the reviewed source", prompt, llm.get("general_prompt"))
+    live = {t.get("name"): t for t in llm.get("general_tools") or [] if t.get("type") == "custom"}
+    _check(problems, "the set of custom functions", sorted(TOOL_NAMES), sorted(live))
+    if "book_slot" in json.dumps(llm.get("general_tools") or []) or "book_slot" in (llm.get("general_prompt") or ""):
+        problems.append("a booking function or instruction is present")
+    for tool in tools:
+        if tool.get("type") != "custom":
+            continue
+        got = live.get(tool["name"], {})
+        for key in ("url", "headers", "parameters", "speak_during_execution", "speak_after_execution", "args_at_root"):
+            _check(problems, f"{tool['name']}.{key}", tool.get(key), got.get(key))
+        if tool.get("speak_during_execution"):
+            _check(problems, f"{tool['name']}.execution_message_description", tool.get("execution_message_description"), got.get("execution_message_description"))
+    if not any(t.get("type") == "end_call" for t in llm.get("general_tools") or []):
+        problems.append("the end_call function")
+    if problems:
+        state.remove("configuration-verified.json")
+        raise OperatorError("read-back does NOT match the reviewed configuration: " + "; ".join(problems))
+    state.write("configuration-verified.json", {
+        "verified_at": time.time(), "tools": sorted(live), "booking_enabled": False, "prompt_sha256": prompt_digest(prompt),
+        "agent_name": agent.get("agent_name"), "source_commit": source_commit(),
+    })
+    out("Separate simulated-calendar agent and all three read-only functions verified against the reviewed source; no call was started.")
+    return 0
+
+
+def create(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[str], None], *, confirm: bool) -> int:
+    if not confirm:
+        raise OperatorError("creating a Retell agent needs the explicit flag --confirm-create (run `plan` first; it creates nothing)")
+    tunnel = validate_tunnel(config.tunnel_url)
+    token = secrets.ensure_token() if hasattr(secrets, "ensure_token") else secrets.get("tool_token")
+    secrets.get("retell_api_key")  # fail early, before anything is written, if the key is missing
+    state = State(config.state_dir)
+    prompt, tools = expected_prompt(), expected_tools(tunnel, token)
+    llm = _create_once(
+        state, "llm",
+        lambda: api.request("create-retell-llm", {
+            "model": config.model, "model_temperature": config.model_temperature, "general_prompt": prompt, "general_tools": tools,
+            "begin_message": config.begin_message,
+        }, "POST"),
+        lambda made: {"llm_id": made["llm_id"]}, {"name": config.agent_name},
+    )
+    _create_once(
+        state, "agent",
+        lambda: api.request("create-agent", {
+            "agent_name": config.agent_name, "voice_id": config.voice_id, "response_engine": {"type": "retell-llm", "llm_id": llm["llm_id"]},
+            "language": config.language, "max_call_duration_ms": config.max_call_duration_ms,
+            "data_storage_retention_days": config.data_storage_retention_days, "contact_memory_config": {"enable_read": False, "enable_update": False},
+        }, "POST"),
+        lambda made: {"agent_id": made["agent_id"], "agent_name": made["agent_name"], "version": made.get("version", 0), "llm_id": llm["llm_id"],
+                      "tunnel": tunnel, "mode": "simulated availability only", "source_commit": source_commit()},
+        {"llm_id": llm["llm_id"]},
+    )
+    return verify(config, secrets, api, out)
+
+
+def sign_body(raw: bytes, key: str, now_ms: int) -> str:
+    return f"v={now_ms},d=" + hmac.new(key.encode("utf-8"), raw + str(now_ms).encode("ascii"), hashlib.sha256).hexdigest()
+
+
+def preflight(config: OperatorConfig, secrets: Any, out: Callable[[str], None], *, base_url: Optional[str] = None,
+              opener: Callable[..., Any] = urllib.request.urlopen, clock: Callable[[], float] = time.time) -> int:
+    """Signed requests to the tool server. ``base_url`` defaults to the tunnel; use http://127.0.0.1:<port> to check the server before a tunnel exists."""
+    base = (base_url or validate_tunnel(config.tunnel_url)).rstrip("/")
+    if base_url and not re.match(r"^https?://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$", base) and not base.startswith("https://"):
+        raise OperatorError("--base-url must be a loopback address or an https address")
+    key, token = secrets.get("retell_api_key"), secrets.get("tool_token")
+    tomorrow = (datetime.fromtimestamp(clock(), ZoneInfo("America/New_York")) + timedelta(days=1)).date().isoformat()
+    cases = [
+        ("lookup_service", {"query": "Signature Facial"}),
+        ("check_slot", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": "Lily"}),
+        ("check_slot", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": "Elva"}),
+        ("check_slot", {"service_id": "facial-signature-facial-60", "date": tomorrow, "time": "16:00"}),
+    ]
+    records = []
+    for index, (name, args) in enumerate(cases):
+        raw = json.dumps({"name": name, "call": {"call_id": f"demo-preflight-{index}"}, "args": args}).encode("utf-8")
+        request = urllib.request.Request(f"{base}/tools/{name}", data=raw, headers={
+            "Content-Type": "application/json", "Authorization": "Bearer " + token, "X-Retell-Signature": sign_body(raw, key, int(clock() * 1000))})
+        began = time.monotonic()
+        try:
+            with opener(request, timeout=20) as response:
+                result = json.load(response)
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            raise OperatorError(f"{name}: the tool server did not answer ({type(exc).__name__})") from None
+        records.append({"name": name, "args": args, "seconds": round(time.monotonic() - began, 3), "result": result})
+    problems = []
+    for record in records:
+        if record["name"] == "check_slot" and record["result"].get("source") != "demo_calendar":
+            problems.append("a check_slot reply does not say it is the demo calendar")
+    lily, elva = records[1]["result"], records[2]["result"]
+    if lily.get("status") != "available" or elva.get("unavailable_reason") != "occupied":
+        problems.append("the scripted examples (Lily free at 4, Elva booked at 4) did not hold: run the demo server WITHOUT --today so 'tomorrow' is the real tomorrow")
+    for suffix, expected in (("check_slot", 401), ("book_slot", 404)):
+        try:
+            with opener(urllib.request.Request(f"{base}/tools/{suffix}", data=b"{}"), timeout=15):
+                problems.append(f"an unsigned request to {suffix} was accepted" if suffix == "check_slot" else f"a booking route answered ({suffix})")
+        except urllib.error.HTTPError as exc:
+            if exc.code != expected:
+                problems.append(f"{suffix}: expected HTTP {expected}, got {exc.code}")
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise OperatorError(f"{suffix}: the tool server did not answer") from None
+    State(config.state_dir).write("preflight.json", {
+        "created_at": clock(), "records": records, "problems": problems, "unsigned_rejected": not any("unsigned" in p for p in problems),
+        "booking_route_absent": not any("booking route" in p for p in problems), "paid_call_started": False,
+    })
+    out(json.dumps({"checks": [{"name": r["name"], "status": r["result"].get("status"), "seconds": r["seconds"]} for r in records], "problems": problems}))
+    if problems:
+        raise OperatorError("preflight found problems: " + "; ".join(problems))
+    return 0
+
+
+def prepare_web(config: OperatorConfig, secrets: Any, out: Callable[[str], None], *, clock: Callable[[], float] = time.time) -> int:
+    """The isolated voice page: the repository's website template, a demo banner, and a PUBLIC-only config. The template files are copied, never changed."""
+    state = State(config.state_dir)
+    if not state.exists("agent.json"):
+        raise OperatorError("no created agent is recorded here: run `create --confirm-create` first (the page needs its agent id)")
+    agent = state.read("agent.json")
+    public_key = secrets.get("retell_public_key")
+    if not public_key.startswith("public_key"):
+        raise OperatorError("the browser key must be a Retell PUBLIC key (it starts with public_key); never put the private API key in a page")
+    template, target = config.template_dir, config.web_out
+    for name in ("index.html", "retell-voice.js", "avatar.js", "styles.css"):
+        if not (template / name).is_file():
+            raise OperatorError(f"the website template is missing {name} (looked in {template})")
+    target.mkdir(parents=True, exist_ok=True)
+    note_old = "Nothing is recorded by this page."
+    note_new = f"Retell may retain this test call for review for up to {config.data_storage_retention_days} days."
+    tomorrow = (datetime.fromtimestamp(clock(), ZoneInfo("America/New_York")) + timedelta(days=1)).date().isoformat()
+    calendar = f"http://localhost:{config.calendar_port}/pro/en-us/9000001/calendar?date={tomorrow}&amp;view=day&amp;staffers=working"
+    banner = (
+        '<aside data-testid="demo-page-banner" style="position:sticky;top:0;z-index:2000;background:#fff0c0;color:#39270e;padding:12px 20px;text-align:center;'
+        f'font:600 15px sans-serif">Demo calendar: simulated availability · Booking disabled · <a href="{calendar}" target="_blank" rel="noopener">View demo calendar</a></aside>'
+    )
+    html = (template / "index.html").read_text(encoding="utf-8")
+    if html.count("<body>") != 1 or note_old not in html:
+        raise OperatorError("the website template changed shape (no single <body> or no microphone note); update the preparer before using it")
+    html = html.replace("Glamour Day Spa — Voice Assistant Demo", "Aria — Simulated Calendar Demo").replace("<body>", "<body>\n" + banner, 1).replace(note_old, note_new)
+    (target / "index.html").write_text(html, encoding="utf-8")
+    script = (template / "retell-voice.js").read_text(encoding="utf-8")
+    (target / "retell-voice.js").write_text(script.replace(note_old, note_new), encoding="utf-8")
+    for name in ("avatar.js", "styles.css"):
+        shutil.copyfile(template / name, target / name)
+    settings = {"publicKey": public_key, "agentId": agent["agent_id"], "agentVersion": agent.get("version", 0)}
+    (target / "demo-config.js").write_text("/* Public-only isolated demo page. Generated; not for Git. */\nwindow.RETELL_DEMO = " + json.dumps(settings) + ";\n", encoding="utf-8")
+    out(f"Isolated voice page prepared in {target} with the simulated-calendar banner and the separate test agent (serve it with: python -m http.server --directory <that folder>).")
+    return 0
+
+
+def call_summary(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[str], None]) -> int:
+    """The newest call's tool events and timings, to line up a supervised call. No transcript text is stored. (Retell's response shape here follows the
+    operator's earlier draft and has not been checked against Retell's documentation by this code.)"""
+    state = State(config.state_dir)
+    if not state.exists("agent.json"):
+        raise OperatorError("no created agent is recorded here")
+    agent_id = state.read("agent.json")["agent_id"]
+    listing = api.request("v3/list-calls", {"filter_criteria": {"agent": [{"agent_id": agent_id}]}, "sort_order": "descending", "limit": 3}, "POST")
+    calls = listing.get("items") or []
+    if not calls:
+        out("No calls found for the test agent.")
+        return 0
+    call = api.request("v2/get-call/" + calls[0]["call_id"])
+    summary = {k: call.get(k) for k in ("call_status", "start_timestamp", "end_timestamp", "duration_ms", "disconnection_reason")}
+    summary["tool_events"] = [
+        {k: event.get(k) for k in ("role", "name", "time_sec", "arguments", "content") if k in event}
+        for event in call.get("transcript_with_tool_calls", []) if event.get("role") in ("tool_call_invocation", "tool_call_result")
+    ]
+    state.write("last-call-summary.json", summary)
+    out(json.dumps(summary))
+    return 0
+
+
+ACTIONS = ("plan", "store-secret", "create", "verify", "preflight", "prepare-web", "call-summary")
+
+
+def run(
+    action: str, env: Mapping[str, str], out: Callable[[str], None], *, config_file: Optional[str] = None, overrides: Optional[Mapping[str, Any]] = None,
+    confirm_create: bool = False, secret_name: str = "retell_api_key", base_url: Optional[str] = None, secrets: Any = None,
+    api_factory: Optional[Callable[[Any], RetellApi]] = None, prompt: Optional[Callable[[str], str]] = None, opener: Callable[..., Any] = urllib.request.urlopen,
+    clock: Callable[[], float] = time.time,
+) -> int:
+    """Returns 0, or 2 after printing why it refused. Never prints a secret."""
+    try:
+        config = load_config(env, file=config_file, overrides=overrides)
+        secrets = secrets if secrets is not None else provider_from_environment(env)
+        factory = api_factory or (lambda s: RetellApi(lambda: s.get("retell_api_key")))
+        if action == "plan":
+            return plan(config, secrets, out)
+        if action == "store-secret":
+            import getpass
+
+            return store_secret(secret_name, secrets, prompt or getpass.getpass, out)
+        if action == "create":
+            return create(config, secrets, factory(secrets), out, confirm=confirm_create)
+        if action == "verify":
+            return verify(config, secrets, factory(secrets), out)
+        if action == "preflight":
+            return preflight(config, secrets, out, base_url=base_url, opener=opener, clock=clock)
+        if action == "prepare-web":
+            return prepare_web(config, secrets, out, clock=clock)
+        if action == "call-summary":
+            return call_summary(config, secrets, factory(secrets), out)
+        raise OperatorError("unknown action")
+    except (OperatorError, SecretMissing) as exc:
+        out(f"refused: {exc}")
+        return 2

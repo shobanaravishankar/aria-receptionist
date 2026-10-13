@@ -105,6 +105,38 @@ def test_it_starts_without_a_business_id_or_the_live_switch_and_says_plainly_wha
     assert KEY not in text
 
 
+def test_the_bearer_token_from_the_environment_reaches_the_endpoint(isolated):
+    run(["demo-serve", "--today", "2026-10-13"], env={**ENV, "ARIA_RETELL_TOOL_TOKEN": "  env-token  "})
+    assert isolated["endpoint"]._bearer == "env-token"
+
+
+def test_without_a_token_the_endpoint_has_none_and_nothing_is_created(isolated, tmp_path):
+    run(["demo-serve", "--today", "2026-10-13"])
+    assert isolated["endpoint"]._bearer is None and list(tmp_path.iterdir()) == []
+
+
+def test_the_key_and_a_stable_token_can_come_from_the_encrypted_file_folder_instead(isolated, monkeypatch, tmp_path):
+    from aria_booking.demo import secret_store
+
+    vault = secret_store.DpapiSecrets(tmp_path / "vault", crypt=lambda raw, encrypt: b"E" + raw if encrypt else raw[1:])
+    vault.put("retell_api_key", KEY)
+    monkeypatch.setattr(secret_store, "provider_from_environment", lambda environ=None: vault)
+    code, text = run(["demo-serve", "--today", "2026-10-13"], env={"ARIA_SECRET_DIR": "x"})
+    assert code == cli.EXIT_OK and KEY not in text
+    first = isolated["endpoint"]._bearer
+    assert first == vault.get("tool_token") and len(first) >= 40
+    run(["demo-serve", "--today", "2026-10-13"], env={"ARIA_SECRET_DIR": "x"})
+    assert isolated["endpoint"]._bearer == first, "the token is generated once and then reused, so the server and the agent agree"
+
+
+def test_a_missing_key_in_the_encrypted_folder_is_the_same_refusal(monkeypatch, tmp_path):
+    from aria_booking.demo import secret_store
+
+    monkeypatch.setattr(secret_store, "provider_from_environment", lambda environ=None: secret_store.DpapiSecrets(tmp_path, crypt=lambda raw, encrypt: raw))
+    code, text = run(["demo-serve"], env={"ARIA_SECRET_DIR": "x"})
+    assert code == cli.EXIT_REFUSED and "ARIA_RETELL_API_KEY" in text and list(tmp_path.iterdir()) == [], "a refusal writes nothing, not even a token"
+
+
 def test_the_endpoint_it_builds_is_read_only_and_labelled(isolated):
     run(["demo-serve", "--today", "2026-10-13"])
     endpoint = isolated["endpoint"]
