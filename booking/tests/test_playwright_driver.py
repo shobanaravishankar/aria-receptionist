@@ -20,7 +20,7 @@ from aria_booking.discover import DISCOVERY_JS, LOADER_GONE_JS
 from aria_booking.driver import BeforeSaveError, DriverError, SignInRequired
 from aria_booking.models import AppointmentSpec
 from aria_booking.playwright_driver import (
-    LOADER_GONE_FN, SETTLE_FN, VIEWPORT, PlaywrightBooksyDriver, PlaywrightError, PlaywrightSession, PlaywrightTimeout, as_function, launch_options,
+    AUTHENTICATED_FN, LOADER_GONE_FN, SETTLE_FN, VIEWPORT, PlaywrightBooksyDriver, PlaywrightError, PlaywrightSession, PlaywrightTimeout, as_function, launch_options,
 )
 from aria_booking.roster import ROSTER_JS
 from aria_booking.timing import PHASES
@@ -67,6 +67,8 @@ class FakePage:
         self.visited: list[str] = []
         self.args: list = []
         self.closed = False
+        self.fronted = 0
+        self.auth_seen_login = False
 
     def note(self, name):
         self.calls.append((name, threading.get_ident()))
@@ -93,16 +95,20 @@ class FakePage:
             raise PlaywrightTimeout("loader")
         if expression == SETTLE_FN and self.timeouts["settle"]:
             raise PlaywrightTimeout("settle")
+        if expression == AUTHENTICATED_FN:
+            if self.timeouts.get("auth_never"):
+                raise PlaywrightTimeout("the signed-in calendar never appeared")
+            if not self.signed_in and not self.auth_seen_login:
+                self.auth_seen_login = True  # the first look finds the sign-in page
+                raise PlaywrightTimeout("sign-in page")
+            self.signed_in = True  # the person signed in during the long wait
 
     def wait_for_selector(self, selector, timeout=None):
         self.note("wait_for_selector")
 
-    def wait_for_url(self, pattern, timeout=None):
-        self.note("wait_for_url")
-        self.args.append(("wait_for_url", pattern, timeout))
-        if self.timeouts.get("url"):
-            raise PlaywrightTimeout("sign-in never happened")
-        self.signed_in = True
+    def bring_to_front(self):
+        self.note("bring_to_front")
+        self.fronted += 1
 
     def locator(self, selector):
         self.note("locator")
@@ -187,7 +193,7 @@ def test_the_module_never_sleeps_and_waits_natively():
     tree = ast.parse(SOURCE)
     calls = {ast.unparse(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
     assert not any(c.endswith("sleep") for c in calls), "no time.sleep anywhere in the adapter"
-    for native in ("page.goto", "page.wait_for_function", "page.wait_for_url", "page.wait_for_selector"):
+    for native in ("page.goto", "page.wait_for_function", "page.wait_for_selector"):
         assert native in calls, native
 
 
@@ -326,35 +332,36 @@ def test_a_read_leaves_its_phase_timings_including_the_hand_off():
 # ---------------------------------------------------------------- sign-in is a person's job
 
 
-def test_a_signed_out_browser_waits_for_a_person_with_a_native_wait_and_never_types_anything():
+def test_a_signed_out_browser_waits_for_a_person_and_never_types_anything():
     page = multi(signed_in=False)
     messages = []
     driver = PlaywrightBooksyDriver(Config(business_id="1234567", sign_in_wait_seconds=90), session_factory=lambda: FakeSession(page), notify=messages.append,
                                     url_for_day=lambda d: "x")
-    # after the person signs in the page reaches the business URL; the fake's wait_for_url flips it
     assert driver.verify_business() == "1234567"
     names = [n for n, _t in page.calls]
-    assert "wait_for_url" in names and not {"fill", "type", "press", "click"} & set(names)
-    assert any("sign in" in m.lower() for m in messages) and not any("password" in m.lower() and "type" in m.lower() for m in messages)
-    waited = next(a for a in page.args if a[0] == "wait_for_url")
-    assert waited[2] == 90_000 and isinstance(waited[1], re.Pattern)
+    assert not {"fill", "type", "press", "click"} & set(names), "the person signs in; the tool types nothing"
+    assert page.fronted == 1 and len(messages) == 1 and "sign in" in messages[0].lower() and "never types or stores a password" in messages[0]
+    waits = [a for a in page.args if a[0] == "wait_for_function" and a[1] == AUTHENTICATED_FN]
+    assert [w[3] for w in waits] == [8000, 90_000], "a short first look, then the person's whole sign-in window, both natively"
     driver.close()
 
 
 def test_giving_up_on_sign_in_says_so():
     page = multi(signed_in=False)
-    page.timeouts["url"] = True
+    page.timeouts["auth_never"] = True
     driver = PlaywrightBooksyDriver(Config(business_id="1234567", sign_in_wait_seconds=10), session_factory=lambda: FakeSession(page), notify=lambda m: None,
                                     url_for_day=lambda d: "x")
-    with pytest.raises(SignInRequired, match="timed out waiting for a person"):
+    with pytest.raises(SignInRequired, match="signed-in calendar never appeared"):
         driver.verify_business()
     driver.close()
 
 
-def test_an_already_signed_in_browser_returns_its_business_without_waiting():
+def test_an_already_signed_in_browser_returns_its_business_without_asking_anyone():
     page = multi()
-    driver = make(page)
-    assert driver.verify_business() == "1234567" and "wait_for_url" not in [n for n, _t in page.calls]
+    messages = []
+    driver = PlaywrightBooksyDriver(Config(business_id="1234567"), session_factory=lambda: FakeSession(page), notify=messages.append, url_for_day=lambda d: "x")
+    assert driver.verify_business() == "1234567" and messages == [] and page.fronted == 0
+    assert len([a for a in page.args if a[1] == AUTHENTICATED_FN]) == 1
     driver.close()
 
 

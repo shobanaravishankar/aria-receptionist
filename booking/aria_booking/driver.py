@@ -21,6 +21,10 @@ class SignInRequired(DriverError):
     """Not signed in (or the sign-in expired). A person must sign in; the code never types credentials."""
 
 
+class AccessDenied(DriverError):
+    """The site refused the page (an HTTP error status, possibly its bot protection). Nothing is retried automatically and nothing is worked around."""
+
+
 class DriverUnavailable(DriverError):
     """The browser or its driver could not be started (e.g. chromedriver missing, download not allowed)."""
 

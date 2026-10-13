@@ -105,6 +105,12 @@ Setup (the operator does these once):
    (`booking/.local/playwright-profile`, git-ignored; never a personal browser profile, never copied cookies or sessions). A PERSON signs in;
    the tool never types a password and sets nothing that disguises automation. Visibility is not claimed to change how the site treats the
    browser: the Selenium adapter was also headful.
+   **Success is reported only after the signed-in calendar is actually on screen** (the app's loading overlay gone, its side menu and day grid
+   present) AND the page belongs to the configured business. A matching URL alone is never accepted: a blank app shell, a sign-in page or an
+   access-denied page can all sit at that URL. An HTTP error on the requested page (403 bot protection, 401, 429, 5xx) is refused at once as
+   "access denied" with nothing retried and nothing worked around. Otherwise the command waits natively (up to `ARIA_SIGN_IN_WAIT_SECONDS`,
+   default 600) for the person to finish signing in, brings the window to the front and prints one instruction; if the calendar never appears it
+   says so and stops. Whether Booksy's sign-in survives the window closing (it depends on how long its cookies last) is not yet known.
 4. `python -m aria_booking serve --confirm-business-id <id>` (read-only) keeps that one window open and reads calendars through it.
 
 Changed behaviour to know about: the Playwright window **closes when the command exits** (Selenium deliberately left it open); the sign-in is kept

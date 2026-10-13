@@ -28,7 +28,7 @@ from .config import Config
 from .day_reader import DayReader
 from .discover import DISCOVERY_JS, LOADER_GONE_JS
 from .discover_interactive import click_refusal
-from .driver import BeforeSaveError, DriverError, DriverUnavailable, SignInRequired
+from .driver import AccessDenied, BeforeSaveError, DriverError, DriverUnavailable, SignInRequired
 from .models import AppointmentSpec, DaySnapshot
 from .owner_thread import Job, OwnerThread
 from .roster import ROSTER_JS, Roster, parse_roster
@@ -58,6 +58,23 @@ def as_function(script: str) -> str:
 
 
 LOADER_GONE_FN = "() => !document.querySelector('[data-testid=\"app-loader\"]')"
+# AFFIRMATIVE evidence that a signed-in business calendar is on screen: the app's loading overlay is gone AND its side menu AND the day grid are
+# present. All three test ids appear in the real redacted capture the parser is built on. A matching URL is never proof: a blank app shell, a
+# login page or an access-denied document can all sit at the requested business URL.
+AUTHENTICATED_FN = """() => !document.querySelector('[data-testid="app-loader"]')
+  && !!document.querySelector('[data-testid="side-menu"]')
+  && !!document.querySelector('[data-testid="calendar-grid-day"]')"""
+FIRST_LOOK_SECONDS = 8.0  # how long an already-signed-in page gets to show the calendar before the person is asked to sign in
+
+
+def refuse_if_denied(response: Any) -> None:
+    """An HTTP error on the requested page (403 bot protection, 401, 429, 5xx...) is a refusal by the site. Stop; do not wait it out or retry."""
+    status = getattr(response, "status", None)
+    if isinstance(status, int) and status >= 400:
+        raise AccessDenied(
+            f"the site refused the page (HTTP {status}); this can be its bot protection. Nothing was retried and nothing is worked around. "
+            "Sign in by hand in the window, ask the account owner or Booksy about sanctioned access, then run the command again."
+        )
 # True once the page has stopped changing for `ms` milliseconds (element count and staff columns unchanged): replaces a fixed pause.
 SETTLE_FN = """(ms) => {
   const signature = document.getElementsByTagName('*').length + ':' + document.querySelectorAll('[data-resource]').length;
@@ -221,26 +238,38 @@ class PlaywrightBooksyDriver(DayReader):
         """Open the calendar and return the business id the browser is signed in to. If it is not signed in, wait (visibly) for a PERSON to
         sign in in the window; never automate login."""
         wait_s = float(self.cfg.sign_in_wait_seconds)
+        configured = self.cfg.require_business_id()
+        first_look_ms = int(min(self._load_timeout, FIRST_LOOK_SECONDS) * 1000)
 
         def work(page) -> str:
-            page.goto(self._url_for_day("today"), wait_until="domcontentloaded", timeout=int(self._load_timeout * 1000))
-            match = BUSINESS_PATH_RE.search(page.url or "")
-            if match:
-                return match.group(1)
-            self._notify(
-                "Not signed in (or the session expired). Please sign in to Booksy Biz in the browser window that just opened. "
-                "Do not share the password with anyone; this tool never asks for it."
-            )
-            try:
-                page.wait_for_url(BUSINESS_PATH_RE, timeout=int(wait_s * 1000))
+            response = page.goto(self._url_for_day("today"), wait_until="domcontentloaded", timeout=int(self._load_timeout * 1000))
+            refuse_if_denied(response)
+            try:  # already signed in? the app needs a few seconds to draw the calendar, so give it a first look
+                page.wait_for_function(AUTHENTICATED_FN, timeout=first_look_ms)
             except PlaywrightTimeout:
-                raise SignInRequired("timed out waiting for a person to sign in; run the login command again") from None
+                self._notify(
+                    "Waiting for the signed-in Booksy calendar. If the window shows a sign-in page, please sign in there yourself "
+                    f"(this tool never types or stores a password). It will keep waiting for up to {int(wait_s)} seconds and will say it is "
+                    "signed in only once it can see the calendar."
+                )
+                try:
+                    page.bring_to_front()
+                except PlaywrightError:
+                    pass
+                try:  # a native wait that survives the redirects of a sign-in; a URL alone is never accepted
+                    page.wait_for_function(AUTHENTICATED_FN, timeout=int(wait_s * 1000))
+                except PlaywrightTimeout:
+                    raise SignInRequired(
+                        "timed out: the signed-in calendar never appeared in the window (not signed in, or the page was blocked); run the login command again"
+                    ) from None
             found = BUSINESS_PATH_RE.search(page.url or "")
             if not found:
-                raise SignInRequired("the sign-in did not reach a business page")
+                raise SignInRequired("the calendar is showing, but not on a business page; refusing to treat it as signed in")
+            if found.group(1) != configured:
+                raise DriverError("the window is signed in to a DIFFERENT business than the configured one; refusing, and nothing was read")
             return found.group(1)
 
-        return self._run(work, self._load_timeout + wait_s + RUNNER_SLACK_SECONDS)
+        return self._run(work, self._load_timeout + wait_s + RUNNER_SLACK_SECONDS + first_look_ms / 1000.0)
 
     def verify_single_staff(self) -> bool:
         """The once-per-session Staff-page census (read-only navigation), same rules as the Selenium adapter."""
@@ -289,9 +318,10 @@ class PlaywrightBooksyDriver(DayReader):
 
             with timer.phase("navigate"):
                 try:
-                    page.goto(url, wait_until="domcontentloaded", timeout=left())
+                    response = page.goto(url, wait_until="domcontentloaded", timeout=left())
                 except PlaywrightTimeout:
                     raise CalendarParseError(f"the calendar page did not load within {load:g} seconds") from None
+            refuse_if_denied(response)
             with timer.phase("page_ready"):
                 try:
                     page.wait_for_function(LOADER_GONE_FN, timeout=left())

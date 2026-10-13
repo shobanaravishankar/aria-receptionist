@@ -76,8 +76,23 @@ class Site:
                     if float(query.get("slow", 0)):
                         time.sleep(float(query["slow"]))
                     if parsed.path == "/login":
-                        body = "<html><body><h1>Sign in</h1></body></html>"
+                        # the "person" finishes signing in after a while: the page itself navigates to the authenticated calendar (the test types nothing)
+                        target = query.get("to", "/")
+                        body = (f'<html><body><h1>Sign in</h1><script>setTimeout(function(){{ location.href = {json.dumps(target)}; }}, {int(query.get("after", 1000))});</script></body></html>')
                         self.send_response(200)
+                    elif query.get("status"):
+                        self.send_response(int(query["status"]))
+                        body = "<html><body>Request blocked by anti-bot protection</body></html>"
+                    elif query.get("shell"):
+                        self.send_response(200)  # an empty application shell: the right URL, but no calendar and no sign-in
+                        body = '<html><body><div id="app">Starting application...</div></body></html>'
+                    elif query.get("login") and not query.get("authed"):
+                        self.send_response(302)
+                        from urllib.parse import quote
+                        self.send_header("Location", f"/login?after={int(query['login'])}&to=" + quote(f"{parsed.path}?date={query.get('date', 'today')}&authed=1", safe=""))
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
                     elif query.get("signedout"):
                         self.send_response(302)  # what a signed-out visitor gets: sent to the login page, which has no business id in its path
                         self.send_header("Location", "/login")
@@ -476,3 +491,102 @@ def test_local_synthetic_timings_are_reported_separately_from_live_latency(share
         print(f"\nLOCAL synthetic page read (NOT live Booksy, NOT end-to-end voice): first-in-module {cold[0]:.0f} ms, "
               f"later reads median {median:.0f} ms, phases {shared.last_read_ms}")
     assert median < 5000
+
+
+# ---------------------------------------------------------------- PW1: sign-in is proven by the calendar on screen, not by a URL
+
+
+def sign_in_driver(tmp_path, site, channel, *, wait=3.0, load=2.0, messages=None, url_for_day=None):
+    cfg = Config(business_id="1234567", local_dir=tmp_path, browser_channel=channel, sign_in_wait_seconds=wait)
+    sink = messages if messages is not None else []
+    driver = PlaywrightBooksyDriver(cfg, session_factory=lambda: LoopbackOnlySession(cfg), notify=sink.append,
+                                    url_for_day=url_for_day or site.url_for_day, load_timeout_seconds=load)
+    return driver, sink
+
+
+def test_an_already_signed_in_calendar_is_verified_by_its_content_without_asking_anyone(tmp_path, site, channel):
+    driver, messages = sign_in_driver(tmp_path, site, channel, load=8)
+    try:
+        began = time.monotonic()
+        assert driver.verify_business() == "1234567"
+        assert messages == [] and time.monotonic() - began < 6
+    finally:
+        driver.close()
+
+
+def test_an_app_shell_at_the_business_url_is_not_a_successful_login(tmp_path, site, channel):
+    driver, messages = sign_in_driver(tmp_path, site, channel, wait=3, load=2)
+    site.extra = "&shell=1"
+    try:
+        began = time.monotonic()
+        with pytest.raises(SignInRequired, match="signed-in calendar never appeared"):
+            driver.verify_business()
+        assert time.monotonic() - began >= 3, "it really waited for the person before giving up"
+        assert len(messages) == 1 and "sign in" in messages[0].lower()
+    finally:
+        site.extra = ""
+        driver.close()
+
+
+@pytest.mark.parametrize("status", [403, 429, 500])
+def test_a_refusal_from_the_site_is_reported_at_once_and_not_waited_out(tmp_path, site, channel, status):
+    from aria_booking.driver import AccessDenied
+
+    driver, messages = sign_in_driver(tmp_path, site, channel, wait=30, load=8)
+    site.extra = f"&status={status}"
+    before = len(site.requests)
+    try:
+        began = time.monotonic()
+        with pytest.raises(AccessDenied, match=f"HTTP {status}"):
+            driver.verify_business()
+        assert time.monotonic() - began < 6
+        assert len(site.requests) - before == 1, "one request, no retry"
+        assert messages == []
+    finally:
+        site.extra = ""
+        driver.close()
+
+
+def test_a_person_signing_in_later_is_waited_for_and_only_then_is_success_reported(tmp_path, site, channel):
+    driver, messages = sign_in_driver(tmp_path, site, channel, wait=30, load=2)
+    site.extra = "&login=2500"  # redirected to a sign-in page; "the person" finishes 2.5 s later and the page moves on to the calendar
+    try:
+        began = time.monotonic()
+        assert driver.verify_business() == "1234567"
+        assert time.monotonic() - began >= 2.3, "not reported before the calendar was really there"
+        assert len(messages) == 1 and "never types or stores a password" in messages[0]
+        landed = driver._run(lambda page: page.url, 10)
+        assert "/pro/en-us/1234567/calendar" in landed and "authed=1" in landed
+    finally:
+        site.extra = ""
+        driver.close()
+
+
+def test_a_sign_in_that_never_finishes_times_out_honestly(tmp_path, site, channel):
+    driver, _ = sign_in_driver(tmp_path, site, channel, wait=3, load=2)
+    site.extra = "&login=600000"  # the person never signs in
+    try:
+        with pytest.raises(SignInRequired, match="signed-in calendar never appeared"):
+            driver.verify_business()
+    finally:
+        site.extra = ""
+        driver.close()
+
+
+def test_a_calendar_for_a_different_business_is_refused(tmp_path, site, channel):
+    driver, _ = sign_in_driver(tmp_path, site, channel, load=8, url_for_day=lambda d: f"{site.base}/pro/en-us/7654321/calendar?date={d}")
+    try:
+        with pytest.raises(DriverError, match="DIFFERENT business"):
+            driver.verify_business()
+    finally:
+        driver.close()
+
+
+def test_after_a_verified_sign_in_the_same_window_reads_the_calendar(tmp_path, site, channel):
+    driver, _ = sign_in_driver(tmp_path, site, channel, load=8)
+    try:
+        assert driver.verify_business() == "1234567"
+        assert len(driver.read_day(DAY).staff_days) == 3 and driver._session.launches == 1
+    finally:
+        driver.close()
+
