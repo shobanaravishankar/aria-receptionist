@@ -31,6 +31,17 @@ DRAFT_DIR = Path(__file__).resolve().parents[2] / "voice_agent_draft"
 MODES = ("booking", "availability")
 GENERATED = {"booking": "prompt_test_only.md", "availability": "prompt_availability_only.md"}
 AVAILABILITY_TOOLS_FILE = "tools_availability_only.json"
+DEMO_PROMPT_FILE = "prompt_demo_calendar.md"  # the availability-only prompt for the DEMO calendar (invented data); it uses the same tool file
+DEMO_SECTION = """## You are connected to a DEMO calendar
+
+- The calendar behind your tools is a SIMULATED demo calendar with invented appointments and invented clients, shown on a page that is clearly
+  labelled "Demo calendar - simulated availability". It is not the salon's real schedule, and nothing in it is a real person's appointment.
+- Say so when you give availability. The tool's first answer in a call already says it: do not hide it, and never describe a demo appointment as a real one.
+- Names, times and who is free come only from the tool. If the tool says it does not see the technician the caller named, say so and ask who they meant; never
+  swap in a similar-sounding name. If the tool asks which person (several share a first name), ask the caller.
+- You cannot book, hold, change or cancel anything in the demo either.
+
+"""
 
 # Descriptions for the availability-only tool file: they only CHECK, and say so. (The booking file keeps tools.json's wording.)
 AVAILABILITY_DESCRIPTIONS = {
@@ -160,6 +171,17 @@ def build_availability_tools(tools: dict) -> dict:
     return out
 
 
+def build_demo_prompt(template: str, catalog: Catalog = DEFAULT_CATALOG) -> str:
+    """The availability-only prompt, over the DEMO registry, with the section that says the calendar is simulated."""
+    from ..demo.dataset import demo_registry
+
+    text = build_prompt(template, catalog=catalog, registry=demo_registry(), mode="availability")
+    heading = "## While the calendar is being checked"
+    if text.count(heading) != 1:
+        raise ValueError("the prompt template must contain the 'While the calendar is being checked' section exactly once")
+    return text.replace(heading, DEMO_SECTION + heading)
+
+
 def main(argv: list[str]) -> int:
     from ..config import Config
 
@@ -169,6 +191,8 @@ def main(argv: list[str]) -> int:
         for mode, name in GENERATED.items():
             (DRAFT_DIR / name).write_text(build_prompt(template, registry=registry, mode=mode), encoding="utf-8", newline="\n")
             print("wrote", DRAFT_DIR / name)
+        (DRAFT_DIR / DEMO_PROMPT_FILE).write_text(build_demo_prompt(template), encoding="utf-8", newline="\n")
+        print("wrote", DRAFT_DIR / DEMO_PROMPT_FILE)
         tools = json.loads((DRAFT_DIR / "tools.json").read_text(encoding="utf-8"))
         (DRAFT_DIR / AVAILABILITY_TOOLS_FILE).write_text(json.dumps(build_availability_tools(tools), indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         print("wrote", DRAFT_DIR / AVAILABILITY_TOOLS_FILE)

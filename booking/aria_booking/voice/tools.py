@@ -52,7 +52,7 @@ SUCCESS_STATUSES = frozenset({"booked_verified", "already_booked"})
 CONTACT = "Please contact the salon directly."
 AVAILABILITY_ONLY_NOTE = "I can only check availability on this line, so I can't book it. Please contact the salon directly to book."
 # how close a refused start is to being bookable: the most informative reason to give when nobody can take it
-REASON_RANK = {"not_working": 0, "outside_hours": 1, "ends_after_closing": 2, "too_soon": 3, "occupied": 4}
+REASON_RANK = {"not_working": 0, "outside_hours": 1, "on_break": 2, "ends_after_closing": 3, "too_soon": 4, "occupied": 5, "conflicts_next": 6}
 
 
 @dataclass
@@ -109,6 +109,8 @@ class VoiceTools:
         read_deadline_seconds: Optional[float] = None,
         request_budget_seconds: Optional[float] = None,
         check_search_days: Optional[int] = None,
+        source_label: Optional[str] = None,
+        source_note: Optional[str] = None,
         read_cache_seconds: float = 0.0,
         monotonic: Callable[[], float] = time.monotonic,
     ):
@@ -136,6 +138,11 @@ class VoiceTools:
         self._day_cache: dict = {}
         self._mono = monotonic
         self._timer = PhaseTimer(monotonic)
+        # Where the calendar data comes from, when it is NOT the real calendar. Every availability reply carries source=<label>, and the first one
+        # in each call also SAYS it (source_note), enforced here so the caller hears it whatever the model does.
+        self._source_label, self._source_note = source_label, source_note
+        self._source_announced: set[str] = set()
+        self._announce_lock = threading.Lock()
         self._thread_state = threading.local()  # last_timing is per request thread: overlapping requests must not overwrite each other's log
         self.last_timing = {}
         # A hard bound on one calendar read (None = call the driver directly, as before). The read runs in a worker thread so a hung browser
@@ -356,9 +363,20 @@ class VoiceTools:
         eligible = [sd.staff for sd in days if service.eligible(sd.staff, sd.staff_id)]
         if named:
             wanted = staff_key(named)
+            words = set(wanted.split())
+            # The WHOLE team decides whether a name is ambiguous, not only who happens to be on today's schedule: "Amy" with an Amy who is off today
+            # and another who is working is still two people, and the caller must be asked which.
+            roster = getattr(self.driver, "last_roster", None)
+            if roster is not None and getattr(roster, "complete", False):
+                team = [m.name for m in roster.members]
+                everyone = [n for n in team if staff_key(n) == wanted] or [n for n in team if words and words <= set(staff_key(n).split())]
+                if len(everyone) > 1:
+                    return [], _response(
+                        "needs_clarification", f"I know more than one {named}: {join_choices(everyone)}. Which did you mean?",
+                        reason="ambiguous_staff", candidates=everyone,
+                    )
             present = [sd.staff for sd in days if staff_key(sd.staff) == wanted]
             if not present:  # "Lily" may mean "Lily Chen": match whole words of the name, never a fragment
-                words = set(wanted.split())
                 present = [sd.staff for sd in days if words and words <= set(staff_key(sd.staff).split())]
             if len(present) > 1:
                 return [], _response(
@@ -398,7 +416,7 @@ class VoiceTools:
         if day < today:
             return None, None, _response("needs_clarification", "That date has already passed. Which day would you like instead?", reason="past_date")
         if day > today + timedelta(days=self._horizon_days):
-            return None, None, _response("needs_clarification", "That's further ahead than I can book. Could you pick a nearer date?", reason="too_far")
+            return None, None, _response("needs_clarification", "That's further ahead than I can check. Could you pick a nearer date?", reason="too_far")
         start = None
         if raw_time or need_time:
             if not isinstance(raw_time, str) or not TIME_RE.match(raw_time):
@@ -426,6 +444,17 @@ class VoiceTools:
             return "not_working", f"We aren't taking appointments on {spoken_day(start)}.", {}
         first_open, last_close = windows[0].start.astimezone(self._tz), windows[-1].end.astimezone(self._tz)
         containing = [w for w in windows if to_utc(w.start) <= to_utc(start) < to_utc(w.end)]
+        if not containing and to_utc(first_open) <= to_utc(start) < to_utc(last_close):
+            # inside the person's day but between two stretches of it: a break or time away, not "outside hours"
+            before = [w for w in windows if to_utc(w.end) <= to_utc(start)]
+            after = [w for w in windows if to_utc(w.start) > to_utc(start)]
+            if before and after:
+                gap_from, gap_to = before[-1].end.astimezone(self._tz), after[0].start.astimezone(self._tz)
+                return (
+                    "on_break",
+                    f"{staff} is off between {spoken_time(gap_from)} and {spoken_time(gap_to)} on {spoken_day(start)}, so {spoken_time(start)} isn't available.",
+                    {"off_from": gap_from.strftime("%H:%M"), "off_until": gap_to.strftime("%H:%M")},
+                )
         if not containing:
             return (
                 "outside_hours",
@@ -434,6 +463,13 @@ class VoiceTools:
             )
         window = containing[0]
         needed_end = add_minutes(start, spec.duration_minutes + spec.buffer_after_minutes)
+        if to_utc(needed_end) > to_utc(window.end) and window is not windows[-1]:
+            # the stretch ends before the day does: the service would run into a break, not the closing time
+            return (
+                "conflicts_next",
+                f"The {length} service starting at {spoken_time(start)} would run into {staff}'s break at {spoken_time(window.end.astimezone(self._tz))}.",
+                {"next_stop": window.end.astimezone(self._tz).strftime("%H:%M")},
+            )
         if to_utc(needed_end) > to_utc(window.end):
             latest = add_minutes(window.end, -(spec.duration_minutes + spec.buffer_after_minutes)).astimezone(self._tz)
             latest = latest.replace(minute=latest.minute - latest.minute % self.cfg.grid_minutes, second=0, microsecond=0)
@@ -448,6 +484,21 @@ class VoiceTools:
             return "ends_after_closing", f"The {length} service doesn't fit within our hours that day.", {"closes": close.strftime("%H:%M")}
         if to_utc(add_minutes(now, self.cfg.min_lead_minutes)) > to_utc(start):
             return "too_soon", f"That's too soon. We need at least {self.cfg.min_lead_minutes} minutes' notice.", {}
+        booked = sorted((a for a in (sd.appointments or ()) if a.blocks_time), key=lambda a: to_utc(a.interval.start))
+        if not any(to_utc(a.interval.start) <= to_utc(start) < to_utc(a.interval.end) for a in booked):
+            service_end = add_minutes(start, spec.duration_minutes)
+            blocked_start, blocked_end = add_minutes(start, -spec.buffer_before_minutes), needed_end
+            clash = next((a for a in booked if to_utc(a.interval.start) < to_utc(blocked_end) and to_utc(blocked_start) < to_utc(a.interval.end)), None)
+            if clash is not None:  # the start itself is free, but the whole visit (and its cleanup time) is not
+                at = clash.interval.start.astimezone(self._tz)
+                if to_utc(clash.interval.start) < to_utc(service_end):
+                    text = f"The {length} service starting at {spoken_time(start)} would run into {staff}'s next appointment at {spoken_time(at)}."
+                else:
+                    text = (
+                        f"The {length} service would fit before {staff}'s {spoken_time(at)} appointment, but there wouldn't be time for the "
+                        f"{spec.buffer_after_minutes} minutes of cleanup after it."
+                    )
+                return "conflicts_next", text, {"next_appointment": at.strftime("%H:%M")}
         return "occupied", f"{spoken_time(start)} on {spoken_day(start)} is already taken.", {}
 
     def _why_not(self, snapshot: DaySnapshot, start: datetime, service: BookableService, staffs: list[str], named: Optional[str]) -> tuple[str, str, dict]:
@@ -621,8 +672,22 @@ class VoiceTools:
         )
 
     # ---- the calendar functions -----------------------------------------------------------------
+    def _labelled(self, call_id: str, reply: dict) -> dict:
+        if self._source_label and isinstance(reply, dict):
+            reply["source"] = self._source_label
+            if self._source_note and reply.get("status") != "busy" and isinstance(call_id, str):
+                with self._announce_lock:
+                    first = call_id not in self._source_announced
+                    if first:
+                        if len(self._source_announced) >= 512:
+                            self._source_announced.clear()
+                        self._source_announced.add(call_id)
+                if first:
+                    reply["speak"] = f"{self._source_note} {reply.get('speak', '')}".strip()
+        return reply
+
     def check_slot(self, call_id: str, args: dict) -> dict:
-        return self._with_lock(call_id, lambda: self._check_slot(call_id, args or {}))
+        return self._labelled(call_id, self._with_lock(call_id, lambda: self._check_slot(call_id, args or {})))
 
     def _check_slot(self, call_id: str, args: dict) -> dict:
         service, named, problem = self._select(args)
@@ -684,7 +749,7 @@ class VoiceTools:
         return self._stamp_age(offered, max(age, alt_age))
 
     def find_alternatives(self, call_id: str, args: dict) -> dict:
-        return self._with_lock(call_id, lambda: self._find_alternatives(call_id, args or {}))
+        return self._labelled(call_id, self._with_lock(call_id, lambda: self._find_alternatives(call_id, args or {})))
 
     def _find_alternatives(self, call_id: str, args: dict) -> dict:
         service, named, problem = self._select(args)

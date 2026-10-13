@@ -100,6 +100,20 @@ def build_parser() -> argparse.ArgumentParser:
     _add_browser_flag(p)
     for flag, text in BOOK_APPROVALS.items():
         p.add_argument("--approve-" + flag, action="store_true", help=text + " (all five together enable booking; none = read-only)")
+    p = sub.add_parser("demo-serve", help="serve the DEMO calendar page and the read-only voice tools over invented data; never touches Booksy")
+    p.add_argument("--port", type=int, default=8787, help="the voice tools' loopback port")
+    p.add_argument("--site-port", type=int, default=8790, help="the demo calendar page's loopback port")
+    p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today); 'tomorrow' means the day after it")
+    p.add_argument("--via-page", action="store_true", help="answer by reading the demo PAGE in a Playwright window (the live code path) instead of the dataset")
+    p = sub.add_parser("demo-day", help="print who works and what is booked on one demo day (invented data), so a demo can ask grounded questions")
+    p.add_argument("--date", default=None, help="YYYY-MM-DD (default: the day after the demo date)")
+    p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today)")
+    p = sub.add_parser("demo-screenshots", help="photograph the demo calendar page at the reference viewports (PNG files); invented data, loopback only")
+    p.add_argument("--out", required=True, help="the folder for the PNG files")
+    p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today)")
+    p = sub.add_parser("demo-compare", help="diff the demo's data-independent regions (sidebar, toolbar, hour axis) against a user-supplied screenshot of the real day view")
+    p.add_argument("--reference", required=True, help="a PNG screenshot of the real day view; its size sets the viewport")
+    p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today)")
     p = sub.add_parser("mapping-check", help="validate the reviewed services/eligibility table offline (no browser, no network)")
     p.add_argument("path", nargs="?", help="the table file; defaults to ARIA_MAPPING_TABLE")
     p = sub.add_parser("verify", help="READ-ONLY: find a previously booked slot by its reference and check it; creates nothing")
@@ -139,6 +153,12 @@ def main(
 
     if args.command == "mapping-check":
         return _mapping_check(args, cfg, now_fn, out)
+
+    if args.command in ("demo-screenshots", "demo-compare", "demo-day"):
+        return _demo_visual(args, cfg, out)
+
+    if args.command == "demo-serve":  # decided before anything else: this command never builds a Booksy driver, and `serve` never builds the demo
+        return _demo_serve(args, cfg, env, out)
 
     if args.command == "book":
         # Refuse BEFORE any browser is created.
@@ -364,6 +384,125 @@ def _serve(args, cfg: Config, now_fn, driver, out) -> int:
         out("stopped.")
     finally:
         server.server_close()
+    return EXIT_OK
+
+
+def _demo_serve(args, cfg: Config, env, out) -> int:
+    """The demo: an invented calendar page plus the read-only voice tools over the SAME dataset. No Booksy, no booking route, no fall-back."""
+    import threading
+
+    from .demo import DEMO_BUSINESS_ID, DEMO_LABEL
+    from .demo.launch import build_demo, demo_clock
+    from .demo.dataset import DemoDataset
+    from .demo.server import calendar_url, make_site
+
+    key = (env.get("ARIA_RETELL_API_KEY") or "").strip()
+    if not key:
+        out("refused: ARIA_RETELL_API_KEY must be set in the environment (never on the command line, in chat or in the repo).")
+        return EXIT_REFUSED
+    if not (1 <= args.port <= 65535 and 1 <= args.site_port <= 65535 and args.port != args.site_port):
+        out("refused: --port and --site-port must be different numbers between 1 and 65535.")
+        return EXIT_REFUSED
+    try:
+        today = date.fromisoformat(args.today) if args.today else None
+    except ValueError:
+        out("refused: --today must look like 2026-10-14.")
+        return EXIT_REFUSED
+    tz = ZoneInfo(cfg.timezone)
+    clock = demo_clock(today, tz)
+    dataset = DemoDataset(clock().date())
+    site = make_site(dataset, args.site_port)
+    threading.Thread(target=site.serve_forever, name="demo-site", daemon=True).start()
+    driver = None
+    if args.via_page:  # the same reader the live calendar uses, pointed at the demo page; if it cannot start, the command stops (no fall-back to the dataset)
+        from dataclasses import replace
+
+        driver = PlaywrightBooksyDriver(
+            replace(cfg, business_id=DEMO_BUSINESS_ID, local_dir=cfg.local_dir / "demo"), notify=out, load_timeout_seconds=SERVE_LOAD_TIMEOUT,
+            url_for_day=lambda day: calendar_url(args.site_port, day),
+        )
+    try:
+        if driver is not None:
+            if driver.verify_business() != DEMO_BUSINESS_ID:
+                out("refused: the demo page did not identify itself as the demo business.")
+                return EXIT_REFUSED
+        endpoint, driver, dataset = build_demo(
+            key, today=today, timezone=cfg.timezone, bearer_token=(env.get("ARIA_RETELL_TOOL_TOKEN") or "").strip() or None,
+            log=lambda message: out("  " + message), driver=driver, dataset=dataset,
+        )
+        server = retell_http.make_http_server(endpoint, args.port)
+    except (DriverError, OSError) as exc:
+        site.shutdown()
+        site.server_close()
+        if driver is not None:
+            driver.close()
+        out(f"stopped: {exc}")
+        return EXIT_REFUSED
+    out(f"{DEMO_LABEL.upper()}: invented data only; this is NOT Booksy and nothing here can book, hold, change or cancel anything.")
+    out(f"calendar page (open in a browser): {calendar_url(args.site_port)}")
+    out(f"voice tools: 127.0.0.1:{args.port} (loopback only; expose it with a tunnel you control). Reads come from: "
+        + ("the demo PAGE through a Playwright window" if args.via_page else "the demo dataset directly"))
+    first, second = dataset.scripted_days
+    out(f"demo date {dataset.today.isoformat()}; scripted days {first.isoformat()} and {second.isoformat()}; covered {dataset.first_day.isoformat()} to {dataset.last_day.isoformat()}")
+    out("Press Ctrl+C to stop.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        out("stopped.")
+    finally:
+        server.server_close()
+        site.shutdown()
+        site.server_close()
+        driver.close()
+    return EXIT_OK
+
+
+def _demo_visual(args, cfg: Config, out) -> int:
+    """Screenshots of, and screenshot comparison for, the demo page. Standalone: no tools, no Booksy, no booking."""
+    import tempfile
+    from pathlib import Path
+
+    from .demo.dataset import DemoDataset
+    from .demo.launch import demo_clock
+    from .demo.screenshots import capture
+    from .demo.visual import BANNER_PX, compare_to_reference, read_png
+
+    try:
+        today = date.fromisoformat(args.today) if args.today else None
+    except ValueError:
+        out("refused: --today must look like 2026-10-14.")
+        return EXIT_REFUSED
+    dataset = DemoDataset(demo_clock(today, ZoneInfo(cfg.timezone))().date())
+    if args.command == "demo-day":
+        from .demo.dataset import NotCovered
+
+        try:
+            day = date.fromisoformat(args.date) if args.date else dataset.scripted_days[0]
+            for line in dataset.describe_day(day):
+                out(line)
+        except ValueError:
+            out("refused: --date must look like 2026-10-14.")
+            return EXIT_REFUSED
+        except NotCovered as exc:
+            out(f"refused: {exc}")
+            return EXIT_REFUSED
+        return EXIT_OK
+    try:
+        if args.command == "demo-screenshots":
+            for path in capture(dataset, Path(args.out), channel=cfg.browser_channel):
+                out(f"wrote {path}")
+            return EXIT_OK
+        reference = read_png(args.reference)
+        with tempfile.TemporaryDirectory() as folder:
+            (rendered,) = capture(dataset, Path(folder), viewports=((reference.width, reference.height + BANNER_PX),), channel=cfg.browser_channel,
+                                  scroll_afternoon=False)
+            diffs = compare_to_reference(reference, read_png(rendered))
+    except (DriverError, OSError, ValueError) as exc:
+        out(f"stopped: {exc}")
+        return EXIT_REFUSED
+    out("difference from the reference in the regions that do not depend on data (0 = identical; the demo's colours, fonts and icons are approximations):")
+    for d in diffs:
+        out(f"  {d.name:10} mean difference {d.mean_abs_diff:6.2f} / 255, {d.differing_ratio * 100:5.1f}% of pixels clearly different")
     return EXIT_OK
 
 

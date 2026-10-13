@@ -91,6 +91,14 @@ Manual test steps for Shobana (no booking can occur on this line):
    Expect: a yes/no with the technician's name, other free technicians, and a refusal to book that tells the caller to contact the salon.
 4. Read the server log line for each call: `total=... read=... cache_hit=...`. Send those numbers to Sol; they are the first real latency data.
 
+### Demo calendar and voice demo (invented data) — see `DEMO_CALENDAR.md`
+
+`python -m aria_booking demo-serve` serves a Booksy-style day-view page and the read-only voice tools over ONE invented dataset (Fiona-like staff labels
+with synthetic ids, fictional clients, deterministic multi-day schedules, scripted cases for tomorrow). The page carries a persistent "Demo calendar -
+simulated availability" banner and every availability reply says it is the demo calendar. It never touches Booksy, never falls back to it, and has no booking
+route. A real-browser test proves the page, read by the live reader, equals what the voice tools answer from. Geometry follows a redacted capture of the real
+day view; colours, fonts and icons are approximations (no reference screenshot yet; `demo-compare` will measure one). Spoken-call latency is not measured.
+
 ### Browser adapters: Playwright (default, headful, read-only) and Selenium (original)
 
 `login`, `find` and `serve` WITHOUT booking approvals use the Playwright adapter by default (`--browser selenium` selects the original for

@@ -234,7 +234,8 @@ def test_a_longer_service_sees_a_conflict_a_shorter_one_does_not(world):
     short = ask(tools, SWEDISH, "11:00")  # 11:00-12:00 touches the 12:00 appointments
     assert short["status"] == "available" and short["options"][0]["duration_minutes"] == 60
     long = ask(tools, DEEP90, "11:00")  # 11:00-12:30 overlaps them
-    assert long["status"] == "alternatives" and long["unavailable_reason"] == "occupied"
+    assert long["status"] == "alternatives" and long["unavailable_reason"] == "conflicts_next", "the start is free; the whole visit runs into the 12:00 appointment"
+    assert "would run into" in long["speak"] and "12 PM" in long["speak"]
     assert all(o["duration_minutes"] == 90 and o["service_id"] == DEEP90 for o in long["options"])
 
 

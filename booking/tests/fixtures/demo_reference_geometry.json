@@ -1,0 +1,168 @@
+{
+ "_about": "Rectangles (x, y, width, height) of structural elements of the real day view at a 1600 x 789 viewport, from a redacted capture. Geometry only: no text, ids or names.",
+ "viewport": [
+  1600,
+  789
+ ],
+ "elements": {
+  "side-menu": [
+   0,
+   0,
+   56,
+   789
+  ],
+  "content": [
+   56,
+   0,
+   1544,
+   789
+  ],
+  "calendar-filters-toggle": [
+   72,
+   21,
+   32,
+   32
+  ],
+  "calendar-grid-tabs": [
+   128,
+   6,
+   180,
+   56
+  ],
+  "today-button": [
+   324,
+   13,
+   101,
+   48
+  ],
+  "date-switcher-previous": [
+   691,
+   13,
+   48,
+   48
+  ],
+  "date-switcher-label": [
+   743,
+   14,
+   169,
+   46
+  ],
+  "date-switcher-next": [
+   917,
+   13,
+   48,
+   48
+  ],
+  "settings-icon": [
+   1276,
+   21,
+   32,
+   32
+  ],
+  "referral-icon": [
+   1332,
+   17,
+   40,
+   40
+  ],
+  "notifications-icon": [
+   1396,
+   21,
+   32,
+   32
+  ],
+  "calendar-day-view": [
+   273,
+   75,
+   1327,
+   714
+  ],
+  "calendar-grid-day": [
+   347,
+   139,
+   1253,
+   650
+  ],
+  "resource": [
+   347,
+   75,
+   250,
+   64
+  ],
+  "resource-content": [
+   397,
+   87,
+   170,
+   40
+  ],
+  "calendar-status-filter-clear": [
+   68,
+   706,
+   186,
+   34
+  ],
+  "calendar-status-filter-submit": [
+   68,
+   748,
+   186,
+   34
+  ],
+  "side-menu-avatar": [
+   10,
+   737,
+   36,
+   36
+  ],
+  "side-menu-select-language": [
+   16,
+   16,
+   24,
+   24
+  ],
+  "calendar-main": [
+   0,
+   73,
+   50,
+   36
+  ],
+  "staff": [
+   0,
+   437,
+   50,
+   36
+  ],
+  "settings": [
+   0,
+   661,
+   50,
+   36
+  ]
+ },
+ "column_width": 250,
+ "header_height": 64,
+ "hour_label_x_width": [
+  273,
+  74
+ ],
+ "hour_spacing": 80,
+ "first_hour_label_top": 210,
+ "card_insets": [
+  3
+ ],
+ "card_width": [
+  244
+ ],
+ "card_height_minus_minutes_x_four_thirds": [
+  -1.0
+ ],
+ "card_heights": [
+  19,
+  39,
+  59,
+  79,
+  99,
+  119,
+  159,
+  199
+ ]
+}
