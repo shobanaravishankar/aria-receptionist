@@ -1,7 +1,8 @@
 """Assemble the DEMO voice endpoint: the same read-only tools, routes and deadlines as live, over the demo dataset. There is no booking route.
 
 ``build_demo`` is the ONLY place a dataset-backed driver is wired to the voice tools, and ``cli.serve`` (the live command) never calls it, so the two
-sources cannot be swapped by accident. A demo reply says out loud that it is the demo calendar.
+sources cannot be swapped by accident. Every demo reply carries ``source: demo_calendar`` (and the provider list ``technicians_source``); that label also gates
+the demo-only provider lookup. It is NOT spoken by default: ``announce_source=True`` brings back the one-time spoken note.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from .dataset import DemoDataset
 from .driver import DemoCalendarDriver
 
 SOURCE_LABEL = "demo_calendar"
-SOURCE_NOTE = "This is the simulated demo calendar, not the salon's real schedule."
+SOURCE_NOTE = "This is the simulated demo calendar, not the salon's real schedule."  # spoken once per call ONLY with announce_source=True
 
 
 def demo_clock(today: Optional[date], tz: ZoneInfo, real_now: Callable[[], datetime] = None) -> Callable[[], datetime]:
@@ -43,6 +44,7 @@ def build_demo(
     real_now: Optional[Callable[[], datetime]] = None,
     driver: Optional[Any] = None,
     dataset: Optional[DemoDataset] = None,
+    announce_source: bool = False,
     **tool_kwargs: Any,
 ):
     """(endpoint, driver, dataset). ``driver`` may be a page-reading driver pointed at the demo site (still the demo data); by default it is the dataset."""
@@ -59,6 +61,6 @@ def build_demo(
     tool_kwargs.setdefault("providers", dataset.providers)  # who does a service, from the demo's own synthetic roster
     endpoint = build_endpoint(
         cfg, driver, no_writer, clock, api_key, booking_approved=False, bearer_token=bearer_token, registry=dataset.registry, log=log,
-        source_label=SOURCE_LABEL, source_note=SOURCE_NOTE, **tool_kwargs,
+        source_label=SOURCE_LABEL, source_note=SOURCE_NOTE if announce_source else None, **tool_kwargs,
     )
     return endpoint, driver, dataset

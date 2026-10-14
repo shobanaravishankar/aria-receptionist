@@ -61,7 +61,8 @@ def test_lookup_names_the_demo_technicians_and_says_where_the_list_comes_from():
     reply = tools.lookup_service("call_x", {"query": "microdermabrasion facial"})
     assert reply["status"] == "service_info" and reply["bookable"] is True and reply["bookable_service_id"] == MICRO
     assert reply["technicians"] == FACIAL_STAFF and reply["technicians_source"] == "demo_calendar"
-    assert "On the simulated demo calendar, Pinny Du, Maggie Jin, Anna Zheng, Ada, Jessica DU and Fiona Tsao do this service." in reply["speak"]
+    assert " Pinny Du, Maggie Jin, Anna Zheng, Ada, Jessica DU and Fiona Tsao do this service." in reply["speak"]
+    assert not any(word in reply["speak"].lower() for word in ("demo", "simulat", "prototype")), "the source is in technicians_source, not spoken"
     assert "I can check availability for it." in reply["speak"] and driver.reads == 0, "a lookup never reads the calendar"
 
 
@@ -148,7 +149,7 @@ def test_the_prompt_lists_it_as_checkable_and_tells_the_agent_when_not_to_offer_
     assert f"- service_id `{MICRO}`: Microdermabrasion Facial" in PROMPT
     for needle in ("Offer or run a calendar check ONLY for a service under", "do NOT offer a check, say you will check, or call a\n  calendar tool",
                    "Never build a `service_id` yourself", "call `lookup_service`: for a service you can check it returns `technicians`",
-                   "never say there is no list when it returned one", "that technician does not do that service on the demo calendar"):
+                   "never say there is no list when it returned one", "say that technician does not do that\n  service and name those who do"):
         assert needle in PROMPT, needle
     assert PROMPT.index("Offer or run a calendar check ONLY") < PROMPT.index("## While the calendar is being checked")
 

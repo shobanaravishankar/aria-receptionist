@@ -178,22 +178,49 @@ def test_the_second_scripted_day_answers_differently():
 # ---------------------------------------------------------------- the source is always obvious in the conversation
 
 
-def test_every_availability_reply_carries_the_source_and_the_first_one_in_a_call_says_it_aloud():
+SPOKEN_DEMO_WORDS = ("demo", "simulat", "prototype", "not the salon's real schedule", "invented")
+
+
+def test_every_availability_reply_carries_the_source_label_and_none_announces_it_by_default():
     tools, *_ = make()
     first = ask(tools, "Lily", call="callA")
     second = ask(tools, "Elva", call="callA")
     other_call = ask(tools, "Lily", call="callB")
-    for reply in (first, second, other_call):
-        assert reply["source"] == SOURCE_LABEL
+    alternatives = tools.find_alternatives("callC", {"service_id": DEEP60, "date": TOMORROW.isoformat(), "staff": "Elva"})
+    for reply in (first, second, other_call, alternatives):
+        assert reply["source"] == SOURCE_LABEL, "the machine-readable label stays on every availability reply"
+        assert not any(word in reply["speak"].lower() for word in SPOKEN_DEMO_WORDS), reply["speak"]
+    assert first["speak"].startswith("Wednesday, October 14 at 4 PM is open"), "the answer itself comes first, with no preamble"
+
+
+def test_no_spoken_reply_of_any_kind_says_demo_simulated_or_prototype():
+    tools, *_ = make()
+    far = TODAY + timedelta(days=40)
+    replies = []
+    for staff in [None, "Lily", "Elva", "Amy", "Fiona", "Pinny", "Linda", "Anna", "Tinny", "Jessica"]:
+        for service in (DEEP60, DEEP90, FACIAL, "facial-microdermabrasion-facial-75", "head-spa-head-scalp-massage-30"):
+            for day in (TOMORROW, TOMORROW + timedelta(days=1), far):
+                replies.append(ask(tools, staff, service=service, day=day, call=f"sweep-{len(replies)}"))
+    replies += [tools.find_alternatives("sweep-fa", {"service_id": DEEP60, "date": TOMORROW.isoformat()}),
+                tools.check_slot("sweep-bad", {"service_id": "facial-acne-skin-facial-60", "date": TOMORROW.isoformat(), "time": "16:00"}),
+                tools.check_slot("sweep-missing", {"service_id": DEEP60}),
+                tools.lookup_service("sweep-l1", {"query": "microdermabrasion facial"}), tools.lookup_service("sweep-l2", {"query": "deep tissue massage"}),
+                tools.lookup_service("sweep-l3", {"query": "acne skin facial"}), tools.lookup_service("sweep-l4", {"query": "no such thing"})]
+    assert len(replies) == 10 * 5 * 3 + 7
+    for reply in replies:
+        assert not any(word in reply["speak"].lower() for word in SPOKEN_DEMO_WORDS), reply["speak"]
+    assert {r["source"] for r in replies if r["status"] not in ("service_info", "unknown_service", "choose_variant", "choose_service", "needs_clarification")} == {SOURCE_LABEL}
+
+
+def test_the_one_time_spoken_note_is_still_there_when_asked_for():
+    tools, *_ = make(announce_source=True)
+    first = ask(tools, "Lily", call="callA")
+    second = ask(tools, "Elva", call="callA")
+    other_call = ask(tools, "Lily", call="callB")
     assert first["speak"].startswith(SOURCE_NOTE) and other_call["speak"].startswith(SOURCE_NOTE)
     assert SOURCE_NOTE not in second["speak"], "said once per call, not on every answer"
     assert "demo calendar" in SOURCE_NOTE and "not the salon's real schedule" in SOURCE_NOTE
-
-
-def test_find_alternatives_says_the_source_too():
-    tools, *_ = make()
-    reply = tools.find_alternatives("callC", {"service_id": DEEP60, "date": TOMORROW.isoformat(), "staff": "Elva"})
-    assert reply["source"] == SOURCE_LABEL and reply["speak"].startswith(SOURCE_NOTE)
+    assert first["source"] == second["source"] == SOURCE_LABEL
 
 
 def test_the_local_service_lookup_needs_no_calendar_and_is_not_labelled_as_one(monkeypatch):

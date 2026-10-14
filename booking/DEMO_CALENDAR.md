@@ -7,9 +7,14 @@ from the **same** invented data. Everything on it is simulated and says so.
 
 - **One dataset drives both** the page and the voice answers (`aria_booking/demo/dataset.py`). A test reads the *page* with the real capture script and the
   real parser, in a real browser, and requires it to equal what the voice tools answer from, for twelve days covering every weekday.
-- **Source is obvious:** a persistent banner on the page ("Demo calendar - simulated availability"), `source: "demo_calendar"` on every availability reply,
-  and the first availability answer in each call says out loud: "This is the simulated demo calendar, not the salon's real schedule." The server adds that
-  sentence itself, so it does not depend on the model.
+- **Labelled, not announced:** a persistent banner on the page ("Demo calendar - simulated availability"), `source: "demo_calendar"` on every availability reply
+  and `technicians_source` on the provider list. Nothing is spoken about "demo" or "simulated" unprompted, in the greeting or in an answer (a test sweeps 157 replies
+  for those words). Asked whether the schedule is real or live, or whether this is a demo, the agent answers truthfully: a prototype with an invented calendar, not the
+  salon's real schedule (its prompt says so). The label also gates the demo-only provider lookup, so it is never removed; the old spoken one-time note can be
+  brought back with `build_demo(..., announce_source=True)`.
+- **The spoken name is "Serenity Spa":** one constant (`demo.SALON_NAME`) feeds both the greeting and the generated prompt (from "Who you are" on; services, lengths,
+  prices, hours, address and the original public agent's name are untouched, and the other prompts are not renamed). The page still shows the website template's own
+  text. To change the name, edit the constant, run `python -m aria_booking.catalog.render --write`, then `demo-agent update --confirm-update`.
 - **No Booksy, no fall-back:** `demo-serve` can only build the dataset (or, with `--via-page`, a reader pointed at the demo page); it can never build a
   Booksy browser. The live `serve` can never use the dataset. If `--via-page` cannot start, the command stops; it never quietly answers from the dataset.
 - **No booking, ever:** the endpoint has no booking route and the tool file has no booking function. The booking approvals do not exist on this command.
@@ -121,7 +126,8 @@ On the demo date + 1 (a massage at 4 PM unless stated). `python -m aria_booking 
 | "Linda at 4?" | **off between 3 and 5 PM** (a break), so not available; offers 5 PM |
 | "Fiona for a facial?" | **unknown**: her column shows no hours, so the answer is "I can't confirm" |
 | "Who is free at 4?" | the first eligible technician who really is (Lily) |
-| "Who does the Microdermabrasion Facial?" | `lookup_service` lists the demo's **facial** technicians (Pinny Du, Maggie Jin, Anna Zheng, Ada, Jessica DU, Fiona Tsao), said to be from the simulated calendar |
+| "Who does the Microdermabrasion Facial?" | `lookup_service` lists the demo's **facial** technicians (Pinny Du, Maggie Jin, Anna Zheng, Ada, Jessica DU, Fiona Tsao) |
+| "Is this schedule real?" | answered truthfully: a prototype with an invented calendar, not the salon's real schedule (never volunteered otherwise) |
 | "Is Lily available for a Microdermabrasion Facial?" | Lily Xie is a massage and head-spa technician in the demo roster, so **she does not do it**; it offers those who do (she is never made facial-eligible or swapped out) |
 | "Is Tinny free?" | "I don't see Tinny": it does **not** become Pinny Du; the agent asks who was meant |
 | a date more than 35 days out | **unknown** ("I couldn't confirm that day"), never free; further than 60 days: asks for a nearer date |

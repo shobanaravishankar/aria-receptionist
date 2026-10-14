@@ -34,19 +34,22 @@ AVAILABILITY_TOOLS_FILE = "tools_availability_only.json"
 DEMO_PROMPT_FILE = "prompt_demo_calendar.md"  # the availability-only prompt for the DEMO calendar (invented data); it uses the same tool file
 DEMO_SECTION = """## You are connected to a DEMO calendar
 
-- The calendar behind your tools is a SIMULATED demo calendar with invented appointments and invented clients, shown on a page that is clearly
-  labelled "Demo calendar - simulated availability". It is not the salon's real schedule, and nothing in it is a real person's appointment.
-- Say so when you give availability. The tool's first answer in a call already says it: do not hide it, and never describe a demo appointment as a real one.
+- The calendar behind your tools is a prototype calendar with invented appointments and invented clients, shown on a page that is labelled
+  "Demo calendar - simulated availability". It is not the salon's real schedule, and nothing in it is a real person's appointment.
+- Do NOT announce this and do not say "demo", "simulated" or "prototype" on your own, in the greeting or in any answer: speak naturally as the receptionist and
+  give availability as the tools return it. If the caller asks whether the schedule, the availability or an appointment is real or live, or whether this is a
+  demo, answer truthfully: this is a prototype with an invented calendar, not the salon's real schedule. Never describe an invented appointment as a real one,
+  and never imply anything was booked.
 - Names, times and who is free come only from the tool. If the tool says it does not see the technician the caller named, say so and ask who they meant; never
   swap in a similar-sounding name. If the tool asks which person (several share a first name), ask the caller.
-- You cannot book, hold, change or cancel anything in the demo either.
+- You cannot book, hold, change or cancel anything here either.
 - Offer or run a calendar check ONLY for a service under "What you can check availability for right now", or one that `lookup_service` returns with
   `bookable` true. This replaces the one-time "Would you like me to check availability?" offer for every other service: for those, give the information,
   say plainly that you cannot check availability for it, suggest the caller contact the salon, and do NOT offer a check, say you will check, or call a
   calendar tool. Never build a `service_id` yourself from a service name or length.
-- If the caller asks who does a service, call `lookup_service`: for a service you can check it returns `technicians`, the demo calendar's own list. Say
-  they are from the simulated demo calendar, and never say there is no list when it returned one. If the caller names a technician who is not on that
-  list, say that technician does not do that service on the demo calendar and name those who do; never swap in someone else.
+- If the caller asks who does a service, call `lookup_service`: for a service you can check it returns `technicians`, the calendar's own list. Give those
+  names, and never say there is no list when it returned one. If the caller names a technician who is not on that list, say that technician does not do that
+  service and name those who do; never swap in someone else.
 
 """
 
@@ -178,15 +181,28 @@ def build_availability_tools(tools: dict) -> dict:
     return out
 
 
-def build_demo_prompt(template: str, catalog: Catalog = DEFAULT_CATALOG) -> str:
-    """The availability-only prompt, over the DEMO registry, with the section that says the calendar is simulated."""
+SALON_NAME_ON_WEBSITE = "Glamour Day Spa"  # the exact salon name in the website knowledge and the template; service names such as "Glamour Full Set" do not contain it
+
+
+def build_demo_prompt(template: str, catalog: Catalog = DEFAULT_CATALOG, salon_name: str | None = None) -> str:
+    """The availability-only prompt, over the DEMO registry, with the section that says how to treat the invented calendar.
+
+    The name Aria SPEAKS is ``salon_name`` (default ``demo.SALON_NAME``), applied here at rendering time to the agent's own part of the prompt (from '## Who you are')
+    only: the services, lengths, prices, hours and address are the website knowledge unchanged, and so is the note above the prompt about the original public agent.
+    """
+    from ..demo import SALON_NAME
     from ..demo.dataset import demo_registry
 
     text = build_prompt(template, catalog=catalog, registry=demo_registry(), mode="availability")
     heading = "## While the calendar is being checked"
     if text.count(heading) != 1:
         raise ValueError("the prompt template must contain the 'While the calendar is being checked' section exactly once")
-    return text.replace(heading, DEMO_SECTION + heading)
+    text = text.replace(heading, DEMO_SECTION + heading)
+    marker = "## Who you are"
+    if text.count(marker) != 1:
+        raise ValueError("the prompt template must contain the 'Who you are' section exactly once")
+    head, body = text.split(marker)
+    return head + marker + body.replace(SALON_NAME_ON_WEBSITE, salon_name or SALON_NAME)
 
 
 def main(argv: list[str]) -> int:

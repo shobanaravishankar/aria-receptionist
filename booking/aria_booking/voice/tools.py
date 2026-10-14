@@ -670,7 +670,7 @@ class VoiceTools:
         note = f" Note: {item.notes}" if item.notes else ""
         booking = "I can check availability for it." if can_book else "I can tell you about it, but I can't book it online yet."
         technicians = (self._providers(mapped) if self._providers and can_book else None) or []
-        who = f" On the simulated demo calendar, {join_names(technicians)} {'does' if len(technicians) == 1 else 'do'} this service." if technicians else ""
+        who = f" {join_names(technicians)} {'does' if len(technicians) == 1 else 'do'} this service." if technicians else ""  # the source is in the metadata, not spoken
         return _response(
             "service_info",
             f"{item.name}: {length}, {spoken_price(item.price_usd)} as listed on our website ({item.retrieved_on}). {item.description} {booking}{who}{note}",

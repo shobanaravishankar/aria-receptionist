@@ -141,7 +141,8 @@ def test_the_endpoint_it_builds_is_read_only_and_labelled(isolated):
     run(["demo-serve", "--today", "2026-10-13"])
     endpoint = isolated["endpoint"]
     assert endpoint._routes == READ_ONLY_ROUTES and not endpoint._tools.booking_enabled
-    assert endpoint._tools._source_label == "demo_calendar" and "demo calendar" in endpoint._tools._source_note
+    assert endpoint._tools._source_label == "demo_calendar" and endpoint._tools._source_note is None, "labelled in the data, not announced aloud"
+    assert endpoint._tools._providers is not None, "the label still gates the demo-only provider lookup"
 
 
 def test_the_default_demo_date_is_the_real_today(isolated):

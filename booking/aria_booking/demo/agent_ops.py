@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 from zoneinfo import ZoneInfo
 
+from . import SALON_NAME
 from .secret_store import DpapiSecrets, SecretMissing, provider_from_environment
 
 BOOKING = Path(__file__).resolve().parents[2]
@@ -99,6 +100,11 @@ class RetellApi:
 # ---------------------------------------------------------------- configuration
 
 
+def opening_line(salon_name: str = SALON_NAME) -> str:
+    """What Aria says first. It names the SAME salon as the prompt (both come from ``demo.SALON_NAME``) and does not announce that the calendar is a demo."""
+    return f"Hi, I'm Aria, your AI receptionist for {salon_name}. I can explain our services and check availability. What would you like to know?"
+
+
 @dataclass(frozen=True)
 class OperatorConfig:
     tunnel_url: str = ""
@@ -109,8 +115,7 @@ class OperatorConfig:
     language: str = "en-US"
     max_call_duration_ms: int = 300_000
     data_storage_retention_days: int = 7
-    begin_message: str = ("Hi, I'm Aria, your AI receptionist for Glamour Day Spa. I can explain our services and check our simulated demo calendar. "
-                          "What would you like to know?")
+    begin_message: str = field(default_factory=lambda: opening_line())
     state_dir: Path = field(default_factory=lambda: BOOKING / ".local" / "demo-agent")
     template_dir: Path = field(default_factory=lambda: REPO_ROOT)
     web_dir: Optional[Path] = None
@@ -521,6 +526,8 @@ def test_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path) -> s
         "  - What about Elva?                                                       -> booked at 4; offers her other times",
         "  - Who does the Microdermabrasion Facial?                                 -> the demo's facial technicians (not Lily)",
         "  - Is Lily available for a Microdermabrasion Facial?                      -> Lily does not do it; offers those who do",
+        "  - Is this schedule real?                                                 -> truthful: a prototype with an invented calendar (never said unprompted)",
+        f"  The greeting names {SALON_NAME}; the page itself still carries the website template's own text and the simulation banner.",
         "",
         "The demo date is fixed when the demo server starts: after midnight Eastern, restart the server (not the tunnel or the agent) for these cases to hold.",
         "",
