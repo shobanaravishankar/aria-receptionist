@@ -112,6 +112,7 @@ class VoiceTools:
         source_label: Optional[str] = None,
         source_note: Optional[str] = None,
         providers: Optional[Callable[[BookableService], list[str]]] = None,
+        group_answer: Optional[Callable[[str], Optional[dict]]] = None,
         read_cache_seconds: float = 0.0,
         monotonic: Callable[[], float] = time.monotonic,
     ):
@@ -146,6 +147,8 @@ class VoiceTools:
         # Who does a service, ONLY for a calendar that is not the real one (the demo's synthetic roster). Without a source label this is never used,
         # so the live path cannot state an unverified technician list.
         self._providers = providers if source_label else None
+        # A demo-only answer for a caller who names a whole group ("massage", "what kinds of facials"): a few examples and one question. None on the live line.
+        self._group_answer = group_answer if source_label else None
         self._source_announced: set[str] = set()
         self._announce_lock = threading.Lock()
         self._thread_state = threading.local()  # last_timing is per request thread: overlapping requests must not overwrite each other's log
@@ -648,6 +651,9 @@ class VoiceTools:
         query = args.get("query")
         if not isinstance(query, str) or not query.strip():
             return _response("needs_clarification", "Which service would you like to know about?", reason="no_query")
+        group = self._group_answer(query) if self._group_answer else None
+        if group is not None:
+            return _response(group.pop("status"), group.pop("speak"), **group)
         resolution = self.catalog.resolve(query)
         if resolution.kind == "unknown":
             return _response(

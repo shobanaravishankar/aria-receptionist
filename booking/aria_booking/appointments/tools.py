@@ -32,7 +32,9 @@ from ..history.models import (
     HistoryUnavailable, Visit as HistoryVisit,
 )
 from ..history.phone import normalize_phone
+from ..catalog.render import CATEGORY_TITLES
 from ..showcase.catalog import SHOWCASE_CATALOG
+from ..showcase.discovery import make_group_answer
 from ..voice.speech import join_names, spoken_day, spoken_duration, spoken_price, spoken_slot, spoken_time
 from ..voice.tools import VoiceTools
 from .lifecycle import Lifecycle
@@ -107,6 +109,7 @@ class LifecycleTools(VoiceTools):
         def no_writer(*args: Any, **kw: Any):
             raise AssertionError("the simulated lifecycle has no Booksy writer")
 
+        kwargs.setdefault("group_answer", make_group_answer(SHOWCASE_CATALOG, CATEGORY_TITLES))
         kwargs.setdefault("check_search_days", 1)
         kwargs.setdefault("read_cache_seconds", 0.0)  # a booking must be in the very next answer
         kwargs.setdefault("lock_timeout_seconds", 2.0)

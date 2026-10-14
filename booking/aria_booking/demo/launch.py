@@ -12,7 +12,9 @@ from typing import Any, Callable, Optional
 from zoneinfo import ZoneInfo
 
 from ..config import Config
+from ..catalog.render import CATEGORY_TITLES
 from ..showcase.catalog import SHOWCASE_CATALOG
+from ..showcase.discovery import make_group_answer
 from ..voice.launch import build_endpoint
 from . import DEMO_BUSINESS_ID, SPA_TIMEZONE
 from .dataset import DemoDataset
@@ -60,6 +62,7 @@ def build_demo(
 
     tool_kwargs.setdefault("read_cache_seconds", 0.0)  # the demo is instant and its answers should never carry an 'as of' age
     tool_kwargs.setdefault("providers", dataset.providers)  # who does a service, from the demo's own synthetic roster
+    tool_kwargs.setdefault("group_answer", make_group_answer(SHOWCASE_CATALOG, CATEGORY_TITLES))  # "what kinds of massage?": three examples and one question, in code
     tool_kwargs.setdefault("catalog", SHOWCASE_CATALOG)  # the Serenity menu: lookups, resolution and prices come from it, never the earlier salon's website knowledge
     endpoint = build_endpoint(
         cfg, driver, no_writer, clock, api_key, booking_approved=False, bearer_token=bearer_token, registry=dataset.registry, log=log,

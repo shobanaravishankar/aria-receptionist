@@ -352,7 +352,9 @@ def build_demo_prompt(template: str, catalog: Catalog | None = None, salon_name:
     heading = "## While a tool is working" if lifecycle else "## While the calendar is being checked"
     if text.count(heading) != 1:
         raise ValueError(f"the prompt template must contain the '{heading[3:]}' section exactly once")
-    text = text.replace(heading, (LIFECYCLE_SECTION if lifecycle else DEMO_SECTION) + heading)
+    from ..showcase.discovery import discovery_section
+
+    text = text.replace(heading, (LIFECYCLE_SECTION if lifecycle else DEMO_SECTION) + discovery_section(catalog or SHOWCASE_CATALOG, CATEGORY_TITLES) + heading)
     early = "## Two sources, never mixed"
     if text.count(early) != 1:
         raise ValueError("the prompt template must contain the 'Two sources, never mixed' section exactly once")
