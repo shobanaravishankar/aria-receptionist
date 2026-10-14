@@ -123,6 +123,13 @@ tunnel address unless `--tunnel-url` gives a new one (which also moves the funct
 change; `verify` shows what differs beforehand and changes nothing. Restart `demo-serve` (not the tunnel) so it loads the same services, and re-run `prepare-web` for a
 changed page; the page server needs no restart.
 
+## The website's Calendar and Staff calendar views
+
+The prepared website has a **Calendar** view (open times for a chosen treatment, length, day and optional technician) and a **Staff calendar** view (this schedule, in a frame), both
+in the same tab with a **Back to ...** control. The open times come from `GET /demo/open-times?service_id=...&date=YYYY-MM-DD[&staff=Name]` on this server, derived from the same
+data and rules the voice reads, so the page and Aria agree. The server answers read-only JSON and lets only the prepared page's own origin (`http://localhost:<page-port>`,
+`http://127.0.0.1:<page-port>`) read it; start it with `--page-port N` if the page is served on a port other than 5174. See SHOWCASE.md for the behaviour.
+
 ## What to ask (the scripted days: the demo date + 1 and + 2)
 
 On the demo date + 1 (a massage at 4 PM unless stated). `python -m aria_booking demo-day [--date YYYY-MM-DD] [--today YYYY-MM-DD]` prints who works and what is booked on any covered day:

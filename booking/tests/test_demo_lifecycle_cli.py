@@ -44,7 +44,7 @@ class FakeSite(FakeServer):
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch):
     built = {}
-    monkeypatch.setattr(demo_server, "make_site", lambda dataset, port, host="127.0.0.1": built.setdefault("site", FakeSite()) and built.setdefault("dataset", dataset) and FakeSite())
+    monkeypatch.setattr(demo_server, "make_site", lambda dataset, port, host="127.0.0.1", **kw: built.setdefault("site", FakeSite()) and built.setdefault("dataset", dataset) and built.setdefault("site_kwargs", kw) and FakeSite())
     monkeypatch.setattr(retell_http, "make_http_server", lambda endpoint, port, host="127.0.0.1": built.setdefault("endpoint", endpoint) and FakeServer())
 
     def boom(*args, **kwargs):
@@ -139,3 +139,9 @@ def test_the_diagnostic_incomplete_calendar_reaches_the_lifecycle_dataset_only_w
     isolated.clear()
     serve(tmp_path, "--diagnostic-incomplete-calendar")
     assert isolated["dataset"].diagnostic_unknown_hours == frozenset({"910010"})
+
+
+def test_the_lifecycle_site_allows_only_the_prepared_website_and_uses_the_lifecycle_clock(isolated, tmp_path):
+    serve(tmp_path, "--page-port", "5888")
+    kw = isolated["site_kwargs"]
+    assert set(kw["allowed_origins"]) == {"http://localhost:5888", "http://127.0.0.1:5888"} and kw["clock"]().date().isoformat() == "2026-10-13"

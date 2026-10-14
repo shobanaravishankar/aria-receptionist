@@ -50,7 +50,7 @@ class FakeSite(FakeServer):
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch):
     built = {}
-    monkeypatch.setattr(demo_server, "make_site", lambda dataset, port, host="127.0.0.1": built.setdefault("site", FakeSite()))
+    monkeypatch.setattr(demo_server, "make_site", lambda dataset, port, host="127.0.0.1", **kw: built.setdefault("site", FakeSite()) and built.setdefault("site_kwargs", kw) and FakeSite())
     monkeypatch.setattr(retell_http, "make_http_server", lambda endpoint, port, host="127.0.0.1": built.setdefault("endpoint", endpoint) and FakeServer())
 
     def boom(*args, **kwargs):
@@ -258,3 +258,12 @@ def test_the_diagnostic_incomplete_calendar_flag_is_off_by_default_and_marks_one
     isolated.clear()
     run(["demo-serve", "--today", "2026-10-13", "--diagnostic-incomplete-calendar"])
     assert isolated["endpoint"]._tools.driver.dataset.diagnostic_unknown_hours == frozenset({"910010"})
+
+
+def test_only_the_prepared_website_may_read_the_open_times_and_it_gets_the_demo_clock(isolated):
+    run(["demo-serve", "--today", "2026-10-13", "--page-port", "5999"])
+    kw = isolated["site_kwargs"]
+    assert set(kw["allowed_origins"]) == {"http://localhost:5999", "http://127.0.0.1:5999"} and kw["clock"]().date().isoformat() == "2026-10-13"
+    isolated.clear()
+    run(["demo-serve"])
+    assert set(isolated["site_kwargs"]["allowed_origins"]) == {"http://localhost:5174", "http://127.0.0.1:5174"}

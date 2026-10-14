@@ -91,7 +91,9 @@ def test_the_voice_settings_are_public_only_and_absent_settings_say_so_instead_o
 
 def test_one_h1_a_lang_a_title_a_description_and_a_skip_link(built):
     _out, html, page = built
-    assert len(page.find("h1")) == 1 and page.find("html")[0]["lang"] == "en"
+    h1 = [a["id"] for a in page.find("h1")]
+    assert h1 == ["hero-title", "view-calendar-title", "view-staff-title"], "the home page's one visible heading, plus one for each of the two views (hidden until opened)"
+    assert page.find("html")[0]["lang"] == "en"
     assert "<title>Serenity Spa: prototype showcase</title>" in html and page.find("meta", name="description")
     assert page.find("a", href="#main") and page.find("main", id="main") and page.find("meta", name="viewport")
 
@@ -189,7 +191,9 @@ def test_the_page_makes_no_outside_request_except_the_voice_sdk_and_plain_links(
         if tag in ("script", "link", "img", "source", "iframe") and (attrs.get("src") or attrs.get("href")):
             ref = attrs.get("src") or attrs.get("href")
             assert not ref.startswith(("http://", "https://", "//")), (tag, ref)
-    assert "fonts.googleapis" not in html and "gstatic" not in html and "iframe" not in html
+    assert "fonts.googleapis" not in html and "gstatic" not in html
+    frames = page.find("iframe")
+    assert len(frames) == 1 and "src" not in frames[0] and frames[0]["data-src"] == calendar_link(8790), "the staff calendar frame loads nothing until the view is opened"
     sdk = (built[0] / "voice.js").read_text(encoding="utf-8")
     assert sdk.count("https://") == 1 or "cdn.jsdelivr.net/npm/retell-client-js-sdk@3.0.1" in sdk
     outbound = {a["href"] for t, a in page.tags if t == "a" and a.get("href", "").startswith("http")}
@@ -200,8 +204,8 @@ def test_the_calendar_link_goes_to_the_demo_calendar_on_localhost(built):
     _out, _html, page = built
     expected = calendar_link(8790)
     assert expected == "http://localhost:8790/pro/en-us/9000001/calendar?date=today&view=day&staffers=working"
-    links = [a for t, a in page.tags if t == "a" and a.get("href") == expected]
-    assert len(links) >= 3 and all(a.get("rel") == "noopener" for a in links)
+    assert page.find("iframe")[0]["data-src"] == expected, "the configured calendar address is the staff frame's source"
+    assert not [a for t, a in page.tags if t == "a" and a.get("href") == expected and a.get("target")], "no link opens it elsewhere"
     assert calendar_link(9911).startswith("http://localhost:9911/")
 
 

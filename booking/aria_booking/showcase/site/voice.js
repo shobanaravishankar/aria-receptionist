@@ -18,6 +18,11 @@ const closeBtn = panel.querySelector("[data-voice-close]");
 const configBox = document.getElementById("voice-config");
 const micNote = panel.querySelector(".voice-panel__mic");
 const toastEl = document.getElementById("toast");
+const minimizeBtn = document.getElementById("voice-minimize");
+const bar = document.getElementById("call-bar");
+const barText = document.getElementById("call-bar-text");
+const barShow = document.getElementById("call-show");
+const barEnd = document.getElementById("call-end");
 
 let sdkPromise = null;   // memoized dynamic import
 let client = null;       // RetellClient (created once)
@@ -31,6 +36,13 @@ let lastFocus = null;
 function setStatus(state, message) {
   statusRing.dataset.state = state;
   statusText.textContent = message;
+  if (barText) barText.textContent = "Aria · " + message;
+}
+
+/* The call bar shows only while a call is active (or connecting) and the panel is put away, so the visitor can browse the page, including its calendar views, without
+   ending the call: the call belongs to this page, and the page is never navigated. */
+function syncBar() {
+  if (bar) bar.hidden = !((call || starting) && panel.hidden);
 }
 
 function toast(message) {
@@ -75,25 +87,36 @@ function openPanel() {
     retryBtn.hidden = true;
     closeBtn.hidden = false;
   }
+  syncBar();
 }
 
 function closePanel() {
   panel.hidden = true;
   document.body.style.overflow = "";
   if (lastFocus && lastFocus.focus) lastFocus.focus();
+  syncBar();
+}
+
+function minimizePanel() {
+  if (!(call || starting)) return;   // only a call in progress can be put away; otherwise there is nothing to keep
+  panel.hidden = true;
+  document.body.style.overflow = "";
+  syncBar();
+  if (barShow) { try { barShow.focus(); } catch (_) {} }
 }
 
 /* ---------------- call lifecycle ---------------- */
 async function startCall() {
   openPanel();
   if (!isConfigured()) return;
-  if (call || starting) { toast("A call is already connecting."); return; }
+  if (call || starting) { if (!everLive) toast("A call is already connecting."); return; }   // a live call just comes back to the front: the panel was opened above
 
   starting = true;
   failure = null;                  // a new attempt: forget the last failure
   document.documentElement.dataset.ariaCall = "1";
   endBtn.hidden = true;
   retryBtn.hidden = true;
+  if (minimizeBtn) minimizeBtn.hidden = true;
   closeBtn.hidden = true;          // no accidental dismiss mid-connect
   setStatus("connecting", "Connecting to Aria…");
   micNote.textContent = micNote.dataset.idle || "";
@@ -133,6 +156,7 @@ function onStatus(status) {
     setStatus("live", "Connected — say hello to Aria.");
     endBtn.hidden = false;
     retryBtn.hidden = true;
+    if (minimizeBtn) minimizeBtn.hidden = false;
     closeBtn.hidden = false;
     micNote.textContent = micNote.dataset.live || "";
     try { call.startAudioPlayback && call.startAudioPlayback(); } catch (_) {}
@@ -142,6 +166,7 @@ function onStatus(status) {
 }
 
 function onEnd() {
+  if (panel.hidden) openPanel();   // the call ended while the panel was put away: show how it ended
   if (failure) {
     // An error already said why this call failed (and showed it). Retell also fires "ended" afterwards: keep the specific message.
     reset();
@@ -169,6 +194,7 @@ function onError(err) {
 }
 
 function fail(err) {
+  if (panel.hidden) openPanel();
   const message = friendlyError(err);
   failure = message;
   reset();
@@ -183,7 +209,9 @@ function reset() {
   everLive = false;
   call = null;
   endBtn.hidden = true;
+  if (minimizeBtn) minimizeBtn.hidden = true;
   delete document.documentElement.dataset.ariaCall;
+  syncBar();
 }
 
 async function endCall() {
@@ -203,6 +231,9 @@ closeBtn.addEventListener("click", async () => {
   if (call || starting) { await endCall(); }
   closePanel();
 });
+if (minimizeBtn) minimizeBtn.addEventListener("click", minimizePanel);
+if (barShow) barShow.addEventListener("click", () => { openPanel(); });
+if (barEnd) barEnd.addEventListener("click", () => { endCall(); });
 document.querySelectorAll(".voice-panel__scrim").forEach((b) => b.addEventListener("click", async () => {
   if (call || starting) return;   // never dismiss the panel by accident mid-call
   closePanel();

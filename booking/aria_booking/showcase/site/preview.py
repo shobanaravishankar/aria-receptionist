@@ -1,15 +1,23 @@
 """Desktop and phone previews of the Serenity page, taken in a real browser against a loopback server. The browser can reach ONLY this machine: any request to anything
-else is aborted and counted, and the capture fails if there was one. The voice SDK is a local stub, so no call and no network are involved."""
+else is aborted and counted, and the capture fails if there was one. The voice SDK is a local stub, so no call and no network are involved.
+
+The page's own 'localhost' calendar address is answered from the loopback calendar server started here (and no other 'localhost' address is), so the Calendar and Staff
+calendar views are photographed with real, synthetic open times."""
 
 from __future__ import annotations
 
 import functools
 import tempfile
 import threading
+from datetime import datetime, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
+from ...demo import SPA_TIMEZONE
+from ...demo.dataset import DemoDataset
+from ...demo.server import make_site, page_origins
 from . import build_site
 
 SDK_URL = "https://cdn.jsdelivr.net/npm/retell-client-js-sdk@3.0.1/+esm"
@@ -23,7 +31,8 @@ class _Quiet(SimpleHTTPRequestHandler):
 
 
 def capture(out_dir, *, channel: Optional[str] = None, site_dir=None) -> list[Path]:
-    """Write previews into ``out_dir``: the top of the page, the whole page, the facial menu and the voice panel, for desktop and for a phone. Returns the files."""
+    """Write previews into ``out_dir``: the top of the page, the whole page, the facial menu, the voice panel and (when the page is built here) the Calendar and Staff
+    calendar views, for desktop and for a phone. Returns the files."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
@@ -31,13 +40,24 @@ def capture(out_dir, *, channel: Optional[str] = None, site_dir=None) -> list[Pa
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     holder = None
-    if site_dir is None:
+    built_here = site_dir is None
+    if built_here:
         holder = tempfile.TemporaryDirectory()
         site_dir = Path(holder.name)
-        build_site(site_dir, settings={"publicKey": "public_key_preview", "agentId": "agent_preview", "agentVersion": 0})
     server = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(_Quiet, directory=str(site_dir)))
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    base = f"http://127.0.0.1:{server.server_address[1]}/"
+    page_port = server.server_address[1]
+    base = f"http://127.0.0.1:{page_port}/"
+    calendar = calendar_port = None
+    tomorrow = ""
+    if built_here:  # the calendar the page reads, on its own loopback port, for the two views
+        zone = ZoneInfo(SPA_TIMEZONE)
+        today = datetime.now(zone).date()
+        tomorrow = (today + timedelta(days=1)).isoformat()
+        calendar = make_site(DemoDataset(today), 0, allowed_origins=page_origins(page_port))
+        threading.Thread(target=calendar.serve_forever, daemon=True).start()
+        calendar_port = calendar.server_address[1]
+        build_site(site_dir, settings={"publicKey": "public_key_preview", "agentId": "agent_preview", "agentVersion": 0}, calendar_port=calendar_port)
     written: list[Path] = []
     blocked: list[str] = []
     try:
@@ -50,6 +70,8 @@ def capture(out_dir, *, channel: Optional[str] = None, site_dir=None) -> list[Pa
                     url = route.request.url
                     if url.startswith(("http://127.0.0.1:", "data:", "blob:", "about:")):
                         route.continue_()
+                    elif calendar_port is not None and url.startswith(f"http://localhost:{calendar_port}/"):  # the page's name for the calendar it was built with: this machine
+                        route.fulfill(response=route.fetch(url=url.replace("//localhost:", "//127.0.0.1:", 1)))
                     elif url == SDK_URL:
                         route.fulfill(status=200, content_type="application/javascript", headers={"access-control-allow-origin": "*"}, body=SDK_STUB)
                     else:
@@ -79,11 +101,36 @@ def capture(out_dir, *, channel: Optional[str] = None, site_dir=None) -> list[Pa
                 page.wait_for_timeout(400)
                 page.screenshot(path=str(out / f"{name}-voice-panel.jpg"), type="jpeg", quality=82)
                 written.append(out / f"{name}-voice-panel.jpg")
+                if built_here:
+                    page.goto(base, wait_until="networkidle")
+                    page.evaluate("location.hash = '#calendar'")
+                    page.wait_for_function("() => !document.getElementById('view-calendar').hidden && document.getElementById('ot-date').min !== ''")
+                    page.select_option("#ot-family", label="Swedish Massage")
+                    page.select_option("#ot-length", index=1)
+                    page.fill("#ot-date", tomorrow)
+                    page.click('[data-testid="show-open-times"]')
+                    page.wait_for_function("() => ['open', 'none', 'unknown', 'error'].includes(document.getElementById('ot-results').dataset.state)")
+                    page.wait_for_timeout(250)
+                    page.screenshot(path=str(out / f"{name}-calendar.jpg"), type="jpeg", quality=82, full_page=True)
+                    written.append(out / f"{name}-calendar.jpg")
+                    page.evaluate("location.hash = '#staff-calendar'")
+                    page.wait_for_function("() => !document.getElementById('view-staff').hidden")
+                    for _ in range(75):  # the frame is another origin (the calendar's own port): find it through the browser, wait for the schedule to be drawn
+                        shown = [f for f in page.frames if "/calendar" in f.url]
+                        if shown and shown[0].locator('[data-testid="demo-banner"]').count():
+                            break
+                        page.wait_for_timeout(200)
+                    page.wait_for_timeout(500)
+                    page.screenshot(path=str(out / f"{name}-staff-calendar.jpg"), type="jpeg", quality=82)
+                    written.append(out / f"{name}-staff-calendar.jpg")
                 context.close()
             browser.close()
     finally:
         server.shutdown()
         server.server_close()
+        if calendar is not None:
+            calendar.shutdown()
+            calendar.server_close()
         if holder is not None:
             holder.cleanup()
     if blocked:

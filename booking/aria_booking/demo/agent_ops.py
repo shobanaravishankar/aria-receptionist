@@ -594,13 +594,14 @@ def lifecycle_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path)
     from ..appointments.seed import ANSEL, CEDRIC, WILLA
 
     calendar = f"http://localhost:{config.calendar_port}/pro/en-us/9000001/calendar?date={tomorrow}&view=day&staffers=working"
+    page_flag = f" --page-port {config.page_port}" if config.page_port != 5174 else ""  # only the page opened at this port may read the open times
     return "\n".join([
         "SUPERVISED VOICE TEST of the SIMULATED appointment lifecycle (invented clients and appointments; the call uses Retell minutes and is your decision).",
         "Appointments you book, move or cancel exist only in the prototype calendar's local file. NO real salon calendar is touched. No text goes to anyone unless you have set up",
         "an owner number AND an SMS provider (neither exists yet), and no text ever goes to a client.",
         "",
         "1. Start the demo server with the lifecycle mode (it seeds the fictional clients below once and keeps every appointment between restarts):",
-        "     python -m aria_booking demo-serve --lifecycle",
+        f"     python -m aria_booking demo-serve --lifecycle{page_flag}",
         "2. Serve the prepared page and leave it running:",
         f"     python -m http.server {config.page_port} --bind 127.0.0.1 --directory {web_dir}",
         "3. Open EXACTLY this address, then press the voice button and allow the microphone:",
@@ -608,6 +609,8 @@ def lifecycle_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path)
         f"   Do NOT use http://127.0.0.1:{config.page_port}/ (the Retell public key allows localhost, not the numeric address).",
         "4. The calendar page Aria reads and writes (refresh it after each change; it must agree with what she says):",
         f"     {calendar}",
+        "   On the website, 'Calendar' lists a treatment's open times for a day (the same calendar and rules Aria uses; it books nothing) and 'Staff calendar' shows the detailed schedule above;",
+        "   both open in the same tab with a 'Back to ...' control, so a call with Aria keeps going while you look (use 'Hide while I look around' on the call panel, then 'Show' on the call bar).",
         "",
         "The fictional clients (reserved 555-01xx numbers: they reach no real phone, and nothing is ever sent to them):",
         f"  - {WILLA[0]}, number {WILLA[1][2:5]}-{WILLA[1][5:8]}-{WILLA[1][8:]} ({WILLA[1]}): upcoming waxing (a Tuesday), head spa (a Friday) and massage (a Sunday); past completed lash, massage and facial; a cancelled lash and a missed facial.",

@@ -107,6 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--site-port", type=int, default=8790, help="the demo calendar page's loopback port")
     p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today); 'tomorrow' means the day after it")
     p.add_argument("--via-page", action="store_true", help="answer by reading the demo PAGE in a Playwright window (the live code path) instead of the dataset")
+    p.add_argument("--page-port", type=int, default=5174, help="the port the prepared website is opened at (default 5174): the only page allowed to read the calendar's open times")
     p.add_argument("--diagnostic-incomplete-calendar", action="store_true", help="DIAGNOSTIC ONLY: one technician's working hours are not shown on the calendar, to exercise the "
                                                                                  "'cannot confirm' path (unknown is never free). Off by default: the normal demo's schedules are complete.")
     p.add_argument("--lifecycle", action="store_true", help="the SIMULATED appointment lifecycle: find, book, move and cancel appointments in the prototype calendar (a local file, invented clients; "
@@ -440,7 +441,7 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
     from .demo import DEMO_BUSINESS_ID, DEMO_LABEL, SPA_TIMEZONE
     from .demo.launch import build_demo, demo_clock
     from .demo.dataset import DemoDataset
-    from .demo.server import calendar_url, make_site
+    from .demo.server import calendar_url, make_site, page_origins
 
     from .demo.secret_store import serve_credentials
 
@@ -464,7 +465,7 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
     if today is not None and today != datetime.now(tz).date():
         out(f"WARNING: --today {today.isoformat()} is not the real date. A Retell agent's own clock is the real date, so for a live voice test leave --today off; "
             "otherwise 'tomorrow' will mean different days to the agent and to the calendar.")
-    site = make_site(dataset, args.site_port)
+    site = make_site(dataset, args.site_port, allowed_origins=page_origins(args.page_port), clock=clock)
     threading.Thread(target=site.serve_forever, name="demo-site", daemon=True).start()
     driver = None
     if args.via_page:  # the same reader the live calendar uses, pointed at the demo page; if it cannot start, the command stops (no fall-back to the dataset)
@@ -522,7 +523,7 @@ def _demo_serve_lifecycle(args, cfg: Config, key: str, tool_token: str, today, o
     from .appointments.sender import OwnerDestinationError, load_owner_destination
     from .appointments.store import StoreError
     from .demo import DEMO_BUSINESS_ID, DEMO_LABEL, SPA_TIMEZONE
-    from .demo.server import calendar_url, make_site
+    from .demo.server import calendar_url, make_site, page_origins
     from .showcase import SHOWCASE
 
     try:
@@ -536,7 +537,7 @@ def _demo_serve_lifecycle(args, cfg: Config, key: str, tool_token: str, today, o
     if today is not None and today != datetime.now(lifecycle.tz).date():
         out(f"WARNING: --today {today.isoformat()} is not the real date. A Retell agent's own clock is the real date, so for a live voice test leave --today off; "
             "otherwise 'tomorrow' will mean different days to the agent and to the calendar.")
-    site = make_site(lifecycle.dataset, args.site_port)
+    site = make_site(lifecycle.dataset, args.site_port, allowed_origins=page_origins(args.page_port), clock=lifecycle.clock)
     threading.Thread(target=site.serve_forever, name="demo-site", daemon=True).start()
     driver = None
     if args.via_page:

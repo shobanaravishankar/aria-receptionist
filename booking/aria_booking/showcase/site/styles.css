@@ -172,6 +172,43 @@ noscript .panel[hidden] { display: block; }
 @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.35); opacity: .6; } }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .voice-status__ring { animation: none !important; } .btn { transition: none; } }
 
+/* In-page views: open times and the staff calendar (same tab, same page, so a call with Aria is never interrupted) */
+#home[hidden], .view[hidden] { display: none; }
+.view { padding: 26px 0 72px; }
+.view-top { margin-bottom: 18px; }
+.back-home svg { width: 18px; height: 18px; }
+.view-head { max-width: 760px; margin-bottom: 22px; }
+.view-head h1 { font-size: clamp(36px, 5vw, 56px); }
+.view-head p:not(.kicker) { margin-top: 10px; color: var(--ink-soft); }
+.open-form { display: grid; gap: 14px; grid-template-columns: 1fr; background: var(--white); border: 1px solid var(--sand-200); border-radius: 20px; padding: 20px; }
+.field { display: grid; gap: 6px; min-width: 0; }
+.field label { font-weight: 500; font-size: 15px; color: var(--teal-900); }
+.field select, .field input { width: 100%; min-height: 48px; border: 1.5px solid var(--sand-200); border-radius: 12px; padding: 0 12px; font: 400 16px/1.2 "Jost", system-ui, sans-serif; background: var(--white); color: var(--ink); }
+.field select:focus-visible, .field input:focus-visible { border-color: var(--teal-500); }
+.open-results { margin-top: 22px; min-height: 80px; }
+.open-results .ot-day { font-size: 32px; margin-bottom: 4px; }
+.ot-sub, .ot-note { color: var(--ink-soft); font-size: 15px; margin: 4px 0 14px; }
+.slot-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.slot { background: var(--teal-50); border: 1px solid var(--teal-100); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+.slot-time { font: 600 26px/1.1 "Cormorant Garamond", Georgia, serif; color: var(--teal-900); }
+.slot-tech { color: var(--ink-soft); font-size: 15px; }
+.view-foot { margin-top: 22px; color: var(--ink-soft); font-size: 15px; }
+.view-foot + .visit-actions { margin-top: 10px; }
+.staff-frame { display: block; width: 100%; height: 72vh; min-height: 520px; border: 1px solid var(--sand-200); border-radius: 16px; background: var(--white); }
+.visit-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.visit-card .visit-actions .btn { margin-top: 0; }
+
+/* The call bar: shown only while a call is on and the voice panel is put away */
+.call-bar { position: fixed; left: 12px; right: 12px; bottom: 84px; z-index: 90; display: flex; align-items: center; gap: 10px; background: var(--teal-900); color: var(--white); border-radius: 18px; padding: 10px 12px; box-shadow: 0 14px 34px rgba(11, 61, 59, .35); }
+.call-bar[hidden] { display: none; }
+.call-bar__dot { width: 12px; height: 12px; border-radius: 50%; background: var(--green); flex: none; animation: pulse 1.6s ease-in-out infinite; }
+.call-bar__text { flex: 1; font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-bar .btn { min-height: 40px; padding: 0 14px; }
+.call-bar .btn-ghost { color: var(--white); border-color: rgba(255, 255, 255, .7); }
+.call-bar .btn-ghost:hover { background: rgba(255, 255, 255, .14); color: var(--white); }
+.call-bar .btn-primary { background: var(--white); color: var(--teal-900); box-shadow: none; }
+.call-bar .btn-primary:hover { background: var(--teal-100); color: var(--teal-900); }
+
 /* Tablet and up */
 @media (min-width: 760px) {
   .steps-grid { grid-template-columns: repeat(3, 1fr); gap: 34px; padding: 40px 0; }
@@ -186,6 +223,9 @@ noscript .panel[hidden] { display: block; }
   .mobile-cta { display: none; }
   .has-mobile-cta { padding-bottom: 0; }
   .toast { bottom: 28px; }
+  .open-form { grid-template-columns: repeat(4, minmax(0, 1fr)) auto; align-items: end; padding: 22px 24px; }
+  .slot-list { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+  .call-bar { left: auto; right: 24px; bottom: 24px; width: min(460px, calc(100% - 48px)); }
 }
 @media (min-width: 980px) {
   .nav { display: flex; }
