@@ -412,6 +412,36 @@ class AppointmentStore:
         except Refused as refusal:
             return Outcome(refusal.status, refusal.appointment, reason=refusal.reason, detail=refusal.detail)
 
+    # ---- the outbox: claiming and finishing (the dispatcher's side; see dispatcher.py) ------------------------------
+    def outbox_claim(self, limit: int = 10) -> list[dict]:
+        """Atomically take up to ``limit`` pending rows (pending -> sending, attempts + 1). A row can be claimed by exactly one caller: the claim is one write transaction."""
+        with self._write() as tx:
+            rows = tx._conn.execute("SELECT * FROM outbox WHERE status = 'pending' ORDER BY outbox_id LIMIT ?", (limit,)).fetchall()
+            claimed = []
+            for row in rows:
+                tx._conn.execute("UPDATE outbox SET status = 'sending', attempts = attempts + 1, claimed_at = ? WHERE outbox_id = ? AND status = 'pending'", (tx.now_utc, row["outbox_id"]))
+                claimed.append({**dict(row), "status": "sending", "attempts": row["attempts"] + 1})
+            return claimed
+
+    def outbox_finish(self, outbox_id: int, status: str, error: Optional[str] = None) -> None:
+        """Record what happened to a claimed row. 'pending' puts a definitely-unsent row back for another try; 'sent', 'failed' and 'uncertain' are final."""
+        if status not in ("pending", "sent", "failed", "uncertain"):
+            raise ValueError("a finished outbox row is pending (to retry), sent, failed or uncertain")
+        with self._write() as tx:
+            tx._conn.execute(
+                "UPDATE outbox SET status = ?, last_error = ?, sent_at = ? WHERE outbox_id = ? AND status = 'sending'",
+                (status, (error or None) and error[:120], tx.now_utc if status == "sent" else None, outbox_id),
+            )
+
+    def outbox_expire_sending(self, older_than_seconds: int) -> int:
+        """A row 'sending' for too long belongs to a dispatcher that died after claiming it: whether it went out is unknown, so it becomes 'uncertain' and is never retried."""
+        with self._write() as tx:
+            cursor = tx._conn.execute(
+                "UPDATE outbox SET status = 'uncertain', last_error = 'the sender stopped before recording the result' WHERE status = 'sending' AND claimed_at <= ?",
+                (tx.now_utc - older_than_seconds,),
+            )
+            return cursor.rowcount
+
     def settle_past(self) -> int:
         """SIMULATED-WORLD CONVENTION, run when the demo opens: a confirmed appointment whose time has passed is marked completed (the salon is assumed to have done it).
         Without it, a past appointment nobody recorded an outcome for would stay 'unknown' and, by the reviewed history rule, block every older answer. Never notifies."""

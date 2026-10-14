@@ -102,7 +102,8 @@ class StoreHistorySource:
 
 
 class LifecycleTools(VoiceTools):
-    def __init__(self, lifecycle: Lifecycle, cfg, driver, clock: Callable[[], datetime], *, contact_line: str = FALLBACK_CONTACT, **kwargs: Any):
+    def __init__(self, lifecycle: Lifecycle, cfg, driver, clock: Callable[[], datetime], *, contact_line: str = FALLBACK_CONTACT,
+                 on_committed: Optional[Callable[[], None]] = None, **kwargs: Any):
         def no_writer(*args: Any, **kw: Any):
             raise AssertionError("the simulated lifecycle has no Booksy writer")
 
@@ -118,6 +119,7 @@ class LifecycleTools(VoiceTools):
         self._read_only = False  # this line can book: its own, simulated way (no Booksy route exists, see LIFECYCLE_ROUTES)
         self._lc = lifecycle
         self._contact = contact_line
+        self._on_committed = on_committed  # called AFTER a change has committed, to wake the alert worker; never before, never on a refusal
         self._classifier = Classifier(SHOWCASE_CATALOG)
         self._history = HistoryLookup(StoreHistorySource(lifecycle.store, self._tz, clock, self._staff_name), clock, classifier=self._classifier)
         self._outbox = outbox_builder(self._staff_name, self._tz)
@@ -191,6 +193,13 @@ class LifecycleTools(VoiceTools):
             if pending is None or pending.kind != kind or pending.call_id != call_id or pending.expires <= self._now():
                 return None
             return pending
+
+    def _committed(self) -> None:
+        if self._on_committed is not None:
+            try:
+                self._on_committed()
+            except Exception:  # waking the worker must never turn a saved change into an error
+                pass
 
     def _changed_count(self, call_id: str) -> int:
         with self._state_lock:
@@ -408,6 +417,7 @@ class LifecycleTools(VoiceTools):
             return check
         if not repeat:
             self._count_change(call_id)
+            self._committed()
         what = f"{self._described(row.service_name, row.duration_minutes)}, with {self._staff_name(row.staff_id)}, on {self._slot(row)}"
         if repeat:
             return _reply("already_booked", f"That's already booked for you: {what}. I won't book it twice. Your reference is {self._spoken_reference(row.reference)}.", appointment=self._view(row))
@@ -489,6 +499,7 @@ class LifecycleTools(VoiceTools):
                 return _reply("already_cancelled", "That appointment was already cancelled. Nothing else was changed.", appointment=self._view(done))
             if outcome.status == "cancelled":
                 self._count_change(call_id)
+                self._committed()
             return _reply("cancelled", f"Your {self._label(done)} appointment on {self._slot(done)} is cancelled, and that time is free again.", appointment=self._view(done))
         if outcome.status == "stale" and outcome.appointment is not None:
             return self._cancel_readback(call_id, outcome.appointment, stale=True)
@@ -590,6 +601,7 @@ class LifecycleTools(VoiceTools):
                 return _reply("unchanged", f"Your {self._label(done)} appointment is already on {self._slot(done)} with {self._staff_name(done.staff_id)}. Nothing was changed.", appointment=self._view(done))
             if outcome.status == "rescheduled":
                 self._count_change(call_id)
+                self._committed()
             return _reply(
                 "rescheduled", f"Done. Your {self._label(done)} appointment is now on {self._slot(done)}, with {self._staff_name(done.staff_id)}. I checked the calendar and it's there.",
                 appointment=self._view(done),

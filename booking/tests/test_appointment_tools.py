@@ -34,11 +34,11 @@ KEY = "test-key-not-a-real-secret"
 
 
 class Env:
-    def __init__(self, tmp_path, *, hour=10, seed=True, name="env.sqlite3"):
+    def __init__(self, tmp_path, *, hour=10, seed=True, name="env.sqlite3", **tool_kwargs):
         self.now = datetime(TODAY.year, TODAY.month, TODAY.day, hour, 0, tzinfo=TZ)
         self.lc = open_lifecycle(tmp_path / name, today=TODAY, real_now=lambda: self.now, seed=seed)
         self.log: list[str] = []
-        self.endpoint, self.driver = build_lifecycle_demo(KEY, self.lc, log=self.log.append)
+        self.endpoint, self.driver = build_lifecycle_demo(KEY, self.lc, log=self.log.append, **tool_kwargs)
         self.tools = self.endpoint._tools
 
     def call(self, route: str, args: dict, call_id: str = "call-1") -> dict:
