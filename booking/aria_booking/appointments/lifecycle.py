@@ -46,6 +46,7 @@ def open_lifecycle(
     tz = ZoneInfo(timezone)
     clock = demo_clock(today, tz, real_now)
     store = AppointmentStore(path, clock=lambda: to_epoch(clock()))
+    store.settle_past()  # a simulated-world convention, see AppointmentStore.settle_past
     dataset = DemoDataset(clock().date(), overlay=StoreOverlay(store, tz))
     judge = PlacementJudge(dataset, tz=tz, clock=clock, min_lead_minutes=min_lead_minutes, grid_minutes=grid_minutes)
     return Lifecycle(store, dataset, judge, tz, clock, seed_demo(store, judge, clock, tz) if seed else None)

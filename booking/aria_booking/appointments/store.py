@@ -412,6 +412,16 @@ class AppointmentStore:
         except Refused as refusal:
             return Outcome(refusal.status, refusal.appointment, reason=refusal.reason, detail=refusal.detail)
 
+    def settle_past(self) -> int:
+        """SIMULATED-WORLD CONVENTION, run when the demo opens: a confirmed appointment whose time has passed is marked completed (the salon is assumed to have done it).
+        Without it, a past appointment nobody recorded an outcome for would stay 'unknown' and, by the reviewed history rule, block every older answer. Never notifies."""
+        with self._write() as tx:
+            rows = tx._all("WHERE a.status = 'confirmed' AND a.start_utc + a.duration_minutes * 60 <= ?", (tx.now_utc,))
+            for row in rows:
+                tx._conn.execute("UPDATE appointments SET status = 'completed', version = version + 1, updated_at = ? WHERE reference = ?", (tx.now_utc, row.reference))
+                self._event(tx, row.reference, "settled", {"start": row.start_utc, "as": "completed"})
+            return len(rows)
+
     # ---- inside a transaction ---------------------------------------------------------------------------------
     @staticmethod
     def _client_for(tx: Txn, name: str, phone: str) -> ClientRecord:
@@ -470,8 +480,9 @@ class AppointmentStore:
 
     @staticmethod
     def _notify(tx: Txn, kind: str, saved: StoredAppointment, previous: Optional[StoredAppointment], builder: Optional[OutboxBuilder]) -> None:
-        """Write the owner notification in THIS transaction. Seeds never notify; the dedupe key makes a second row for the same change impossible."""
-        if builder is None or saved.origin == ORIGIN_SEED:
+        """Write the owner notification in THIS transaction. Creating a seed never notifies (nobody booked anything), but cancelling or moving a seeded
+        appointment does, like any other. The dedupe key makes a second row for the same change impossible."""
+        if builder is None or (kind == "booked" and saved.origin == ORIGIN_SEED):
             return
         message = builder(saved, previous)
         if message is None:

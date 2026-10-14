@@ -90,6 +90,15 @@ def test_seeded_rows_never_write_a_notification(tmp_path):
     assert store.outbox_rows() == []
 
 
+def test_cancelling_or_moving_a_seeded_appointment_does_notify_like_any_other(tmp_path):
+    store = make(tmp_path)
+    one = store.book(NewBooking("Willa Hartwell", PHONE, "s", "S", "massage", "910006", NOW + 24 * HOUR, 60, origin="seed", seed_key="k1")).appointment
+    two = store.book(NewBooking("Willa Hartwell", PHONE, "s", "S", "massage", "910006", NOW + 48 * HOUR, 60, origin="seed", seed_key="k2")).appointment
+    store.cancel(one.reference, outbox=kind_builder("cancelled"))
+    store.reschedule(two.reference, start_utc=NOW + 60 * HOUR, outbox=kind_builder("rescheduled"))
+    assert [(r["kind"], r["reference"]) for r in store.outbox_rows()] == [("cancelled", one.reference), ("rescheduled", two.reference)]
+
+
 def test_a_file_from_another_schema_version_is_refused_not_guessed(tmp_path):
     make(tmp_path)
     conn = sqlite3.connect(tmp_path / "appointments.sqlite3")
