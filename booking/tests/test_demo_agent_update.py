@@ -55,7 +55,8 @@ def test_update_sends_exactly_the_reviewed_prompt_tools_and_opening_line_to_the_
     assert fake.llms["llm_1"]["general_prompt"] == expected_prompt()
     assert fake.created == 2 and len(fake.llms) == 1 and len(fake.agents) == 1, "no duplicate LLM or agent"
     assert not any(c[1].startswith(("create", "update-agent")) for c in fake.calls)
-    assert [c[1] for c in fake.calls if c[0] != "PATCH"] == ["get-agent/agent_1", "get-retell-llm/llm_1"], "then the same read-back as create"
+    assert [c[1] for c in fake.calls] == ["get-agent/agent_1", "get-retell-llm/llm_1", "update-retell-llm/llm_1", "get-agent/agent_1", "get-retell-llm/llm_1"], \
+        "read first, change once, then the same read-back as create"
 
 
 def test_update_records_what_it_did_and_never_a_secret(tmp_path):
@@ -170,3 +171,63 @@ def test_update_is_wired_into_the_command_line(tmp_path):
     assert "run `create --confirm-create` first" in lines[0]
     lines.clear()
     assert cli.main(["demo-agent", "update", "--state-dir", str(tmp_path / "s")], environ={}, out=lines.append) == 2 and "refused:" in lines[0]
+
+
+# ---------------------------------------------------------------- Sol's pre-apply checks and the report she asked for
+
+
+def test_update_refuses_before_changing_anything_when_the_agent_no_longer_uses_the_recorded_llm(tmp_path):
+    fake = _stale(tmp_path)
+    fake.agents["agent_1"]["response_engine"] = {"type": "retell-llm", "llm_id": "llm_somewhere_else"}
+    with pytest.raises(OperatorError, match="no longer uses the recorded LLM"):
+        _update(tmp_path, fake)
+    assert [c[1] for c in fake.calls] == ["get-agent/agent_1", "get-retell-llm/llm_1"] and fake.updated == 0
+    assert State(tmp_path / "state").exists("configuration-verified.json"), "nothing was changed, so the earlier record is still what it was"
+
+
+def test_update_shows_the_voice_model_and_other_settings_were_left_exactly_as_found(tmp_path):
+    fake = _stale(tmp_path)
+    code, lines = _update(tmp_path, fake)
+    text = "\n".join(lines)
+    assert code == 0 and "Left unchanged, as found:" in text
+    for name in ("voice_id", "language", "model", "model_temperature", "max_call_duration_ms", "data_storage_retention_days", "contact_memory_config", "agent_name"):
+        assert name in text.split("Left unchanged, as found:")[1], name
+
+
+@pytest.mark.parametrize("field,value,expected", [("model", "some-other-model", "model"), ("model_temperature", 0.9, "model_temperature")])
+def test_an_update_after_which_the_llm_settings_differ_is_reported_and_not_marked_verified(tmp_path, field, value, expected):
+    fake = _stale(tmp_path)
+    fake.on_update = lambda llm: llm.update({field: value})
+    with pytest.raises(OperatorError, match="changed settings it must not touch") as info:
+        _update(tmp_path, fake)
+    assert expected in str(info.value)
+    state = State(tmp_path / "state")
+    assert not state.exists("configuration-verified.json") and not state.exists("last-update.json")
+
+
+def test_an_update_after_which_the_agents_voice_differs_is_reported(tmp_path):
+    fake = _stale(tmp_path)
+    fake.on_update = lambda llm: fake.agents["agent_1"].update(voice_id="retell-Someone-Else")
+    with pytest.raises(OperatorError, match="changed settings it must not touch.*voice_id"):
+        _update(tmp_path, fake)
+
+
+def test_the_binding_between_the_agent_and_the_llm_is_reported_with_what_is_and_is_not_known(tmp_path):
+    fake = _stale(tmp_path)
+    _code, lines = _update(tmp_path, fake)
+    text = "\n".join(lines)
+    assert "Binding: the agent uses the recorded LLM (engine version not stated, so the latest); that LLM is version 0, published: False." in text
+    assert "does not say which version a web call with agent_version 0 uses" in text and "only a supervised call shows the new prompt is live" in text
+    fake.agents["agent_1"]["response_engine"] = {"type": "retell-llm", "llm_id": "llm_1", "version": 3}
+    _code, again = _update(tmp_path, fake)
+    assert "engine version 3" in "\n".join(again)
+
+
+def test_a_changed_opening_line_is_corrected_by_the_update_and_checked_by_the_read_back(tmp_path):
+    fake = _stale(tmp_path, field="begin_message", value="Hi, this is an old greeting.")
+    _update(tmp_path, fake)
+    assert fake.llms["llm_1"]["begin_message"] == OperatorConfig().begin_message
+    ignoring = _stale(tmp_path / "second", field="begin_message", value="Hi, this is an old greeting.")
+    ignoring.ignore_updates = True
+    with pytest.raises(OperatorError, match="the opening line"):
+        _update(tmp_path / "second", ignoring)

@@ -76,7 +76,9 @@ tunnelling and calling are separate, deliberate steps you take yourself. Actions
    uncertain (network error, timeout, HTTP 5xx) the next run stops and tells you to inspect the Retell account; it never retries blindly. Both steps end in a
    read-back, and so does `demo-agent verify` at any time: the prompt must equal `prompt_demo_calendar.md` plus the clock line, only the three read-only
    functions exist (no `book_slot`), their URLs, headers, parameters and spoken-wait fields match, the call cap is 5 minutes, retention 7 days, contact
-   memory off. Any difference is a refusal that lists what differs.
+   memory off, and the opening line equals the configured one. Any difference is a refusal that lists what differs. The read-back also prints the agent-to-LLM
+   binding (engine version, LLM version, published flag); `update` additionally refuses to continue if the voice, model, temperature, language, call cap, retention
+   or contact memory changed, and says so when they were left exactly as found.
 5. `python -m aria_booking demo-agent prepare-web` — builds the isolated voice page from the repository's website template plus a public-only
    `demo-config.js` (agent id, version, public key; never a secret), with the "Demo calendar: simulated availability · Booking disabled" banner and the
    retention sentence. The template files in the repository are never modified. It prints the serve command and writes `test-instructions.txt` (in the state

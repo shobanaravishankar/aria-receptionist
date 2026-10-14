@@ -51,6 +51,7 @@ class FakeRetell:
         self.created = 0
         self.updated = 0
         self.ignore_updates = False  # an account that answers 200 to an update but does not apply it
+        self.on_update = None  # a callable(llm dict) run after an update is applied: lets a test make the account change something it was not asked to
 
     def __call__(self, request, timeout=None):
         path = request.full_url.removeprefix("https://api.retellai.com/")
@@ -63,7 +64,7 @@ class FakeRetell:
             raise urllib.error.HTTPError(request.full_url, failure, "x", {}, io.BytesIO(b'{"echo": "Bearer SHOULD-NOT-SURVIVE"}'))
         if path == "create-retell-llm":
             llm_id = f"llm_{len(self.llms) + 1}"
-            self.llms[llm_id] = {**body, "llm_id": llm_id}
+            self.llms[llm_id] = {**body, "llm_id": llm_id, "version": 0, "is_published": False}
             self.created += 1
             return FakeResponse(json.dumps({"llm_id": llm_id}).encode())
         if path == "create-agent":
@@ -76,6 +77,8 @@ class FakeRetell:
             assert request.get_method() == "PATCH" and llm_id in self.llms
             if not self.ignore_updates:
                 self.llms[llm_id].update(body)
+                if self.on_update:
+                    self.on_update(self.llms[llm_id])
             self.updated += 1
             return FakeResponse(json.dumps({"llm_id": llm_id, "version": 0, "is_published": False}).encode())
         if path.startswith("get-agent/"):
@@ -361,6 +364,7 @@ def _tamper(tmp_path, change):
 
 @pytest.mark.parametrize("label,change", [
     ("the prompt differs", lambda f: f.llms["llm_1"].update(general_prompt="changed")),
+    ("the opening line", lambda f: f.llms["llm_1"].update(begin_message="Hi, this is a different greeting.")),
     ("a booking function or instruction is present", lambda f: f.llms["llm_1"]["general_tools"].append({"type": "custom", "name": "book_slot", "url": TUNNEL + "/tools/book_slot"})),
     ("the set of custom functions", lambda f: f.llms["llm_1"].update(general_tools=[t for t in f.llms["llm_1"]["general_tools"] if t.get("name") != "find_alternatives"])),
     ("check_slot.url", lambda f: next(t for t in f.llms["llm_1"]["general_tools"] if t.get("name") == "check_slot").update(url="https://elsewhere.example/tools/check_slot")),

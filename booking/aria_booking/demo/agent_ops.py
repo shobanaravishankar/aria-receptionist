@@ -303,6 +303,21 @@ def _check(problems: list[str], label: str, expected: Any, actual: Any) -> None:
 
 
 def verify(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[str], None]) -> int:
+    _read_back(config, secrets, api, out)
+    return 0
+
+
+# What ``update`` must leave exactly as it found it. (The agent's engine version is deliberately not here: a version change is what the binding line reports.)
+def _settings(agent: dict, llm: dict) -> dict:
+    return {
+        "voice_id": agent.get("voice_id"), "language": agent.get("language"), "agent_name": agent.get("agent_name"),
+        "max_call_duration_ms": agent.get("max_call_duration_ms"), "data_storage_retention_days": agent.get("data_storage_retention_days"),
+        "contact_memory_config": agent.get("contact_memory_config"), "model": llm.get("model"), "model_temperature": llm.get("model_temperature"),
+    }
+
+
+def _read_back(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[str], None]) -> tuple[dict, dict]:
+    """Read the agent and its LLM from Retell and compare what matters with the reviewed source. Returns (agent, llm), or raises listing every difference."""
     state = State(config.state_dir)
     if not state.exists("agent.json") or not state.exists("llm.json"):
         raise OperatorError("no created agent is recorded here: run `create --confirm-create` first")
@@ -313,6 +328,7 @@ def verify(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[
     agent, llm = api.request("get-agent/" + agent_state["agent_id"]), api.request("get-retell-llm/" + llm_id)
     problems: list[str] = []
     _check(problems, "the agent does not use the recorded LLM", llm_id, (agent.get("response_engine") or {}).get("llm_id"))
+    _check(problems, "the opening line", config.begin_message, llm.get("begin_message"))
     _check(problems, "the agent's name", config.agent_name, agent.get("agent_name"))
     _check(problems, "the call-length cap", config.max_call_duration_ms, agent.get("max_call_duration_ms"))
     _check(problems, "the retention days", config.data_storage_retention_days, agent.get("data_storage_retention_days"))
@@ -341,7 +357,11 @@ def verify(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[
         "agent_name": agent.get("agent_name"), "source_commit": source_commit(),
     })
     out("Separate simulated-calendar agent and all three read-only functions verified against the reviewed source; no call was started.")
-    return 0
+    engine = agent.get("response_engine") or {}
+    out(f"Binding: the agent uses the recorded LLM (engine version {engine.get('version', 'not stated, so the latest')}); that LLM is version {llm.get('version')}, "
+        f"published: {llm.get('is_published')}. Retell's documentation does not say which version a web call with agent_version {agent.get('version')} uses, "
+        "so only a supervised call shows the new prompt is live.")
+    return agent, llm
 
 
 def create(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[str], None], *, confirm: bool) -> int:
@@ -394,6 +414,11 @@ def update(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[
     token = secrets.get("tool_token")
     secrets.get("retell_api_key")  # fail early if the key is missing
     prompt, tools = expected_prompt(), expected_tools(tunnel, token)
+    # Read first (nothing is changed yet): the agent must still point at the recorded LLM, and its other settings are noted so they can be shown unchanged.
+    agent_before, llm_before = api.request("get-agent/" + agent_state["agent_id"]), api.request("get-retell-llm/" + llm_id)
+    if (agent_before.get("response_engine") or {}).get("llm_id") != llm_id:
+        raise OperatorError("the agent no longer uses the recorded LLM; refusing to update (nothing was changed)")
+    settings_before = _settings(agent_before, llm_before)
     state.remove("configuration-verified.json")
     try:
         result = api.request(f"update-retell-llm/{llm_id}", {"general_prompt": prompt, "general_tools": tools, "begin_message": config.begin_message}, "PATCH")
@@ -402,11 +427,16 @@ def update(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[
             raise
         raise OperatorError(f"{exc}; the outcome is uncertain: run `verify` to see what the account holds (an update is safe to repeat)") from None
     out(f"LLM updated in place (Retell reports version {result.get('version')}, published: {result.get('is_published')}); no new agent, LLM or tunnel was created.")
-    code = verify(replace(config, tunnel_url=tunnel), secrets, api, out)
+    agent, llm = _read_back(replace(config, tunnel_url=tunnel), secrets, api, out)
+    changed = sorted(key for key, value in _settings(agent, llm).items() if value != settings_before[key])
+    if changed:
+        state.remove("configuration-verified.json")
+        raise OperatorError("the update changed settings it must not touch: " + ", ".join(changed))
+    out("Left unchanged, as found: " + ", ".join(sorted(settings_before)) + ".")
     state.write("agent.json", {**agent_state, "tunnel": tunnel, "source_commit": source_commit()})
     state.write("last-update.json", {"updated_at": time.time(), "prompt_sha256": prompt_digest(prompt), "source_commit": source_commit(), "tunnel": tunnel,
                                      "llm_version": result.get("version"), "llm_published": result.get("is_published")})
-    return code
+    return 0
 
 
 def sign_body(raw: bytes, key: str, now_ms: int) -> str:
