@@ -103,6 +103,8 @@ day view; colours, fonts and icons are approximations (no reference screenshot y
 voice page (one-time `create --confirm-create` with read-back, signed preflight, page preparer). Credentials come from environment variables or an
 encrypted-file folder outside the repo, never from Git; it can start no call, service, tunnel or browser. See "Operator setup" in `DEMO_CALENDAR.md`.
 
+The demo's brand, fictional roster, independent menu and the generated Serenity Spa website are described in `SHOWCASE.md` (`python -m aria_booking showcase-preview`).
+
 ### Browser adapters: Playwright (default, headful, read-only) and Selenium (original)
 
 `login`, `find` and `serve` WITHOUT booking approvals use the Playwright adapter by default (`--browser selenium` selects the original for

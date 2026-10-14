@@ -603,22 +603,23 @@ def _prepared(tmp_path, secrets=None, **kw):
     return code, tmp_path / "state" / "web", lines
 
 
-def test_the_page_is_built_from_the_template_with_the_banner_and_a_public_only_config(tmp_path):
+def test_the_page_is_the_serenity_showcase_with_the_prototype_label_and_a_public_only_config(tmp_path):
+    from aria_booking.showcase.leaks import find_leaks
+
     code, web, lines = _prepared(tmp_path)
-    assert code == 0 and "Isolated voice page prepared" in lines[0] and any("python -m http.server" in line for line in lines)
+    assert code == 0 and "Isolated Serenity Spa voice page prepared" in lines[0] and any("python -m http.server" in line for line in lines)
     page = (web / "index.html").read_text(encoding="utf-8")
-    assert "<title>Aria — Simulated Calendar Demo</title>" in page and 'data-testid="demo-page-banner"' in page
-    assert "Demo calendar: simulated availability · Booking disabled" in page and "http://localhost:8790/pro/en-us/9000001/calendar?date=2026-10-14&amp;view=day" in page
-    assert page.index("<body>") < page.index('data-testid="demo-page-banner"') < page.index('<header class="site-header">')
-    assert "Nothing is recorded by this page." not in page and "up to 7 days" in page
-    assert "up to 7 days" in (web / "retell-voice.js").read_text(encoding="utf-8") and "Nothing is recorded by this page." not in (web / "retell-voice.js").read_text(encoding="utf-8")
+    assert "<title>Serenity Spa: prototype showcase</title>" in page and 'data-testid="demo-page-banner"' in page
+    assert "Prototype showcase: example content and a simulated calendar · Booking is not part of this prototype" in page
+    assert "http://localhost:8790/pro/en-us/9000001/calendar?date=today&amp;view=day" in page and "up to 7 days" in page
+    assert find_leaks(page) == [] and "Glamour" not in page
     config_js = (web / "demo-config.js").read_text(encoding="utf-8")
     assert json.loads(config_js[config_js.index("{"):config_js.rindex("}") + 1]) == {"publicKey": PUBLIC, "agentId": "agent_1", "agentVersion": 0}
     for secret in (KEY, TOKEN):
-        assert all(secret not in p.read_text(encoding="utf-8") for p in web.glob("*"))
+        assert all(secret not in p.read_text(encoding="utf-8") for p in web.rglob("*") if p.is_file() and p.suffix in (".html", ".js", ".css", ".json"))
 
 
-def test_the_template_files_in_the_repository_are_not_modified(tmp_path):
+def test_the_repository_website_files_are_neither_read_nor_modified(tmp_path):
     before = {n: (REPO / n).read_bytes() for n in ("index.html", "retell-voice.js", "avatar.js", "styles.css", "demo-config.example.js")}
     _prepared(tmp_path)
     assert {n: (REPO / n).read_bytes() for n in before} == before and not (REPO / "demo-config.js").exists()
@@ -635,18 +636,14 @@ def test_the_page_refuses_a_private_key_in_the_public_slot_and_a_missing_agent(t
         agent_ops.prepare_web(config(tmp_path), FakeSecrets(retell_public_key=""), lambda m: None)
 
 
-def test_a_changed_website_template_is_refused_rather_than_silently_half_patched(tmp_path):
-    create(tmp_path)
-    template = tmp_path / "template"
-    template.mkdir()
-    for name in ("retell-voice.js", "avatar.js", "styles.css"):
-        (template / name).write_text("x", encoding="utf-8")
-    (template / "index.html").write_text("<html><body>no microphone note</body></html>", encoding="utf-8")
-    with pytest.raises(OperatorError, match="changed shape"):
-        agent_ops.prepare_web(config(tmp_path, template_dir=template), FakeSecrets(), lambda m: None)
-    (template / "avatar.js").unlink()
-    with pytest.raises(OperatorError, match="missing avatar.js"):
-        agent_ops.prepare_web(config(tmp_path, template_dir=template), FakeSecrets(), lambda m: None)
+def test_a_config_file_that_still_names_the_retired_template_setting_keeps_loading(tmp_path):
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps({"tunnel_url": TUNNEL, "template_dir": "somewhere", "calendar_port": 8790}), encoding="utf-8")
+    cfg = load_config({}, file=str(path))
+    assert cfg.tunnel_url == TUNNEL and not hasattr(cfg, "template_dir")
+    path.write_text(json.dumps({"tunnel_url": TUNNEL, "template_dirr": "typo"}), encoding="utf-8")
+    with pytest.raises(OperatorError, match="unknown config keys: template_dirr"):
+        load_config({}, file=str(path))
 
 
 def test_the_web_folder_and_the_calendar_port_are_configurable(tmp_path):

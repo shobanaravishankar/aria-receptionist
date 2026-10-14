@@ -27,6 +27,12 @@ class Theme:
     ink: str = "#18302f"
     ink_soft: str = "#46605e"
     white: str = "#ffffff"
+    mist: str = "#e8f5f3"  # light text on the dark teal surfaces
+    mist_dim: str = "#cfe8e5"
+    mist_faint: str = "#a9cfcb"
+    amber: str = "#c98a1b"  # call status colours
+    green: str = "#1f9d6b"
+    red: str = "#b3382c"
 
 
 @dataclass(frozen=True)
@@ -38,10 +44,11 @@ class Showcase:
     contact_phone: Optional[str] = None  # None until the owner supplies one: nothing is spoken or shown as a number, and none is invented
     location: Optional[str] = None  # deliberately none: the showcase belongs to no town
     prototype_label: str = "Prototype showcase: example content and a simulated calendar"
+    booking_note: str = "Booking is not part of this prototype"  # appended to the label; change it only when a simulated booking mode really exists
     theme: Theme = field(default_factory=Theme)
 
 
-_KEYS = frozenset({"name", "tagline", "timezone", "example_hours", "contact_phone", "location", "prototype_label"})
+_KEYS = frozenset({"name", "tagline", "timezone", "example_hours", "contact_phone", "location", "prototype_label", "booking_note"})
 
 
 def load_showcase(path: Optional[str] = None, overrides: Optional[Mapping[str, object]] = None) -> Showcase:

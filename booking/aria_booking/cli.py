@@ -111,7 +111,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tunnel-url", default=None, help="the public https address of YOUR tunnel to the tool port (or ARIA_DEMO_TUNNEL_URL)")
     p.add_argument("--state-dir", default=None, help="where created ids, markers and results are kept (default: .local/demo-agent, git-ignored)")
     p.add_argument("--web-dir", default=None, help="where prepare-web writes the page (default: <state dir>/web)")
-    p.add_argument("--template-dir", default=None, help="the website template folder (default: the repository root)")
     p.add_argument("--calendar-port", type=int, default=None, help="the demo calendar page's port, for the link in the page banner (default 8790)")
     p.add_argument("--page-port", type=int, default=None, help="the port the prepared voice page is served on; it is opened at http://localhost:<port>/ (default 5174)")
     p.add_argument("--confirm-create", action="store_true", help="required by `create`, which makes one Retell LLM and one agent")
@@ -124,6 +123,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("demo-screenshots", help="photograph the demo calendar page at the reference viewports (PNG files); invented data, loopback only")
     p.add_argument("--out", required=True, help="the folder for the PNG files")
     p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today)")
+    p = sub.add_parser("showcase-preview", help="build the Serenity page and photograph it at desktop and phone widths (JPEG files); loopback only, no call, no network")
+    p.add_argument("--out", default="showcase_evidence", help="the folder for the JPEG files (default: showcase_evidence)")
     p = sub.add_parser("demo-compare", help="diff the demo's data-independent regions (sidebar, toolbar, hour axis) against a user-supplied screenshot of the real day view")
     p.add_argument("--reference", required=True, help="a PNG screenshot of the real day view; its size sets the viewport")
     p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today)")
@@ -173,12 +174,25 @@ def main(
         return run_demo_agent(
             args.action, env, out, config_file=args.config, confirm_create=args.confirm_create, confirm_update=args.confirm_update,
             secret_name=args.secret_name, base_url=args.base_url,
-            overrides={"tunnel_url": args.tunnel_url, "state_dir": args.state_dir, "web_dir": args.web_dir, "template_dir": args.template_dir,
+            overrides={"tunnel_url": args.tunnel_url, "state_dir": args.state_dir, "web_dir": args.web_dir,
                        "calendar_port": args.calendar_port, "page_port": args.page_port},
         )
 
     if args.command in ("demo-screenshots", "demo-compare", "demo-day"):
         return _demo_visual(args, cfg, out)
+
+    if args.command == "showcase-preview":
+        from pathlib import Path
+
+        from .showcase.site.preview import capture as capture_showcase
+
+        try:
+            for path in capture_showcase(Path(args.out), channel=cfg.browser_channel):
+                out(f"wrote {path}")
+        except RuntimeError as exc:
+            out(f"stopped: {exc}")
+            return EXIT_REFUSED
+        return EXIT_OK
 
     if args.command == "demo-serve":  # decided before anything else: this command never builds a Booksy driver, and `serve` never builds the demo
         return _demo_serve(args, cfg, env, out)

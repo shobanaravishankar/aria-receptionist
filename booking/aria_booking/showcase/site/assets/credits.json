@@ -1,0 +1,65 @@
+{
+  "_about": "Provenance of every image on the Serenity showcase page. Each was checked on its own Unsplash photo page on 2026-10-14: the page states 'Free to use under the Unsplash License' and is not Unsplash+. The pictured people are not Serenity staff, and Serenity Spa is a prototype that has no premises: these are stock photographs.",
+  "license": "Unsplash License",
+  "license_url": "https://unsplash.com/license",
+  "images": [
+    {
+      "file": "hero-stones.jpg",
+      "alt": "Smooth dark spa stones resting along a person's back, with white orchids on a treatment table",
+      "photographer": "engin akyurt",
+      "profile_url": "https://unsplash.com/@enginakyurt",
+      "photo_url": "https://unsplash.com/photos/person-with-hot-stones-at-spa-ZbzYDboN7fg",
+      "source_image": "https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2",
+      "width": 1800,
+      "height": 1200
+    },
+    {
+      "file": "facial-teal.jpg",
+      "alt": "A person lying back during a facial, wearing a teal cap, with a gloved hand holding a skincare tool at the cheek",
+      "photographer": "karelys Ruiz",
+      "profile_url": "https://unsplash.com/@karelysruiz",
+      "photo_url": "https://unsplash.com/photos/woman-receiving-facial-skincare-treatment-PqyzuzFiQfY",
+      "source_image": "https://images.unsplash.com/photo-1552693673-1bf958298935",
+      "width": 1200,
+      "height": 798
+    },
+    {
+      "file": "stones-hands.jpg",
+      "alt": "Hands placing warm stones along a person's back during a hot stone massage, with white orchids in the foreground",
+      "photographer": "engin akyurt",
+      "profile_url": "https://unsplash.com/@enginakyurt",
+      "photo_url": "https://unsplash.com/photos/hot-stone-massage-in-spa-SMwCQZWayj0",
+      "source_image": "https://images.unsplash.com/photo-1600334129128-685c5582fd35",
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "file": "diffuser-candles.jpg",
+      "alt": "A reed diffuser, a rolled white towel and two lit candles against a soft pale background",
+      "photographer": "Mediamodifier",
+      "profile_url": "https://unsplash.com/@mediamodifier",
+      "photo_url": "https://unsplash.com/photos/reed-diffuser-with-candles-and-towel-W7AyAs7azHc",
+      "source_image": "https://images.unsplash.com/photo-1620733723572-11c53f73a416",
+      "width": 900,
+      "height": 1350
+    }
+  ],
+  "fonts": [
+    {
+      "file": "fonts/cormorant-garamond-latin.woff2",
+      "family": "Cormorant Garamond",
+      "designer": "Christian Thalmann (Catharsis Fonts)",
+      "license": "SIL Open Font License 1.1",
+      "source": "https://fonts.google.com/specimen/Cormorant+Garamond",
+      "note": "Latin subset, self-hosted so the page makes no request to a font service"
+    },
+    {
+      "file": "fonts/jost-latin.woff2",
+      "family": "Jost",
+      "designer": "Owen Earl (indestructible type*)",
+      "license": "SIL Open Font License 1.1",
+      "source": "https://fonts.google.com/specimen/Jost",
+      "note": "Latin subset, self-hosted so the page makes no request to a font service"
+    }
+  ]
+}

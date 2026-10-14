@@ -57,7 +57,9 @@ def test_the_theme_text_colours_have_readable_contrast_on_their_backgrounds():
 
     t = SHOWCASE.theme
     for text, background, minimum in [(t.ink, t.white, 7), (t.ink, t.sand_100, 7), (t.ink, t.teal_50, 7), (t.ink_soft, t.white, 4.5), (t.ink_soft, t.sand_100, 4.5),
-                                       (t.white, t.teal_700, 4.5), (t.white, t.teal_900, 7), (t.teal_900, t.teal_100, 7), (t.teal_700, t.white, 4.5)]:
+                                       (t.white, t.teal_700, 4.5), (t.white, t.teal_900, 7), (t.teal_900, t.teal_100, 7), (t.teal_700, t.white, 4.5),
+                                       (t.mist, t.teal_900, 7), (t.mist_dim, t.teal_900, 7), (t.mist_faint, t.teal_900, 4.5), (t.teal_100, t.teal_900, 7),
+                                       (t.green, t.white, 3), (t.red, t.white, 4.5), (t.teal_900, t.sand_100, 7)]:
         assert ratio(text, background) >= minimum, (text, background, ratio(text, background))
 
 

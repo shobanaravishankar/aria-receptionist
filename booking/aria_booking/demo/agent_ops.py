@@ -25,7 +25,6 @@ import hmac
 import ipaddress
 import json
 import re
-import shutil
 import subprocess
 import time
 import urllib.error
@@ -61,8 +60,9 @@ ALLOWED = (
 )
 CONFIG_KEYS = frozenset({
     "tunnel_url", "agent_name", "voice_id", "model", "model_temperature", "language", "max_call_duration_ms", "data_storage_retention_days",
-    "begin_message", "state_dir", "template_dir", "web_dir", "calendar_port", "tools_port", "page_port",
+    "begin_message", "state_dir", "web_dir", "calendar_port", "tools_port", "page_port",
 })
+RETIRED_KEYS = frozenset({"template_dir"})  # the page is no longer built from a website template; config files that still name it keep loading
 
 
 class OperatorError(Exception):
@@ -116,7 +116,6 @@ class OperatorConfig:
     # at the start of EACH call (an opening message cannot branch on a variable). A string here is a fixed opening message instead.
     begin_message: Optional[str] = None
     state_dir: Path = field(default_factory=lambda: BOOKING / ".local" / "demo-agent")
-    template_dir: Path = field(default_factory=lambda: REPO_ROOT)
     web_dir: Optional[Path] = None
     calendar_port: int = 8790
     tools_port: int = 8787
@@ -165,7 +164,7 @@ def load_config(env: Mapping[str, str], *, file: Optional[str] = None, overrides
             raise OperatorError(f"the config file could not be read ({type(exc).__name__})") from None
         if not isinstance(raw, dict):
             raise OperatorError("the config file must hold one JSON object")
-        unknown = sorted(k for k in raw if k not in CONFIG_KEYS and not k.startswith("_"))
+        unknown = sorted(k for k in raw if k not in CONFIG_KEYS and k not in RETIRED_KEYS and not k.startswith("_"))
         if unknown:
             raise OperatorError("unknown config keys: " + ", ".join(unknown))
         values.update({k: v for k, v in raw.items() if k in CONFIG_KEYS})
@@ -174,7 +173,7 @@ def load_config(env: Mapping[str, str], *, file: Optional[str] = None, overrides
     if (env.get("ARIA_DEMO_STATE_DIR") or "").strip():
         values["state_dir"] = env["ARIA_DEMO_STATE_DIR"].strip()
     values.update({k: v for k, v in (overrides or {}).items() if v not in (None, "")})
-    for key in ("state_dir", "template_dir", "web_dir"):
+    for key in ("state_dir", "web_dir"):
         if key in values and values[key] is not None:
             values[key] = Path(values[key])
     try:
@@ -536,7 +535,10 @@ def test_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path) -> s
 
 
 def prepare_web(config: OperatorConfig, secrets: Any, out: Callable[[str], None], *, clock: Callable[[], float] = time.time) -> int:
-    """The isolated voice page: the repository's website template, a demo banner, and a PUBLIC-only config. The template files are copied, never changed."""
+    """The isolated Serenity voice page: built from the showcase source (brand, fictional roster, independent menu) plus a PUBLIC-only config. The earlier salon's
+    website files are not used and the repository's website template is never touched."""
+    from ..showcase.site import build_site
+
     state = State(config.state_dir)
     if not state.exists("agent.json"):
         raise OperatorError("no created agent is recorded here: run `create --confirm-create` first (the page needs its agent id)")
@@ -544,33 +546,13 @@ def prepare_web(config: OperatorConfig, secrets: Any, out: Callable[[str], None]
     public_key = secrets.get("retell_public_key")
     if not public_key.startswith("public_key"):
         raise OperatorError("the browser key must be a Retell PUBLIC key (it starts with public_key); never put the private API key in a page")
-    template, target = config.template_dir, config.web_out
-    for name in ("index.html", "retell-voice.js", "avatar.js", "styles.css"):
-        if not (template / name).is_file():
-            raise OperatorError(f"the website template is missing {name} (looked in {template})")
-    target.mkdir(parents=True, exist_ok=True)
-    note_old = "Nothing is recorded by this page."
-    note_new = f"Retell may retain this test call for review for up to {config.data_storage_retention_days} days."
+    target = config.web_out
     tomorrow = (datetime.fromtimestamp(clock(), ZoneInfo(SPA_TIMEZONE)) + timedelta(days=1)).date().isoformat()
-    calendar = f"http://localhost:{config.calendar_port}/pro/en-us/9000001/calendar?date={tomorrow}&amp;view=day&amp;staffers=working"
-    banner = (
-        '<aside data-testid="demo-page-banner" style="position:sticky;top:0;z-index:2000;background:#fff0c0;color:#39270e;padding:12px 20px;text-align:center;'
-        f'font:600 15px sans-serif">Demo calendar: simulated availability · Booking disabled · <a href="{calendar}" target="_blank" rel="noopener">View demo calendar</a></aside>'
-    )
-    html = (template / "index.html").read_text(encoding="utf-8")
-    if html.count("<body>") != 1 or note_old not in html:
-        raise OperatorError("the website template changed shape (no single <body> or no microphone note); update the preparer before using it")
-    html = html.replace("Glamour Day Spa — Voice Assistant Demo", "Aria — Simulated Calendar Demo").replace("<body>", "<body>\n" + banner, 1).replace(note_old, note_new)
-    (target / "index.html").write_text(html, encoding="utf-8")
-    script = (template / "retell-voice.js").read_text(encoding="utf-8")
-    (target / "retell-voice.js").write_text(script.replace(note_old, note_new), encoding="utf-8")
-    for name in ("avatar.js", "styles.css"):
-        shutil.copyfile(template / name, target / name)
     settings = {"publicKey": public_key, "agentId": agent["agent_id"], "agentVersion": agent.get("version", 0)}
-    (target / "demo-config.js").write_text("/* Public-only isolated demo page. Generated; not for Git. */\nwindow.RETELL_DEMO = " + json.dumps(settings) + ";\n", encoding="utf-8")
+    build_site(target, settings=settings, calendar_port=config.calendar_port, retention_days=config.data_storage_retention_days)
     instructions = state.dir / "test-instructions.txt"
     instructions.write_text(test_instructions(config, tomorrow, target), encoding="utf-8", newline="\n")
-    out(f"Isolated voice page prepared in {target} with the simulated-calendar banner and the separate test agent.")
+    out(f"Isolated {SALON_NAME} voice page prepared in {target} with the prototype label and the separate test agent.")
     out(f"Serve it:  python -m http.server {config.page_port} --bind 127.0.0.1 --directory {target}")
     out(f"Open it at {config.page_url}  (localhost, NOT 127.0.0.1: the Retell public key allows localhost, not the numeric address). Steps: {instructions}")
     return 0

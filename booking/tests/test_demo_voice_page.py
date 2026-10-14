@@ -159,4 +159,4 @@ def test_the_page_is_configured_with_public_settings_only_and_the_simulation_ban
 
     shown = driver._run(work, 30)
     assert sorted(shown["cfg"]) == ["agentId", "agentVersion", "publicKey"] and shown["cfg"]["agentId"] == "agent_test"
-    assert "Demo calendar: simulated availability · Booking disabled" in shown["banner"]
+    assert "Prototype showcase: example content and a simulated calendar" in shown["banner"] and "Booking is not part of this prototype" in shown["banner"]

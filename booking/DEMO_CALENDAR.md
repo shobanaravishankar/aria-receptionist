@@ -12,9 +12,10 @@ from the **same** invented data. Everything on it is simulated and says so.
   for those words). Asked whether the schedule is real or live, or whether this is a demo, the agent answers truthfully: a prototype with an invented calendar, not the
   salon's real schedule (its prompt says so). The label also gates the demo-only provider lookup, so it is never removed; the old spoken one-time note can be
   brought back with `build_demo(..., announce_source=True)`.
-- **The spoken name is "Serenity Spa":** one constant (`demo.SALON_NAME`) feeds both the greeting and the generated prompt (from "Who you are" on; services, lengths,
-  prices, hours, address and the original public agent's name are untouched, and the other prompts are not renamed). The page still shows the website template's own
-  text. To change the name, edit the constant, run `python -m aria_booking.catalog.render --write`, then `demo-agent update --confirm-update`.
+- **The brand is "Serenity Spa", from one source:** `aria_booking/showcase` holds the name, example hours, the teal theme, the fictional roster and an independent menu,
+  and the website, the calendar, the voice prompt and the tool answers all read it (see `SHOWCASE.md`). The earlier salon's website knowledge, staff, address and phone
+  numbers are not used anywhere in the demo, and a build-time guard fails if any of them reappears. To change the name, edit `showcase/config.py`, run
+  `python -m aria_booking.catalog.render --write`, then `demo-agent update --confirm-update` and `demo-agent prepare-web`.
 - **The opening is spoken per call:** "Good morning/afternoon/evening! This is Aria at Serenity Spa. I'd love to help you get some relaxation on the calendar. To get started,
   are you looking for a massage, a facial, or maybe a full spa day?" (no "Hello", no "AI receptionist", warm and upbeat). The word follows the spa's local hour at the START
   of each call: Retell fills `{{current_hour_America/New_York}}` in per call (before 12 morning, 12 up to 17 afternoon, 17 on evening; `demo.SPA_TIMEZONE` is the one
@@ -51,8 +52,8 @@ It prints the page address, e.g. `http://127.0.0.1:8790/pro/en-us/9000001/calend
 
 ## Wiring a NEW test agent and the page (no live agent is touched by this repo)
 
-1. **Agent prompt:** `voice_agent_draft/prompt_demo_calendar.md` (generated from the same template as the other prompts, over the demo's 35 services; it adds a
-   section saying the calendar is simulated and that a name the tool does not find is asked about, never swapped).
+1. **Agent prompt:** `voice_agent_draft/prompt_demo_calendar.md` (generated from the shared conversation template and the Serenity menu, over the demo's 35 services; it says how to treat the
+   prototype calendar and that a name the tool does not find is asked about, never swapped).
 2. **Functions:** `voice_agent_draft/tools_availability_only.json` — `lookup_service`, `check_slot`, `find_alternatives`. There is no booking function.
    Replace `<YOUR-TUNNEL-HOST>` with the host of a tunnel to port 8787 that Sol or Shobana starts; the Retell key (with the webhook badge) is the signing key.
    Retell's signing of custom-function calls is an assumption that fails closed (401) if wrong; this has not been confirmed live.
@@ -94,9 +95,9 @@ tunnelling and calling are separate, deliberate steps you take yourself. Actions
    memory off, and the opening line equals the configured one. Any difference is a refusal that lists what differs. The read-back also prints the agent-to-LLM
    binding (engine version, LLM version, published flag); `update` additionally refuses to continue if the voice, model, temperature, language, call cap, retention
    or contact memory changed, and says so when they were left exactly as found.
-5. `python -m aria_booking demo-agent prepare-web` — builds the isolated voice page from the repository's website template plus a public-only
-   `demo-config.js` (agent id, version, public key; never a secret), with the "Demo calendar: simulated availability · Booking disabled" banner and the
-   retention sentence. The template files in the repository are never modified. It prints the serve command and writes `test-instructions.txt` (in the state
+5. `python -m aria_booking demo-agent prepare-web` — builds the isolated Serenity Spa page (teal, responsive, with photos) from the showcase source plus a public-only
+   `demo-config.js` (agent id, version, public key; never a secret), with the discreet "Prototype showcase" label and the retention sentence. The repository's own
+   website files are neither read nor modified. It prints the serve command and writes `test-instructions.txt` (in the state
    folder) with the steps and scripted questions. **Open the page at `http://localhost:5174/` (`--page-port` or `page_port` changes the number), never at
    `http://127.0.0.1:5174/`:** the Retell public key's allowed-domain list names `localhost` (and the operator's published domain), not the numeric address, and
    a call from it fails with a domain error. The page now keeps that specific error on screen instead of replacing it with the generic microphone message.
