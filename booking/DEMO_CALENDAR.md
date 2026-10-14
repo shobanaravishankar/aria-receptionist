@@ -25,8 +25,11 @@ from the **same** invented data. Everything on it is simulated and says so.
 - **No Booksy, no fall-back:** `demo-serve` can only build the dataset (or, with `--via-page`, a reader pointed at the demo page); it can never build a
   Booksy browser. The live `serve` can never use the dataset. If `--via-page` cannot start, the command stops; it never quietly answers from the dataset.
 - **No booking, ever:** the endpoint has no booking route and the tool file has no booking function. The booking approvals do not exist on this command.
-- **Fiona-like, not Fiona's data:** staff names are the labels observed on the real calendar (reference only); ids are synthetic (`9100xx`); clients are
-  fictional first names with an initial; no contact details, notes or real appointments. The hidden internal test account is deliberately not included.
+- **Fictional staff and menu:** the ten staff are fictional FIRST names (Marisol, Tamsin, Odette, Priya, Noor, Sienna, Rowan, Imogen, Calista, Delphine) from ONE roster
+  (`aria_booking/showcase/roster.py`); ids are synthetic (`9100xx`) and are the identity: schedules, eligibility and scripted days are keyed by id, never by name. The menu
+  is a separate, independently written Serenity menu (`showcase/catalog.py`) with example prices and lengths. Clients are fictional first names with an initial; no contact
+  details, notes or real appointments. Nothing is copied from any real salon's staff, website text, address or phone numbers; a test scans every generated output for the
+  earlier salon's identifiers (kept only as one-way digests).
 - **What is NOT claimed:** the page reproduces the real day view's *geometry and structure* (sidebar, toolbar, staff headers, 250 px columns, 80 px hour rows,
   card sizes, shaded non-working time) from a redacted capture. Its **colours, fonts, icons and borders are approximations**: the capture holds none of them and
   no reference screenshot has been supplied. Nothing here says the styling matches Booksy. `demo-compare` (below) measures it once a screenshot exists.
@@ -125,18 +128,18 @@ On the demo date + 1 (a massage at 4 PM unless stated). `python -m aria_booking 
 
 | ask | expected |
 |---|---|
-| "Is Lily available tomorrow at 4 for a one-hour deep tissue massage?" | **yes**, with Lily Xie (free from 3 PM) |
-| "What about Elva?" | **booked** at 4 (3:45-5:15 PM); offers her other times |
-| "And Amy?" | Amy Wu is **off** that day: "I don't see Amy on the schedule" |
-| "Pinny at 4 for 90 minutes?" | the visit would **run into** her 5 PM appointment |
-| "Pinny at 4 for an hour?" | fits before 5 PM but **not with the 15 minutes of cleanup** a massage needs; a 30-minute one is available |
-| "Linda at 4?" | **off between 3 and 5 PM** (a break), so not available; offers 5 PM |
-| "Fiona for a facial?" | **unknown**: her column shows no hours, so the answer is "I can't confirm" |
-| "Who is free at 4?" | the first eligible technician who really is (Lily) |
-| "Who does the Microdermabrasion Facial?" | `lookup_service` lists the demo's **facial** technicians (Pinny Du, Maggie Jin, Anna Zheng, Ada, Jessica DU, Fiona Tsao) |
+| "Is Sienna available tomorrow at 4 for a one-hour deep tissue massage?" | **yes**, with Sienna (free from 3 PM) |
+| "What about Marisol?" | **booked** at 4 (3:45-5:15 PM); offers her other times |
+| "And Imogen?" | Imogen is **off** that day: "I don't see Imogen on the schedule" |
+| "Tamsin at 4 for 90 minutes?" | the visit would **run into** her 5 PM appointment |
+| "Tamsin at 4 for an hour?" | fits before 5 PM but **not with the 15 minutes of cleanup** a massage needs; a 30-minute one is available |
+| "Rowan at 4?" | **off between 3 and 5 PM** (a break), so not available; offers 5 PM |
+| "Delphine for a facial?" | **unknown**: her column shows no hours, so the answer is "I can't confirm" |
+| "Who is free at 4?" | the first eligible technician who really is (Sienna) |
+| "Who does the Microdermabrasion Facial?" | `lookup_service` lists the demo's **facial** technicians (Tamsin, Odette, Priya, Noor, Calista, Delphine) |
 | "Is this schedule real?" | answered truthfully: a prototype with an invented calendar, not the salon's real schedule (never volunteered otherwise) |
-| "Is Lily available for a Microdermabrasion Facial?" | Lily Xie is a massage and head-spa technician in the demo roster, so **she does not do it**; it offers those who do (she is never made facial-eligible or swapped out) |
-| "Is Tinny free?" | "I don't see Tinny": it does **not** become Pinny Du; the agent asks who was meant |
+| "Is Sienna available for a Microdermabrasion Facial?" | Sienna is a massage and head-spa technician in the demo roster, so **she does not do it**; it offers those who do (she is never made facial-eligible or swapped out) |
+| "Is Tamzin free?" | "I don't see Tamzin": it does **not** become Tamsin; the agent asks who was meant |
 | a date more than 35 days out | **unknown** ("I couldn't confirm that day"), never free; further than 60 days: asks for a nearer date |
 
 Also ask general questions (prices, lengths, what a treatment is, opening hours): those come from the reviewed website knowledge and make no calendar read.

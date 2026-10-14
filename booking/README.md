@@ -93,7 +93,7 @@ Manual test steps for Shobana (no booking can occur on this line):
 
 ### Demo calendar and voice demo (invented data) — see `DEMO_CALENDAR.md`
 
-`python -m aria_booking demo-serve` serves a Booksy-style day-view page and the read-only voice tools over ONE invented dataset (Fiona-like staff labels
+`python -m aria_booking demo-serve` serves a Booksy-style day-view page and the read-only voice tools over ONE invented dataset (fictional first-name staff from one configurable roster
 with synthetic ids, fictional clients, deterministic multi-day schedules, scripted cases for tomorrow). The page carries a persistent "Demo calendar -
 simulated availability" banner and every availability reply says it is the demo calendar. It never touches Booksy, never falls back to it, and has no booking
 route. A real-browser test proves the page, read by the live reader, equals what the voice tools answer from. Geometry follows a redacted capture of the real

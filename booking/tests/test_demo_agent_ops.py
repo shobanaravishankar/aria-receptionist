@@ -378,7 +378,7 @@ def _tamper(tmp_path, change):
     ("the retention days", lambda f: f.agents["agent_1"].update(data_storage_retention_days=730)),
     ("contact memory is not off", lambda f: f.agents["agent_1"].update(contact_memory_config={"enable_read": True, "enable_update": True})),
     ("the agent does not use the recorded LLM", lambda f: f.agents["agent_1"].update(response_engine={"type": "retell-llm", "llm_id": "llm_other"})),
-    ("the agent's name", lambda f: f.agents["agent_1"].update(agent_name="Glamour Day Spa Receptionist")),
+    ("the agent's name", lambda f: f.agents["agent_1"].update(agent_name="Some Other Agent")),
     ("the end_call function", lambda f: f.llms["llm_1"].update(general_tools=[t for t in f.llms["llm_1"]["general_tools"] if t.get("type") != "end_call"])),
 ])
 def test_the_read_back_catches_every_kind_of_drift(tmp_path, label, change):
@@ -492,11 +492,11 @@ class Scripted:
         if name == "lookup_service":
             reply = {"status": "found", "ok": True, "speak": "x"}
         elif name == "check_slot":
-            busy = body["args"].get("staff") == "Elva"
+            busy = body["args"].get("staff") == "Marisol"
             reply = {"status": "unavailable" if busy else "available", "ok": not busy, "speak": "x", "source": "demo_calendar", **({"unavailable_reason": "occupied"} if busy else {})}
         else:
             date = body["args"]["date"]
-            reply = {"status": "alternatives", "ok": False, "speak": "x", "source": "demo_calendar", "options": [{"start": f"{date}T17:15:00-04:00", "technician": "Elva"}]}
+            reply = {"status": "alternatives", "ok": False, "speak": "x", "source": "demo_calendar", "options": [{"start": f"{date}T17:15:00-04:00", "technician": "Marisol"}]}
         return FakeResponse(json.dumps(reply).encode())
 
 
@@ -526,7 +526,7 @@ def test_preflight_refuses_a_broken_find_alternatives(tmp_path, label, reply, ex
                 if request.get_header("X-retell-signature") is not None and request.full_url.endswith("find_alternatives"):
                     date = json.loads(request.data)["args"]["date"]
                     self.override["find_alternatives"] = {"status": "alternatives", "ok": False, "speak": "x", "source": "demo_calendar",
-                                                          "options": [{"start": f"{date}T16:00:00-04:00", "technician": "Elva"}]}
+                                                          "options": [{"start": f"{date}T16:00:00-04:00", "technician": "Marisol"}]}
                 return super().__call__(request, timeout)
 
         scripted = Echo()
@@ -828,7 +828,7 @@ def test_prepare_web_writes_test_instructions_beside_the_state_not_inside_the_se
     assert "test-instructions.txt" not in {p.name for p in web.iterdir()}, "the steps are not served with the page"
     assert "http://localhost:5174/" in steps and "Do NOT use http://127.0.0.1:5174/" in steps and "domain error" in steps
     assert "http://localhost:8790/pro/en-us/9000001/calendar?date=2026-10-14&view=day&staffers=working" in steps
-    assert "Microdermabrasion Facial" in steps and "Is Lily available tomorrow at 4" in steps
+    assert "Microdermabrasion Facial" in steps and "Is Sienna available tomorrow at 4" in steps
     assert "Is this schedule real?" in steps and "The opening is spoken by the agent, not fixed" in steps and "This is Aria at Serenity Spa" in steps and "local hour at the start of the call" in steps
     assert "after midnight Eastern, restart the server (not the tunnel or the agent)" in steps
     for secret in (KEY, TOKEN, PUBLIC):

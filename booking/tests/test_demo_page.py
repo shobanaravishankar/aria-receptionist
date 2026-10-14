@@ -103,7 +103,7 @@ def test_one_column_per_shown_person_with_a_synthetic_staff_id_and_a_matching_he
 
 def test_the_header_shows_the_real_hours_format_and_nothing_for_the_person_without_hours(dataset, html):
     hours = re.findall(r'class="_hours_10ie7_48">([^<]*)<', html)
-    assert "10:00 AM-8:00 PM" in hours and len(hours) == len(dataset.day_plan(TOMORROW).plans) - 1, "Fiona Tsao's header shows no hours"
+    assert "10:00 AM-8:00 PM" in hours and len(hours) == len(dataset.day_plan(TOMORROW).plans) - 1, "Delphine's header shows no hours"
 
 
 def test_the_staff_filter_is_the_real_shape_with_its_three_controls_and_every_staff_member(dataset, html):

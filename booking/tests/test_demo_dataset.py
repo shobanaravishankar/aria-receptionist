@@ -7,14 +7,14 @@ from datetime import date, timedelta
 
 import pytest
 
-from aria_booking.catalog.lookup import DEFAULT_CATALOG
+from aria_booking.showcase.catalog import SHOWCASE_CATALOG
 from aria_booking.demo import DEMO_BUSINESS_ID
 from aria_booking.demo.dataset import (
     COVERAGE_AFTER_DAYS, COVERAGE_BEFORE_DAYS, FIRST_NAMES, GRID_END, GRID_START, ROSTER, DemoDataset, NotCovered, demo_registry,
 )
 
 TODAY = date(2026, 10, 13)  # a Tuesday
-LABELS = ["Elva", "Pinny Du", "Maggie Jin", "Anna Zheng", "Ada", "Lily Xie", "Linda Chen", "Amy Wu", "Jessica DU", "Fiona Tsao"]  # observed labels, reference only
+LABELS = ["Marisol", "Tamsin", "Odette", "Priya", "Noor", "Sienna", "Rowan", "Imogen", "Calista", "Delphine"]  # observed labels, reference only
 
 
 @pytest.fixture(scope="module")
@@ -44,12 +44,12 @@ def test_the_hidden_internal_test_account_is_not_in_the_demo_roster():
 
 def test_one_person_has_no_hours_shown_like_the_real_owner_column():
     unknown = [s for s in ROSTER if not s.hours_known]
-    assert [s.name for s in unknown] == ["Fiona Tsao"]
+    assert [s.name for s in unknown] == ["Delphine"]
 
 
 def test_no_roster_name_is_silently_a_neighbour_of_another():
     names = {s.name.casefold() for s in ROSTER}
-    assert "tinny" not in names and not any(n.split()[0] == "tinny" for n in names), "'Tinny' is not a roster name and must never be mapped to 'Pinny Du'"
+    assert "tamzin" not in names and not any(n.split()[0] == "tamzin" for n in names), "'Tamzin' is not a roster name and must never be mapped to 'Tamsin'"
 
 
 # ---------------------------------------------------------------- coverage and determinism
@@ -169,26 +169,26 @@ def plan_of(dataset, day, name):
 def test_tomorrow_always_has_the_pinned_cases_whatever_the_weekday(today):
     ds = DemoDataset(today)
     tomorrow = ds.scripted_days[0]
-    lily, elva, pinny, linda = (plan_of(ds, tomorrow, n) for n in ("Lily Xie", "Elva", "Pinny Du", "Linda Chen"))
-    assert not any(v.start < minute("20:00") and minute("15:00") < v.end for v in lily.visits), "Lily is free from 3 PM"
-    assert any(v.start <= minute("16:00") < v.end for v in elva.visits), "Elva is booked at 4 PM"
-    assert any(v.start == minute("17:00") for v in pinny.visits) and not any(v.start < minute("17:00") and v.end > minute("15:00") for v in pinny.visits)
-    assert [(b.start, b.end) for b in linda.breaks] == [(minute("15:00"), minute("17:00"))]
-    assert plan_of(ds, tomorrow, "Amy Wu") is None, "off duty"
-    fiona = plan_of(ds, tomorrow, "Fiona Tsao")
-    assert fiona is not None and fiona.shown_hours is None
+    sienna, marisol, tamsin, rowan = (plan_of(ds, tomorrow, n) for n in ("Sienna", "Marisol", "Tamsin", "Rowan"))
+    assert not any(v.start < minute("20:00") and minute("15:00") < v.end for v in sienna.visits), "Sienna is free from 3 PM"
+    assert any(v.start <= minute("16:00") < v.end for v in marisol.visits), "Marisol is booked at 4 PM"
+    assert any(v.start == minute("17:00") for v in tamsin.visits) and not any(v.start < minute("17:00") and v.end > minute("15:00") for v in tamsin.visits)
+    assert [(b.start, b.end) for b in rowan.breaks] == [(minute("15:00"), minute("17:00"))]
+    assert plan_of(ds, tomorrow, "Imogen") is None, "off duty"
+    delphine = plan_of(ds, tomorrow, "Delphine")
+    assert delphine is not None and delphine.shown_hours is None
 
 
 def test_the_second_scripted_day_is_a_different_mix(dataset):
     first, second = dataset.scripted_days
-    assert plan_of(dataset, second, "Amy Wu") is not None and plan_of(dataset, first, "Amy Wu") is None
-    assert plan_of(dataset, second, "Elva").breaks
+    assert plan_of(dataset, second, "Imogen") is not None and plan_of(dataset, first, "Imogen") is None
+    assert plan_of(dataset, second, "Marisol").breaks
 
 
 def test_describe_day_lists_everyone_without_inventing_contact_details(dataset):
     lines = dataset.describe_day(dataset.scripted_days[0])
     text = "\n".join(lines)
-    assert "Lily Xie" in text and re.search(r"not working: .*Amy Wu", text) and "hours not shown" in text
+    assert "Sienna" in text and re.search(r"not working: .*Imogen", text) and "hours not shown" in text
     assert not re.search(r"@|\d{3}[- ]\d{3}[- ]\d{4}", text)
 
 
@@ -202,7 +202,7 @@ def test_every_demo_service_is_a_real_website_item_with_its_listed_length_and_a_
     staff_ids = {s.staff_id for s in ROSTER}
     for service_id in ids:
         service = registry.get(service_id)
-        item = DEFAULT_CATALOG.get(service.catalog_item)
+        item = SHOWCASE_CATALOG.get(service.catalog_item)
         assert item is not None and item.duration_minutes == service.duration_minutes
         assert service.eligible_staff_ids and service.eligible_staff_ids <= staff_ids
         assert service.buffer_after_minutes >= 0
@@ -220,14 +220,14 @@ def test_eligibility_follows_the_synthetic_category_assignment():
     registry = demo_registry()
     massage = registry.get("massage-swedish-massage-60")
     by_name = {s.name: s for s in ROSTER}
-    assert massage.eligible("x", by_name["Lily Xie"].staff_id) and not massage.eligible("x", by_name["Maggie Jin"].staff_id)
-    assert not massage.eligible("Lily Xie", ""), "a person whose id is unknown is never eligible"
+    assert massage.eligible("x", by_name["Sienna"].staff_id) and not massage.eligible("x", by_name["Odette"].staff_id)
+    assert not massage.eligible("Sienna", ""), "a person whose id is unknown is never eligible"
 
 
 def test_an_extra_person_can_be_added_for_ambiguity_tests_without_touching_the_real_roster():
     from aria_booking.demo.dataset import DemoStaff
 
-    twin = DemoStaff("910099", "Amy Lin", frozenset({0, 1, 2, 3, 4, 5, 6}), (600, 1200), frozenset({"massage"}))
+    twin = DemoStaff("910099", "Imogen Lin", frozenset({0, 1, 2, 3, 4, 5, 6}), (600, 1200), frozenset({"massage"}))
     ds = DemoDataset(TODAY, extra_staff=[twin])
     assert len(ds.roster) == len(ROSTER) + 1 and len(ROSTER) == 10
     assert ds.registry.get("massage-swedish-massage-60").eligible("x", "910099")
@@ -321,8 +321,8 @@ def test_every_visit_label_is_a_real_demo_service_whose_length_matches_its_block
 
 def test_the_scripted_four_pm_examples_still_hold_after_the_label_fix(dataset):
     first = dataset.scripted_days[0]
-    lily = plan_of(dataset, first, "Lily Xie")
-    assert [(v.start, v.end, v.service) for v in lily.visits] == [(690, 750, "Swedish Massage, 1 hour")]
-    assert all(v.end <= minute("15:00") for v in lily.visits), "she is still free from 3 PM, so 4 PM stays available"
-    linda = plan_of(dataset, first, "Linda Chen")
-    assert [(v.start, v.end, v.service) for v in linda.visits] == [(600, 615, "Eyebrows")]
+    sienna = plan_of(dataset, first, "Sienna")
+    assert [(v.start, v.end, v.service) for v in sienna.visits] == [(690, 750, "Swedish Massage, 1 hour")]
+    assert all(v.end <= minute("15:00") for v in sienna.visits), "she is still free from 3 PM, so 4 PM stays available"
+    rowan = plan_of(dataset, first, "Rowan")
+    assert [(v.start, v.end, v.service) for v in rowan.visits] == [(600, 615, "Eyebrows")]

@@ -76,7 +76,9 @@ def test_a_full_spa_day_is_an_invitation_not_a_package():
 
 def test_the_opening_names_the_one_salon_name_and_the_demo_is_not_announced():
     assert SALON_NAME == "Serenity Spa" and f"This is Aria at {SALON_NAME}" in SECTION
-    assert not any(word in SECTION.lower() for word in ("demo", "simulat", "prototype", "glamour"))
+    from aria_booking.showcase.leaks import find_leaks
+
+    assert not any(word in SECTION.lower() for word in ("demo", "simulat", "prototype")) and find_leaks(SECTION) == []
 
 
 def test_the_opening_comes_before_everything_else_the_agent_is_told_and_appears_once():

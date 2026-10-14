@@ -12,6 +12,7 @@ from datetime import datetime
 import pytest
 
 from aria_booking.catalog.lookup import DEFAULT_CATALOG
+from aria_booking.showcase.catalog import SHOWCASE_CATALOG
 from aria_booking.config import Config
 from aria_booking.demo import DEMO_BUSINESS_ID
 from aria_booking.demo.dataset import ROSTER, DemoDataset, demo_registry
@@ -22,7 +23,7 @@ from aria_booking.voice.tools import VoiceTools
 from test_demo_voice import DEEP60, TODAY, TOMORROW, TZ, ask, make
 
 MICRO = "facial-microdermabrasion-facial-75"
-FACIAL_STAFF = ["Pinny Du", "Maggie Jin", "Anna Zheng", "Ada", "Jessica DU", "Fiona Tsao"]
+FACIAL_STAFF = ["Tamsin", "Odette", "Priya", "Noor", "Calista", "Delphine"]
 
 
 # ---------------------------------------------------------------- the mapping
@@ -39,14 +40,14 @@ def test_its_staff_are_exactly_the_demo_roster_members_assigned_the_facial_categ
     service = demo_registry().get(MICRO)
     facial = {staff.staff_id for staff in ROSTER if "facial" in staff.categories}
     assert set(service.eligible_staff_ids) == facial
-    lily = next(s for s in ROSTER if s.name == "Lily Xie")
-    assert lily.categories == frozenset({"massage", "head-spa"}) and lily.staff_id not in service.eligible_staff_ids, "Lily is not silently made facial-eligible"
+    sienna = next(s for s in ROSTER if s.name == "Sienna")
+    assert sienna.categories == frozenset({"massage", "head-spa"}) and sienna.staff_id not in service.eligible_staff_ids, "Sienna is not silently made facial-eligible"
 
 
 def test_the_demo_dataset_says_who_does_a_service_in_roster_order():
     dataset = DemoDataset(TODAY)
     assert dataset.providers(dataset.registry.get(MICRO)) == FACIAL_STAFF
-    assert dataset.providers(dataset.registry.get(DEEP60)) == ["Elva", "Pinny Du", "Lily Xie", "Linda Chen", "Amy Wu"]
+    assert dataset.providers(dataset.registry.get(DEEP60)) == ["Marisol", "Tamsin", "Sienna", "Rowan", "Imogen"]
 
 
 def test_names_are_joined_with_and_not_or():
@@ -61,7 +62,7 @@ def test_lookup_names_the_demo_technicians_and_says_where_the_list_comes_from():
     reply = tools.lookup_service("call_x", {"query": "microdermabrasion facial"})
     assert reply["status"] == "service_info" and reply["bookable"] is True and reply["bookable_service_id"] == MICRO
     assert reply["technicians"] == FACIAL_STAFF and reply["technicians_source"] == "demo_calendar"
-    assert " Pinny Du, Maggie Jin, Anna Zheng, Ada, Jessica DU and Fiona Tsao do this service." in reply["speak"]
+    assert " Tamsin, Odette, Priya, Noor, Calista and Delphine do this service." in reply["speak"]
     assert not any(word in reply["speak"].lower() for word in ("demo", "simulat", "prototype")), "the source is in technicians_source, not spoken"
     assert "I can check availability for it." in reply["speak"] and driver.reads == 0, "a lookup never reads the calendar"
 
@@ -96,26 +97,26 @@ def test_find_alternatives_now_offers_real_demo_times_with_facial_technicians():
 
 def test_a_technician_who_does_not_offer_it_is_refused_by_name_not_swapped_and_the_right_people_are_offered():
     tools, *_ = make()
-    reply = ask(tools, "Lily", service=MICRO)
+    reply = ask(tools, "Sienna", service=MICRO)
     assert reply["status"] == "staff_unavailable" and reply["reason"] == "staff_not_eligible"
-    assert "Lily Xie doesn't do Microdermabrasion Facial" in reply["speak"]
-    assert "Lily Xie" not in reply["available_staff"] and set(reply["available_staff"]) <= set(FACIAL_STAFF) and reply["available_staff"]
+    assert "Sienna doesn't do Microdermabrasion Facial" in reply["speak"]
+    assert "Sienna" not in reply["available_staff"] and set(reply["available_staff"]) <= set(FACIAL_STAFF) and reply["available_staff"]
 
 
 def test_a_facial_technician_is_checked_for_the_full_75_minutes():
     tools, *_ = make()
-    free = ask(tools, "Anna", service=MICRO)  # Anna Zheng is free from 4 PM on the scripted day
-    assert free["status"] == "available" and free["options"][0]["technician"] == "Anna Zheng" and "1 hour 15 minutes" in free["speak"]
-    runs_into = ask(tools, "Pinny", service=MICRO)  # 4:00-5:15 PM runs into Pinny Du's 5 PM visit
+    free = ask(tools, "Priya", service=MICRO)  # Priya is free from 4 PM on the scripted day
+    assert free["status"] == "available" and free["options"][0]["technician"] == "Priya" and "1 hour 15 minutes" in free["speak"]
+    runs_into = ask(tools, "Tamsin", service=MICRO)  # 4:00-5:15 PM runs into Tamsin's 5 PM visit
     assert runs_into["status"] == "alternatives" and runs_into["unavailable_reason"] == "conflicts_next" and "1 hour 15 minutes" in runs_into["speak"]
-    booked = ask(tools, "Jessica", service=MICRO)  # Jessica DU has a 3:45-4:45 PM visit
-    assert booked["unavailable_reason"] == "occupied" and {o["technician"] for o in booked["options"]} == {"Jessica DU"}
+    booked = ask(tools, "Calista", service=MICRO)  # Calista has a 3:45-4:45 PM visit
+    assert booked["unavailable_reason"] == "occupied" and {o["technician"] for o in booked["options"]} == {"Calista"}
 
 
 # ---------------------------------------------------------------- unsupported services never cause a calendar read
 
 
-UNSUPPORTED = [item for item in DEFAULT_CATALOG.items if item.item_id not in demo_registry().ids()]
+UNSUPPORTED = [item for item in SHOWCASE_CATALOG.items if item.item_id not in demo_registry().ids()]
 
 
 def test_there_are_unsupported_website_services_so_this_guarantee_is_meaningful():

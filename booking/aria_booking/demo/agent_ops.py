@@ -38,11 +38,13 @@ from typing import Any, Callable, Mapping, Optional
 from zoneinfo import ZoneInfo
 
 from . import SALON_NAME, SPA_TIMEZONE
+from ..showcase.roster import name_of
 from .secret_store import DpapiSecrets, SecretMissing, provider_from_environment
 
 BOOKING = Path(__file__).resolve().parents[2]
 REPO_ROOT = BOOKING.parent
 RETELL_API = "https://api.retellai.com/"
+LEAD, BOOKED = name_of("910006"), name_of("910001")  # the scripted first day: LEAD is free at 4 PM, BOOKED is not (both come from the one roster)
 TOOL_NAMES = frozenset({"lookup_service", "check_slot", "find_alternatives"})
 SOURCE_PROMPT = "voice_agent_draft/prompt_demo_calendar.md"
 SOURCE_TOOLS = "voice_agent_draft/tools_availability_only.json"
@@ -457,10 +459,10 @@ def preflight(config: OperatorConfig, secrets: Any, out: Callable[[str], None], 
     tomorrow = (datetime.fromtimestamp(clock(), ZoneInfo(SPA_TIMEZONE)) + timedelta(days=1)).date().isoformat()
     cases = [
         ("lookup_service", {"query": "Signature Facial"}),
-        ("check_slot", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": "Lily"}),
-        ("check_slot", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": "Elva"}),
+        ("check_slot", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": LEAD}),
+        ("check_slot", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": BOOKED}),
         ("check_slot", {"service_id": "facial-signature-facial-60", "date": tomorrow, "time": "16:00"}),
-        ("find_alternatives", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": "Elva"}),
+        ("find_alternatives", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": BOOKED}),
     ]
     records = []
     for index, (name, args) in enumerate(cases):
@@ -485,7 +487,7 @@ def preflight(config: OperatorConfig, secrets: Any, out: Callable[[str], None], 
         problems.append("find_alternatives offered the very slot that is occupied")
     lily, elva = records[1]["result"], records[2]["result"]
     if lily.get("status") != "available" or elva.get("unavailable_reason") != "occupied":
-        problems.append("the scripted examples (Lily free at 4, Elva booked at 4) did not hold: run the demo server WITHOUT --today so 'tomorrow' is the real tomorrow")
+        problems.append(f"the scripted examples ({LEAD} free at 4, {BOOKED} booked at 4) did not hold: run the demo server WITHOUT --today so 'tomorrow' is the real tomorrow")
     for suffix, expected in (("check_slot", 401), ("book_slot", 404)):
         try:
             with opener(urllib.request.Request(f"{base}/tools/{suffix}", data=b"{}"), timeout=15):
@@ -521,10 +523,10 @@ def test_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path) -> s
         f"     {calendar}",
         "",
         f"Scripted cases for tomorrow ({tomorrow}), when the demo server was started today (see DEMO_CALENDAR.md, 'What to ask'):",
-        "  - Is Lily available tomorrow at 4 for a one-hour deep tissue massage?   -> yes, with Lily Xie",
-        "  - What about Elva?                                                       -> booked at 4; offers her other times",
-        "  - Who does the Microdermabrasion Facial?                                 -> the demo's facial technicians (not Lily)",
-        "  - Is Lily available for a Microdermabrasion Facial?                      -> Lily does not do it; offers those who do",
+        f"  - Is {LEAD} available tomorrow at 4 for a one-hour deep tissue massage?   -> yes, with {LEAD}",
+        f"  - What about {BOOKED}?                                                       -> booked at 4; offers her other times",
+        f"  - Who does the Microdermabrasion Facial?                                 -> the demo's facial technicians (not {LEAD})",
+        f"  - Is {LEAD} available for a Microdermabrasion Facial?                      -> {LEAD} does not do it; offers those who do",
         "  - Is this schedule real?                                                 -> truthful: a prototype with an invented calendar (never said unprompted)",
         f"  The opening is spoken by the agent, not fixed: 'Good morning/afternoon/evening! This is Aria at {SALON_NAME}. ...', the word following the spa's local hour at the start of the call. The page itself still carries the website template's own text and the simulation banner.",
         "",

@@ -14,7 +14,7 @@ from ..calendar_parser import CalendarParseError
 from ..driver import BeforeSaveError, DriverError
 from ..models import Appointment, DaySnapshot, Interval, StaffDay
 from ..roster import Roster, StaffMember
-from . import DEMO_BUSINESS_ID
+from . import DEMO_BUSINESS_ID, SPA_TIMEZONE
 from .dataset import DayPlan, DemoDataset, NotCovered, StaffPlan
 
 
@@ -52,7 +52,7 @@ class DemoCalendarDriver:
     allowed_services = frozenset()
     source = "demo_calendar"
 
-    def __init__(self, dataset: DemoDataset, *, timezone: str = "America/New_York", clock: Optional[Callable[[], datetime]] = None):
+    def __init__(self, dataset: DemoDataset, *, timezone: str = SPA_TIMEZONE, clock: Optional[Callable[[], datetime]] = None):
         self.dataset = dataset
         self._tz = ZoneInfo(timezone)
         self._clock = clock or (lambda: datetime.now(self._tz))

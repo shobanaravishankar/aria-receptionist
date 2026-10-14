@@ -19,7 +19,8 @@ from datetime import date, timedelta
 from typing import Iterable, Optional
 
 from ..catalog.bookable import BookableRegistry, BookableService
-from ..catalog.lookup import DEFAULT_CATALOG
+from ..showcase.catalog import SHOWCASE_CATALOG
+from ..showcase.roster import ROSTER_ROWS
 
 GRID_START = 9 * 60  # the day view draws 9:00 AM ...
 GRID_END = 21 * 60  # ... to 9:00 PM, 80 px per hour (as in the real capture)
@@ -46,17 +47,8 @@ def _days(*numbers: int) -> frozenset:
     return frozenset(numbers)
 
 
-ROSTER = (
-    DemoStaff("910001", "Elva", _days(0, 1, 2, 3, 4, 5), (600, 1200), frozenset({"massage", "body-scrub", "head-spa"})),
-    DemoStaff("910002", "Pinny Du", _days(0, 1, 2, 3, 4), (600, 1200), frozenset({"massage", "facial"})),
-    DemoStaff("910003", "Maggie Jin", _days(1, 3, 5), (600, 1200), frozenset({"facial", "lash"})),
-    DemoStaff("910004", "Anna Zheng", _days(2, 4, 6), (660, 1140), frozenset({"facial", "waxing"})),
-    DemoStaff("910005", "Ada", _days(0, 1, 2, 3, 4, 5), (600, 1200), frozenset({"facial", "lash"})),
-    DemoStaff("910006", "Lily Xie", _days(0, 1, 2, 3, 4, 5, 6), (600, 1200), frozenset({"massage", "head-spa"})),
-    DemoStaff("910007", "Linda Chen", _days(0, 1, 2, 3, 4), (600, 1200), frozenset({"massage", "waxing"})),
-    DemoStaff("910008", "Amy Wu", _days(0, 1, 3, 4, 5, 6), (600, 1200), frozenset({"lash", "waxing", "massage"})),
-    DemoStaff("910009", "Jessica DU", _days(1, 2, 3, 4, 5), (720, 1200), frozenset({"facial", "waxing"})),
-    DemoStaff("910010", "Fiona Tsao", _days(0, 1, 2, 3, 4), (600, 1200), frozenset({"facial"}), hours_known=False),
+ROSTER = tuple(
+    DemoStaff(row.staff_id, row.name, _days(*row.weekdays), row.hours, frozenset(row.categories), hours_known=row.hours_known) for row in ROSTER_ROWS
 )
 
 # (category, family, buffer after in minutes): every duration variant of these website services is offered; all are DEMO mappings, not verified.
@@ -64,7 +56,7 @@ DEMO_FAMILIES = (
     ("massage", "Deep Tissue Massage", 15), ("massage", "Swedish Massage", 15), ("massage", "Hot Stone Massage", 15),
     ("massage", "Aromatherapy Massage", 15), ("massage", "Anti-Stress Massage", 15), ("massage", "Reflexology Massage", 15),
     ("facial", "Express Facial", 10), ("facial", "Signature Facial", 10), ("facial", "Back Facial", 10), ("facial", "Teen Facial", 10),
-    ("facial", "HydraFacial Treatment", 10), ("facial", "Gentleman Facial", 10), ("facial", "Microdermabrasion Facial", 10),
+    ("facial", "Deep Hydration Facial", 10), ("facial", "Gentleman Facial", 10), ("facial", "Microdermabrasion Facial", 10),
     ("lash", "Eyelash Tinting", 0), ("lash", "Eyelash Lifting", 0), ("lash", "Eyebrow Tinting", 0),
     ("waxing", "Eyebrows", 0), ("waxing", "Lip", 0), ("waxing", "Full Face", 0), ("waxing", "Full Leg", 5), ("waxing", "Brazilian Line", 5),
     ("head-spa", "Head Scalp Massage", 5), ("head-spa", "Head Scalp Detoxification", 5),
@@ -117,7 +109,7 @@ def demo_services(roster: Iterable[DemoStaff] = ROSTER) -> list[tuple[BookableSe
     staff = tuple(roster)
     out = []
     for category, family, buffer_after in DEMO_FAMILIES:
-        for item in DEFAULT_CATALOG.items:
+        for item in SHOWCASE_CATALOG.items:
             if item.category == category and item.family == family and item.duration_minutes:
                 ids = frozenset(s.staff_id for s in staff if category in s.categories)
                 out.append((BookableService(
@@ -129,7 +121,7 @@ def demo_services(roster: Iterable[DemoStaff] = ROSTER) -> list[tuple[BookableSe
 
 def demo_registry(roster: Iterable[DemoStaff] = ROSTER) -> BookableRegistry:
     """The services the demo can check, from the reviewed website knowledge. ``verified`` here means 'part of the DEMO mapping', nothing more."""
-    return BookableRegistry([service for service, _category in demo_services(roster)])
+    return BookableRegistry([service for service, _category in demo_services(roster)], catalog=SHOWCASE_CATALOG)
 
 
 def _rng(*parts: object) -> random.Random:
@@ -145,7 +137,7 @@ class DemoDataset:
         self.today = today
         self.roster: tuple[DemoStaff, ...] = ROSTER + tuple(extra_staff)
         pairs = demo_services(self.roster)
-        self._registry = BookableRegistry([service for service, _category in pairs])
+        self._registry = BookableRegistry([service for service, _category in pairs], catalog=SHOWCASE_CATALOG)
         self._services: dict[str, list[BookableService]] = {}
         for service, category in pairs:
             self._services.setdefault(category, []).append(service)
@@ -225,7 +217,7 @@ class DemoDataset:
         first, second = self.scripted_days
         if day not in (first, second):
             return None
-        return (_SCRIPT_FIRST if day == first else _SCRIPT_SECOND).get(staff.name)  # None: this person follows the generated schedule that day
+        return (_SCRIPT_FIRST if day == first else _SCRIPT_SECOND).get(staff.staff_id)  # None: this person follows the generated schedule that day
 
     def _scripted(self, day: date, staff: DemoStaff, entry) -> StaffPlan:
         hours, breaks, visits = entry
@@ -248,22 +240,22 @@ class DemoDataset:
 
 
 # Scripted days. Each entry: (hours, breaks, visits) or "off". Visits are (start, end, service label, category), minutes since midnight.
-# FIRST day (tomorrow):  Lily free 3-8 PM (available at 4);  Elva booked 3:45-5:15 (occupied at 4);  Pinny free until a 5:00 PM visit
-# (a 60-minute massage at 4:00 fits the gap only without its 15-minute buffer, a 90-minute one crosses the visit);  Linda on a 3-5 PM break;
-# Amy Wu is off; Fiona's hours are not shown (unknown).
+# Keyed by staff ID (names are display only).  FIRST day (tomorrow):  910006 (Sienna) free 3-8 PM (available at 4);  910001 (Marisol) booked 3:45-5:15
+# (occupied at 4);  910002 (Tamsin) free until a 5:00 PM visit (a 60-minute massage at 4:00 fits the gap only without its 15-minute buffer, a 90-minute one
+# crosses the visit);  910007 (Rowan) on a 3-5 PM break;  910008 (Imogen) is off;  910010 (Delphine): hours not shown (unknown).
 _SCRIPT_FIRST: dict = {
-    "Lily Xie": ((600, 1200), (), [(690, 750, "Swedish Massage, 1 hour", "massage")]),
-    "Elva": ((600, 1200), (), [(600, 660, "Hot Stone Massage, 1 hour", "massage"), (945, 1035, "Deep Tissue Massage, 1 hour 30 minutes", "massage")]),
-    "Pinny Du": ((600, 1200), (), [(660, 720, "Signature Facial", "facial"), (1020, 1080, "Back Facial", "facial")]),
-    "Linda Chen": ((600, 1200), ((900, 1020, "Break"),), [(600, 615, "Eyebrows", "waxing")]),
-    "Amy Wu": "off",
-    "Fiona Tsao": ((600, 1200), (), []),
+    "910006": ((600, 1200), (), [(690, 750, "Swedish Massage, 1 hour", "massage")]),
+    "910001": ((600, 1200), (), [(600, 660, "Hot Stone Massage, 1 hour", "massage"), (945, 1035, "Deep Tissue Massage, 1 hour 30 minutes", "massage")]),
+    "910002": ((600, 1200), (), [(660, 720, "Signature Facial", "facial"), (1020, 1080, "Back Facial", "facial")]),
+    "910007": ((600, 1200), ((900, 1020, "Break"),), [(600, 615, "Eyebrows", "waxing")]),
+    "910008": "off",
+    "910010": ((600, 1200), (), []),
 }
 # SECOND day: a different mix so a follow-up question has other answers.
 _SCRIPT_SECOND: dict = {
-    "Lily Xie": ((600, 1200), (), [(600, 690, "Deep Tissue Massage, 1 hour 30 minutes", "massage"), (900, 960, "Aromatherapy Massage, 1 hour", "massage")]),
-    "Elva": ((600, 1200), ((780, 840, "Lunch"),), [(870, 960, "Swedish Massage, 1 hour 30 minutes", "massage")]),
-    "Amy Wu": ((600, 1200), (), [(1020, 1065, "Eyelash Lifting", "lash")]),
+    "910006": ((600, 1200), (), [(600, 690, "Deep Tissue Massage, 1 hour 30 minutes", "massage"), (900, 960, "Aromatherapy Massage, 1 hour", "massage")]),
+    "910001": ((600, 1200), ((780, 840, "Lunch"),), [(870, 960, "Swedish Massage, 1 hour 30 minutes", "massage")]),
+    "910008": ((600, 1200), (), [(1020, 1065, "Eyelash Lifting", "lash")]),
 }
 
 

@@ -1,7 +1,7 @@
 """The demo's voice answers, through the SAME tool path the live calendar uses (VoiceTools -> deadlines -> read-only routes), over the demo dataset.
 
-Scripted day (the demo date plus one): Lily Xie is free from 3 PM; Elva is booked 3:45-5:15 PM; Pinny Du has a 5:00 PM visit; Linda Chen is on a 3-5 PM
-break; Amy Wu is off; Fiona Tsao's hours are not shown. Nothing here touches a browser, Booksy or the network except one loopback HTTP test.
+Scripted day (the demo date plus one): Sienna is free from 3 PM; Marisol is booked 3:45-5:15 PM; Tamsin has a 5:00 PM visit; Rowan is on a 3-5 PM
+break; Imogen is off; Delphine's hours are not shown. Nothing here touches a browser, Booksy or the network except one loopback HTTP test.
 """
 
 from __future__ import annotations
@@ -53,71 +53,71 @@ def ask(tools, staff=None, time="16:00", service=DEEP60, day=TOMORROW, call="cal
 
 def test_is_the_requested_person_available_tomorrow_at_4_pm_yes():
     tools, *_ = make()
-    reply = ask(tools, "Lily")
-    assert reply["status"] == "available" and reply["options"][0]["technician"] == "Lily Xie"
-    assert "Lily Xie" in reply["speak"] and "4 PM" in reply["speak"] and "can't book it" in reply["speak"]
+    reply = ask(tools, "Sienna")
+    assert reply["status"] == "available" and reply["options"][0]["technician"] == "Sienna"
+    assert "Sienna" in reply["speak"] and "4 PM" in reply["speak"] and "can't book it" in reply["speak"]
     assert reply["ok"] is False and "option_id" not in reply["options"][0]
 
 
 def test_occupied_says_so_and_offers_that_persons_own_other_times():
     tools, *_ = make()
-    reply = ask(tools, "Elva")
-    assert reply["status"] == "alternatives" and reply["unavailable_reason"] == "occupied" and "Elva is already booked at 4 PM" in reply["speak"]
-    assert {o["technician"] for o in reply["options"]} == {"Elva"}
+    reply = ask(tools, "Marisol")
+    assert reply["status"] == "alternatives" and reply["unavailable_reason"] == "occupied" and "Marisol is already booked at 4 PM" in reply["speak"]
+    assert {o["technician"] for o in reply["options"]} == {"Marisol"}
 
 
 def test_an_off_duty_person_is_not_on_the_schedule_and_nothing_is_offered_for_her():
     tools, *_ = make()
-    reply = ask(tools, "Amy")
+    reply = ask(tools, "Imogen")
     assert reply["status"] == "staff_unavailable" and reply["reason"] == "staff_not_on_schedule" and not reply.get("options")
-    assert "don't see Amy" in reply["speak"]
+    assert "don't see Imogen" in reply["speak"]
 
 
 def test_a_visit_that_would_cross_into_the_next_appointment_is_refused_with_that_reason():
     tools, *_ = make()
-    reply = ask(tools, "Pinny", service=DEEP90)  # 4:00-5:30 runs into the 5:00 PM visit
-    assert reply["unavailable_reason"] == "conflicts_next" and "would run into Pinny Du's next appointment at 5 PM" in reply["speak"]
+    reply = ask(tools, "Tamsin", service=DEEP90)  # 4:00-5:30 runs into the 5:00 PM visit
+    assert reply["unavailable_reason"] == "conflicts_next" and "would run into Tamsin's next appointment at 5 PM" in reply["speak"]
     assert all(o["duration_minutes"] == 90 for o in reply["options"])
 
 
 def test_the_cleanup_time_counts_a_one_hour_massage_fits_the_gap_only_without_its_buffer():
     tools, *_ = make()
-    reply = ask(tools, "Pinny", service=DEEP60)  # 4:00-5:00 touches the 5:00 visit, but 15 minutes of cleanup follow a massage
+    reply = ask(tools, "Tamsin", service=DEEP60)  # 4:00-5:00 touches the 5:00 visit, but 15 minutes of cleanup follow a massage
     assert reply["unavailable_reason"] == "conflicts_next" and "wouldn't be time for the 15 minutes of cleanup" in reply["speak"]
-    assert ask(tools, "Pinny", service=DEEP30)["status"] == "available", "a half-hour fits with its cleanup"
+    assert ask(tools, "Tamsin", service=DEEP30)["status"] == "available", "a half-hour fits with its cleanup"
 
 
 def test_a_break_is_explained_as_time_off_not_as_outside_hours():
     tools, *_ = make()
-    reply = ask(tools, "Linda")
-    assert reply["unavailable_reason"] == "on_break" and "Linda Chen is off between 3 PM and 5 PM" in reply["speak"]
+    reply = ask(tools, "Rowan")
+    assert reply["unavailable_reason"] == "on_break" and "Rowan is off between 3 PM and 5 PM" in reply["speak"]
     assert "outside" not in reply["speak"]
 
 
 def test_a_visit_that_would_run_into_a_break_says_the_break_not_the_closing_time():
     tools, *_ = make()
-    reply = ask(tools, "Linda", time="14:30")  # 2:30-3:30 PM (plus cleanup) runs into her 3 PM break
-    assert reply["unavailable_reason"] == "conflicts_next" and "would run into Linda Chen's break at 3 PM" in reply["speak"]
+    reply = ask(tools, "Rowan", time="14:30")  # 2:30-3:30 PM (plus cleanup) runs into her 3 PM break
+    assert reply["unavailable_reason"] == "conflicts_next" and "would run into Rowan's break at 3 PM" in reply["speak"]
     assert "closing" not in reply["speak"] and "end of" not in reply["speak"]
 
 
 def test_the_person_with_no_shown_hours_is_unknown_never_available():
     tools, *_ = make()
-    reply = ask(tools, "Fiona", service=FACIAL)
+    reply = ask(tools, "Delphine", service=FACIAL)
     assert reply["status"] == "unknown" and not reply.get("options") and "free" not in reply["speak"].replace("whether it's free", "")
 
 
 def test_nobody_named_returns_who_is_actually_free_at_that_time():
     tools, *_ = make()
     reply = ask(tools, None)
-    assert reply["status"] == "available" and reply["options"][0]["technician"] == "Lily Xie"
+    assert reply["status"] == "available" and reply["options"][0]["technician"] == "Sienna"
     reply = ask(tools, None, service=DEEP90)
-    assert reply["status"] in ("available", "alternatives") and all(o["technician"] != "Amy Wu" for o in reply["options"])
+    assert reply["status"] in ("available", "alternatives") and all(o["technician"] != "Imogen" for o in reply["options"])
 
 
 def test_a_person_who_does_not_do_the_service_is_said_so():
     tools, *_ = make()
-    reply = ask(tools, "Elva", service=FACIAL)
+    reply = ask(tools, "Marisol", service=FACIAL)
     assert reply["status"] == "staff_unavailable" and reply["reason"] == "staff_not_eligible"
 
 
@@ -125,20 +125,23 @@ def test_a_person_who_does_not_do_the_service_is_said_so():
 
 
 def test_two_people_with_one_first_name_need_a_question_not_a_guess():
-    twin = DemoStaff("910099", "Amy Lin", frozenset(range(7)), (600, 1200), frozenset({"massage"}))
-    tools, *_ = make(extra_staff=[twin])
-    reply = ask(tools, "Amy")  # Amy Wu is off tomorrow and Amy Lin works: it is still two people, and the caller is asked
+    ash = DemoStaff("910098", "Zuri Ash", frozenset(range(7)), (600, 1200), frozenset({"massage"}))
+    bell = DemoStaff("910099", "Zuri Bell", frozenset(range(7)), (600, 1200), frozenset({"massage"}))
+    tools, *_ = make(extra_staff=[ash, bell])
+    reply = ask(tools, "Zuri")  # neither is called just "Zuri": it is two people, and the caller is asked
     assert reply["status"] == "needs_clarification" and reply["reason"] == "ambiguous_staff"
-    assert set(reply["candidates"]) == {"Amy Wu", "Amy Lin"} and "Which did you mean" in reply["speak"] and not reply.get("options")
-    assert ask(tools, "Amy Lin")["status"] in ("available", "alternatives") and ask(tools, "Amy Wu")["status"] == "staff_unavailable"
+    assert set(reply["candidates"]) == {"Zuri Ash", "Zuri Bell"} and "Which did you mean" in reply["speak"] and not reply.get("options")
+    for full in ("Zuri Ash", "Zuri Bell"):  # the full name is exactly one person: never a question, and never the other twin's times
+        answer = ask(tools, full)
+        assert answer["status"] != "needs_clarification" and {o["technician"] for o in answer.get("options", [])} <= {full}, answer
 
 
-def test_tinny_is_never_silently_pinny_du():
+def test_a_near_miss_name_is_never_silently_a_roster_member():
     tools, *_ = make()
-    reply = ask(tools, "Tinny")
+    reply = ask(tools, "Tamzin")
     assert reply["status"] == "staff_unavailable" and not reply.get("options")
-    assert "Pinny" not in json.dumps({k: v for k, v in reply.items() if k != "scheduled_staff"}) or "don't see Tinny" in reply["speak"]
-    assert "Tinny" in reply["speak"], "she is told the name was not found, in her own words"
+    assert "Tamsin" not in json.dumps({k: v for k, v in reply.items() if k != "scheduled_staff"}) or "don't see Tamzin" in reply["speak"]
+    assert "Tamzin" in reply["speak"], "she is told the name was not found, in her own words"
 
 
 # ---------------------------------------------------------------- missing data and the edges of the dataset
@@ -147,32 +150,32 @@ def test_tinny_is_never_silently_pinny_du():
 def test_a_date_inside_the_look_ahead_but_outside_the_dataset_is_unknown_not_free():
     tools, *_ = make()
     far = TODAY + timedelta(days=50)  # beyond the 35 covered days, inside the 60-day look-ahead
-    reply = ask(tools, "Lily", day=far)
+    reply = ask(tools, "Sienna", day=far)
     assert reply["status"] == "unknown" and not reply.get("options")
 
 
 def test_a_date_beyond_the_look_ahead_asks_for_a_nearer_one():
     tools, *_ = make()
-    assert ask(tools, "Lily", day=TODAY + timedelta(days=300))["status"] == "needs_clarification"
+    assert ask(tools, "Sienna", day=TODAY + timedelta(days=300))["status"] == "needs_clarification"
 
 
 def test_a_start_after_closing_is_refused_with_the_reason():
     tools, *_ = make()
-    reply = ask(tools, "Lily", time="20:30")
+    reply = ask(tools, "Sienna", time="20:30")
     assert reply["unavailable_reason"] == "outside_hours" and "outside those hours" in reply["speak"]
 
 
 def test_a_visit_that_would_run_past_the_end_of_the_day():
     tools, *_ = make()
-    reply = ask(tools, "Lily", time="19:30", service=DEEP60)
+    reply = ask(tools, "Sienna", time="19:30", service=DEEP60)
     assert reply["unavailable_reason"] == "ends_after_closing" and "latest start" in reply["speak"]
 
 
 def test_the_second_scripted_day_answers_differently():
     tools, *_ = make()
     second = TODAY + timedelta(days=2)
-    assert ask(tools, "Amy", day=second, service="massage-swedish-massage-60")["status"] in ("available", "alternatives"), "Amy works on the second scripted day"
-    assert ask(tools, "Lily", day=second, time="10:00", service=DEEP60)["unavailable_reason"] == "occupied"
+    assert ask(tools, "Imogen", day=second, service="massage-swedish-massage-60")["status"] in ("available", "alternatives"), "Imogen works on the second scripted day"
+    assert ask(tools, "Sienna", day=second, time="10:00", service=DEEP60)["unavailable_reason"] == "occupied"
 
 
 # ---------------------------------------------------------------- the source is always obvious in the conversation
@@ -183,10 +186,10 @@ SPOKEN_DEMO_WORDS = ("demo", "simulat", "prototype", "not the salon's real sched
 
 def test_every_availability_reply_carries_the_source_label_and_none_announces_it_by_default():
     tools, *_ = make()
-    first = ask(tools, "Lily", call="callA")
-    second = ask(tools, "Elva", call="callA")
-    other_call = ask(tools, "Lily", call="callB")
-    alternatives = tools.find_alternatives("callC", {"service_id": DEEP60, "date": TOMORROW.isoformat(), "staff": "Elva"})
+    first = ask(tools, "Sienna", call="callA")
+    second = ask(tools, "Marisol", call="callA")
+    other_call = ask(tools, "Sienna", call="callB")
+    alternatives = tools.find_alternatives("callC", {"service_id": DEEP60, "date": TOMORROW.isoformat(), "staff": "Marisol"})
     for reply in (first, second, other_call, alternatives):
         assert reply["source"] == SOURCE_LABEL, "the machine-readable label stays on every availability reply"
         assert not any(word in reply["speak"].lower() for word in SPOKEN_DEMO_WORDS), reply["speak"]
@@ -197,7 +200,7 @@ def test_no_spoken_reply_of_any_kind_says_demo_simulated_or_prototype():
     tools, *_ = make()
     far = TODAY + timedelta(days=40)
     replies = []
-    for staff in [None, "Lily", "Elva", "Amy", "Fiona", "Pinny", "Linda", "Anna", "Tinny", "Jessica"]:
+    for staff in [None, "Sienna", "Marisol", "Imogen", "Delphine", "Tamsin", "Rowan", "Priya", "Tamzin", "Calista"]:
         for service in (DEEP60, DEEP90, FACIAL, "facial-microdermabrasion-facial-75", "head-spa-head-scalp-massage-30"):
             for day in (TOMORROW, TOMORROW + timedelta(days=1), far):
                 replies.append(ask(tools, staff, service=service, day=day, call=f"sweep-{len(replies)}"))
@@ -214,9 +217,9 @@ def test_no_spoken_reply_of_any_kind_says_demo_simulated_or_prototype():
 
 def test_the_one_time_spoken_note_is_still_there_when_asked_for():
     tools, *_ = make(announce_source=True)
-    first = ask(tools, "Lily", call="callA")
-    second = ask(tools, "Elva", call="callA")
-    other_call = ask(tools, "Lily", call="callB")
+    first = ask(tools, "Sienna", call="callA")
+    second = ask(tools, "Marisol", call="callA")
+    other_call = ask(tools, "Sienna", call="callB")
     assert first["speak"].startswith(SOURCE_NOTE) and other_call["speak"].startswith(SOURCE_NOTE)
     assert SOURCE_NOTE not in second["speak"], "said once per call, not on every answer"
     assert "demo calendar" in SOURCE_NOTE and "not the salon's real schedule" in SOURCE_NOTE
@@ -255,13 +258,13 @@ def test_the_demo_driver_cannot_create_anything_and_never_changes_the_dataset():
 
 def test_a_read_of_a_booking_never_builds_a_booking_service():
     tools, *_ = make()
-    for who in ("Lily", "Elva", "Amy", "Linda", "Pinny"):
+    for who in ("Sienna", "Marisol", "Imogen", "Rowan", "Tamsin"):
         ask(tools, who)  # build_demo's service factory raises AssertionError if anything ever tries to build a writer
 
 
 def test_the_endpoint_over_signed_http_semantics_returns_the_label():
     _tools, endpoint, *_ = make()
-    body = json.dumps({"call": {"call_id": "callH"}, "args": {"service_id": DEEP60, "date": TOMORROW.isoformat(), "time": "16:00", "staff": "Lily"}}).encode()
+    body = json.dumps({"call": {"call_id": "callH"}, "args": {"service_id": DEEP60, "date": TOMORROW.isoformat(), "time": "16:00", "staff": "Sienna"}}).encode()
     endpoint._now = lambda: TS  # the signature carries a timestamp: pin the clock to it
     status, payload = endpoint.handle("POST", "/tools/check_slot", signed(body), body)
     assert status == 200 and payload["status"] == "available" and payload["source"] == SOURCE_LABEL
@@ -270,10 +273,10 @@ def test_the_endpoint_over_signed_http_semantics_returns_the_label():
 def test_the_log_line_for_a_demo_call_holds_no_arguments_and_no_names():
     lines = []
     _tools, endpoint, *_ = make(log=lines.append)
-    body = json.dumps({"call": {"call_id": "callL"}, "args": {"service_id": DEEP60, "date": TOMORROW.isoformat(), "time": "16:00", "staff": "Lily"}}).encode()
+    body = json.dumps({"call": {"call_id": "callL"}, "args": {"service_id": DEEP60, "date": TOMORROW.isoformat(), "time": "16:00", "staff": "Sienna"}}).encode()
     endpoint._now = lambda: TS
     endpoint.handle("POST", "/tools/check_slot", signed(body), body)
-    assert lines and all("Lily" not in l and "callL" not in l and DEEP60 not in l for l in lines)
+    assert lines and all("Sienna" not in l and "callL" not in l and DEEP60 not in l for l in lines)
 
 
 # ---------------------------------------------------------------- the driver and the demo wiring
@@ -299,7 +302,7 @@ def test_the_driver_follows_the_dataset_rather_than_the_real_calendar_date():
     assert driver.verify_business() == "9000001"
     assert driver.last_roster is None
     driver.read_day(TOMORROW)
-    assert len(driver.last_roster.members) == len(ROSTER) and {m.name for m in driver.last_roster.members if m.checked} >= {"Lily Xie", "Elva"}
+    assert len(driver.last_roster.members) == len(ROSTER) and {m.name for m in driver.last_roster.members if m.checked} >= {"Sienna", "Marisol"}
 
 
 def test_tomorrow_means_the_day_after_the_demo_date_not_the_real_date():
@@ -324,7 +327,7 @@ def test_measured_tool_latency_is_tiny_and_says_nothing_about_a_spoken_call(caps
     tools, *_ = make()
     began = time.perf_counter()
     for i in range(50):
-        ask(tools, "Lily", call=f"lat{i}")
+        ask(tools, "Sienna", call=f"lat{i}")
     per_call_ms = (time.perf_counter() - began) * 1000 / 50
     with capsys.disabled():
         print(f"\nDEMO tool latency (dataset driver, no browser, no network): {per_call_ms:.2f} ms per check_slot. NOT spoken-call latency; the 2-3 s requirement is unproven.")

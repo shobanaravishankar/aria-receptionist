@@ -103,11 +103,11 @@ def test_the_real_reader_reads_the_page_exactly_as_the_dataset_answers(driver, d
 
 def test_the_scripted_day_read_from_the_page_has_every_pinned_case(driver):
     by_name = {sd.staff: sd for sd in driver.read_day(TOMORROW).staff_days}
-    assert "Amy Wu" not in by_name, "off duty"
-    assert by_name["Fiona Tsao"].working is None, "hours not shown: unknown"
-    assert [(a.interval.start.hour, a.interval.start.minute) for a in by_name["Elva"].appointments] == [(10, 0), (15, 45)]
-    assert [(w.start.hour, w.end.hour) for w in by_name["Linda Chen"].working] == [(10, 15), (17, 20)], "her break splits the day"
-    assert by_name["Lily Xie"].staff_id == "910006" and all(sd.staff_id.startswith("9100") for sd in by_name.values())
+    assert "Imogen" not in by_name, "off duty"
+    assert by_name["Delphine"].working is None, "hours not shown: unknown"
+    assert [(a.interval.start.hour, a.interval.start.minute) for a in by_name["Marisol"].appointments] == [(10, 0), (15, 45)]
+    assert [(w.start.hour, w.end.hour) for w in by_name["Rowan"].working] == [(10, 15), (17, 20)], "her break splits the day"
+    assert by_name["Sienna"].staff_id == "910006" and all(sd.staff_id.startswith("9100") for sd in by_name.values())
 
 
 def test_a_date_outside_the_dataset_is_refused_by_the_reader_just_as_by_the_driver(driver, dataset):
@@ -229,7 +229,7 @@ def test_working_hours_are_shaded_outside_each_persons_day(driver):
       const col = [...document.querySelectorAll('[class*="_calendarGrid--overlay_"] [class*="_calendarColumn_"]')].find(c => c.getAttribute('data-resource') === '910004');
       const top = col.getBoundingClientRect().y;
       return [...col.querySelectorAll('[data-testid="non-working-event"]')].map(e => { const r = e.getBoundingClientRect(); return [Math.round(r.y - top), Math.round(r.height)]; }); }""")
-    # Anna Zheng works 11:00 AM - 7:00 PM, the grid is 9:00 AM - 9:00 PM: 9-11 and 7-9 are shaded (80 px an hour, minus the 1 px border)
+    # Priya works 11:00 AM - 7:00 PM, the grid is 9:00 AM - 9:00 PM: 9-11 and 7-9 are shaded (80 px an hour, minus the 1 px border)
     assert [0, 159] in shading and [800, 159] in shading
 
 
@@ -280,11 +280,11 @@ def test_the_voice_answers_are_the_same_whether_they_come_from_the_dataset_or_fr
     (page_endpoint, *_) = build_demo("k", today=TODAY, real_now=real_now, dataset=dataset, driver=driver)
     via_page = page_endpoint._tools
     questions = [
-        ("Lily", "16:00", "massage-deep-tissue-massage-60"), ("Elva", "16:00", "massage-deep-tissue-massage-60"), ("Amy", "16:00", "massage-deep-tissue-massage-60"),
-        ("Pinny", "16:00", "massage-deep-tissue-massage-60"), ("Pinny", "16:00", "massage-deep-tissue-massage-90"), ("Pinny", "16:00", "massage-deep-tissue-massage-30"),
-        ("Linda", "16:00", "massage-deep-tissue-massage-60"), ("Fiona", "16:00", "facial-signature-facial-60"), ("Tinny", "16:00", "massage-deep-tissue-massage-60"),
-        (None, "16:00", "massage-deep-tissue-massage-60"), ("Lily", "20:30", "massage-deep-tissue-massage-60"), ("Lily", "19:30", "massage-deep-tissue-massage-60"),
-        ("Elva", "16:00", "facial-signature-facial-60"),
+        ("Sienna", "16:00", "massage-deep-tissue-massage-60"), ("Marisol", "16:00", "massage-deep-tissue-massage-60"), ("Imogen", "16:00", "massage-deep-tissue-massage-60"),
+        ("Tamsin", "16:00", "massage-deep-tissue-massage-60"), ("Tamsin", "16:00", "massage-deep-tissue-massage-90"), ("Tamsin", "16:00", "massage-deep-tissue-massage-30"),
+        ("Rowan", "16:00", "massage-deep-tissue-massage-60"), ("Delphine", "16:00", "facial-signature-facial-60"), ("Tamzin", "16:00", "massage-deep-tissue-massage-60"),
+        (None, "16:00", "massage-deep-tissue-massage-60"), ("Sienna", "20:30", "massage-deep-tissue-massage-60"), ("Sienna", "19:30", "massage-deep-tissue-massage-60"),
+        ("Marisol", "16:00", "facial-signature-facial-60"),
     ]
     for staff, at, service in questions:
         args = {"service_id": service, "date": TOMORROW.isoformat(), "time": at, **({"staff": staff} if staff else {})}

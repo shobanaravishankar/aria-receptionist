@@ -92,10 +92,9 @@ def _variant_core(v) -> str:
     return text + (f" (was ${v.original_price_usd})" if v.original_price_usd is not None else "")
 
 
-def render_knowledge(catalog: Catalog = DEFAULT_CATALOG, registry: BookableRegistry | None = None, mode: str = "booking") -> str:
-    if mode not in MODES:
-        raise ValueError(f"mode must be one of {MODES}")
-    lines = [
+def website_intro() -> list[str]:
+    """The salon facts block for the website knowledge (the earlier salon). The services follow it."""
+    return [
         "## What you may say about the salon (the website's own information)",
         "",
         f"Source: the salon's official website, read on {SITE['retrieved_on']}. Prices and lengths are the website's LISTED ones. "
@@ -106,9 +105,34 @@ def render_knowledge(catalog: Catalog = DEFAULT_CATALOG, registry: BookableRegis
         "availability comes only from the calendar tools.",
         "- Not published on the website, so you do not have it: " + "; ".join(NOT_PUBLISHED) + ".",
         "- Retail products: the website lists none, so you cannot describe, price or promise any product or its stock.",
-        "",
-        "### Services and listed prices",
     ]
+
+
+def showcase_intro(showcase) -> list[str]:
+    """The salon facts block for the generic showcase: a name, example hours, and explicit statements of what is NOT configured (no address, no phone) so none is invented."""
+    phone = (f"- Phone: {showcase.contact_phone}. Give it when a caller needs the salon directly, and never say a transfer, callback or message has happened."
+             if showcase.contact_phone else
+             "- Phone: no number is configured yet. Do not give, guess or invent one; say you do not have a number to give.")
+    return [
+        "## What you may say about the salon (the prototype menu's information)",
+        "",
+        f"Source: the {showcase.name} prototype menu. Its prices, lengths and hours are example data that can be edited. Prices and lengths are the menu's LISTED ones. "
+        "Use them for questions about services, lengths and prices. If a caller asks about something that is not below, say you do not have that information.",
+        "",
+        f"- Salon: {showcase.name}.",
+        "- Address and location: none is configured. Do not state, guess or look up an address, town or directions; say you do not have one to give.",
+        phone,
+        f"- Opening hours (example data): {showcase.example_hours}. These are information only. NEVER use them to say whether an appointment is or is not available; "
+        "availability comes only from the calendar tools.",
+        "- Not on the menu, so you do not have it: " + "; ".join(NOT_PUBLISHED) + ".",
+        "- Retail products: the menu lists none, so you cannot describe, price or promise any product or its stock.",
+    ]
+
+
+def render_knowledge(catalog: Catalog = DEFAULT_CATALOG, registry: BookableRegistry | None = None, mode: str = "booking", intro: list[str] | None = None) -> str:
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {MODES}")
+    lines = list(intro if intro is not None else website_intro()) + ["", "### Services and listed prices"]
     for category, title in CATEGORY_TITLES.items():
         families: "OrderedDict[str, list]" = OrderedDict()
         for item in catalog.items:
@@ -153,10 +177,11 @@ def apply_mode(template: str, mode: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", template)
 
 
-def build_prompt(template: str, catalog: Catalog = DEFAULT_CATALOG, registry: BookableRegistry | None = None, mode: str = "booking") -> str:
+def build_prompt(template: str, catalog: Catalog = DEFAULT_CATALOG, registry: BookableRegistry | None = None, mode: str = "booking",
+                 intro: list[str] | None = None) -> str:
     if template.count(MARKER) != 1:
         raise ValueError("the prompt template must contain the knowledge marker exactly once")
-    return apply_mode(template, mode).replace(MARKER, render_knowledge(catalog, registry, mode).rstrip("\n"))
+    return apply_mode(template, mode).replace(MARKER, render_knowledge(catalog, registry, mode, intro).rstrip("\n"))
 
 
 # Retell gives up on a tool after this long. Above the server's worst case (lock wait + read deadline, see voice/launch.py), far below 90 s.
@@ -207,17 +232,44 @@ def opening_section(salon_name: str) -> str:
 SALON_NAME_ON_WEBSITE = "Glamour Day Spa"  # the exact salon name in the website knowledge and the template; service names such as "Glamour Full Set" do not contain it
 
 
-def build_demo_prompt(template: str, catalog: Catalog = DEFAULT_CATALOG, salon_name: str | None = None) -> str:
-    """The availability-only prompt, over the DEMO registry, with the section that says how to treat the invented calendar.
+DEMO_HEADER = """# Aria on the {name} showcase: agent prompt (GENERATED)
 
-    The name Aria SPEAKS is ``salon_name`` (default ``demo.SALON_NAME``), applied here at rendering time to the agent's own part of the prompt (from '## Who you are')
-    only: the services, lengths, prices, hours and address are the website knowledge unchanged, and so is the note above the prompt about the original public agent.
+> Generated by `python -m aria_booking.catalog.render --write` from the shared conversation template and the {name} showcase menu (`aria_booking/showcase`). Do not edit it
+> by hand: a test fails if it differs. It has NO booking function: it only checks availability on a prototype calendar with invented data. Only the text from
+> the first section heading below onward is sent to the agent.
+
+"""
+
+# The shared template speaks of "the website"; in the showcase the source of services, lengths and prices is the prototype MENU. Each phrase must occur exactly once.
+DEMO_WORDING = (
+    ("salon's website information", "salon's menu information"),
+    ("The website's opening hours are information only", "The example opening hours are information only"),
+    ("the listed website prices", "the listed menu prices"),
+    ("what the website says a treatment is for", "what the menu says a treatment is for"),
+)
+TEMPLATE_EXAMPLE_TECHNICIAN = "Lily"  # the first name the shared template uses in its two example sentences; the demo shows a fictional roster name there instead
+
+
+def build_demo_prompt(template: str, catalog: Catalog | None = None, salon_name: str | None = None, showcase=None) -> str:
+    """The availability-only prompt for the Serenity showcase: the shared conversation rules, plus knowledge rendered from the SHOWCASE source.
+
+    The salon facts (name, example hours, no address, phone only when configured) and the services (the independently written Serenity menu) come from the showcase,
+    never from the earlier salon's website knowledge. The shared template's identity line and its two example technician names are adapted at rendering time, and
+    the result is checked against the one-way list of old identifiers: a leak stops the build. The note above '## Who you are' is not part of the agent prompt.
     """
-    from ..demo import SALON_NAME
     from ..demo.dataset import demo_registry
+    from ..showcase import SHOWCASE
+    from ..showcase.catalog import SHOWCASE_CATALOG
+    from ..showcase.leaks import find_leaks
+    from ..showcase.roster import name_of
 
-    name = salon_name or SALON_NAME
-    text = build_prompt(template, catalog=catalog, registry=demo_registry(), mode="availability")
+    from dataclasses import replace
+
+    showcase = showcase or SHOWCASE
+    if salon_name:
+        showcase = replace(showcase, name=salon_name)  # the facts block and the opening both follow the one name
+    name = showcase.name
+    text = build_prompt(template, catalog=catalog or SHOWCASE_CATALOG, registry=demo_registry(), mode="availability", intro=showcase_intro(showcase))
     heading = "## While the calendar is being checked"
     if text.count(heading) != 1:
         raise ValueError("the prompt template must contain the 'While the calendar is being checked' section exactly once")
@@ -230,7 +282,21 @@ def build_demo_prompt(template: str, catalog: Catalog = DEFAULT_CATALOG, salon_n
     if text.count(marker) != 1:
         raise ValueError("the prompt template must contain the 'Who you are' section exactly once")
     head, body = text.split(marker)
-    return head + marker + body.replace(SALON_NAME_ON_WEBSITE, name)
+    body = body.replace(SALON_NAME_ON_WEBSITE, name)
+    # the shared template illustrates "stated conditions" with a claim from the earlier salon's website; the showcase menu makes no such claim
+    legacy = " (for example, that prenatal massage is offered in the second\n  and third trimesters)"
+    if body.count(legacy) != 1:
+        raise ValueError("the shared template's legacy 'stated conditions' example changed: update the demo prompt adaptation")
+    body = body.replace(legacy, ", if the menu lists any")
+    for old, new in DEMO_WORDING:
+        if body.count(old) != 1:
+            raise ValueError(f"the shared template's wording changed ({old!r}): update the demo prompt adaptation")
+        body = body.replace(old, new)
+    body = re.sub(rf"\b{TEMPLATE_EXAMPLE_TECHNICIAN}\b", name_of("910006"), body)
+    leaks = find_leaks(body, allowed=(showcase.contact_phone,) if showcase.contact_phone else ())
+    if leaks:
+        raise ValueError("the demo prompt still contains the earlier salon's identifiers: " + ", ".join(leaks))
+    return DEMO_HEADER.format(name=name) + marker + body
 
 
 def main(argv: list[str]) -> int:

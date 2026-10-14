@@ -245,7 +245,7 @@ def test_demo_screenshots_rejects_a_bad_date():
 
 def test_demo_day_prints_the_scripted_day_and_refuses_what_is_not_covered():
     code, text = run(["demo-day", "--today", "2026-10-13"])
-    assert code == cli.EXIT_OK and "2026-10-14 (Wednesday)" in text and "Lily Xie" in text and re.search(r"not working: .*Amy Wu", text)
+    assert code == cli.EXIT_OK and "2026-10-14 (Wednesday)" in text and "Sienna" in text and re.search(r"not working: .*Imogen", text)
     assert run(["demo-day", "--today", "2026-10-13", "--date", "2026-10-15"])[0] == cli.EXIT_OK
     code, text = run(["demo-day", "--today", "2026-10-13", "--date", "2027-01-01"])
     assert code == cli.EXIT_REFUSED and "covers" in text

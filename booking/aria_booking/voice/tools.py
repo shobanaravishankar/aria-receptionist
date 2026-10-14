@@ -673,7 +673,7 @@ class VoiceTools:
         who = f" {join_names(technicians)} {'does' if len(technicians) == 1 else 'do'} this service." if technicians else ""  # the source is in the metadata, not spoken
         return _response(
             "service_info",
-            f"{item.name}: {length}, {spoken_price(item.price_usd)} as listed on our website ({item.retrieved_on}). {item.description} {booking}{who}{note}",
+            f"{item.name}: {length}, {spoken_price(item.price_usd)} {self.catalog.listed_as(item)}. {item.description} {booking}{who}{note}",
             item=item.to_public(), bookable=can_book, **({"bookable_service_id": mapped.service_id} if can_book else {}),
             **({"technicians": technicians, "technicians_source": self._source_label} if technicians else {}),
         )

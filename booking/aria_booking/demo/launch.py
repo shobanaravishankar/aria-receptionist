@@ -12,8 +12,9 @@ from typing import Any, Callable, Optional
 from zoneinfo import ZoneInfo
 
 from ..config import Config
+from ..showcase.catalog import SHOWCASE_CATALOG
 from ..voice.launch import build_endpoint
-from . import DEMO_BUSINESS_ID
+from . import DEMO_BUSINESS_ID, SPA_TIMEZONE
 from .dataset import DemoDataset
 from .driver import DemoCalendarDriver
 
@@ -38,7 +39,7 @@ def build_demo(
     api_key: str,
     *,
     today: Optional[date] = None,
-    timezone: str = "America/New_York",
+    timezone: str = SPA_TIMEZONE,
     bearer_token: Optional[str] = None,
     log: Callable[[str], None] = lambda message: None,
     real_now: Optional[Callable[[], datetime]] = None,
@@ -59,6 +60,7 @@ def build_demo(
 
     tool_kwargs.setdefault("read_cache_seconds", 0.0)  # the demo is instant and its answers should never carry an 'as of' age
     tool_kwargs.setdefault("providers", dataset.providers)  # who does a service, from the demo's own synthetic roster
+    tool_kwargs.setdefault("catalog", SHOWCASE_CATALOG)  # the Serenity menu: lookups, resolution and prices come from it, never the earlier salon's website knowledge
     endpoint = build_endpoint(
         cfg, driver, no_writer, clock, api_key, booking_approved=False, bearer_token=bearer_token, registry=dataset.registry, log=log,
         source_label=SOURCE_LABEL, source_note=SOURCE_NOTE if announce_source else None, **tool_kwargs,

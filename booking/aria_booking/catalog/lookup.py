@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from .models import CatalogItem, Resolution
 from .website_data import ALL_ITEMS, duration_label, slug
@@ -104,8 +104,10 @@ def descriptive_label(item: CatalogItem) -> str:
 
 
 class Catalog:
-    def __init__(self, items: Iterable[CatalogItem] = ALL_ITEMS):
+    def __init__(self, items: Iterable[CatalogItem] = ALL_ITEMS, listed_as: Optional[Callable[[CatalogItem], str]] = None):
         self.items: tuple[CatalogItem, ...] = tuple(items)
+        # How a price and length are described aloud. The website catalogue says where it read them and when; a prototype menu says it is just the menu.
+        self.listed_as: Callable[[CatalogItem], str] = listed_as or (lambda item: f"as listed on our website ({item.retrieved_on})")
         self.by_id = {i.item_id: i for i in self.items}
         if len(self.by_id) != len(self.items):
             raise ValueError("duplicate catalogue ids")

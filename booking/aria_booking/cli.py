@@ -414,7 +414,7 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
     """The demo: an invented calendar page plus the read-only voice tools over the SAME dataset. No Booksy, no booking route, no fall-back."""
     import threading
 
-    from .demo import DEMO_BUSINESS_ID, DEMO_LABEL
+    from .demo import DEMO_BUSINESS_ID, DEMO_LABEL, SPA_TIMEZONE
     from .demo.launch import build_demo, demo_clock
     from .demo.dataset import DemoDataset
     from .demo.server import calendar_url, make_site
@@ -433,7 +433,7 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
     except ValueError:
         out("refused: --today must look like 2026-10-14.")
         return EXIT_REFUSED
-    tz = ZoneInfo(cfg.timezone)
+    tz = ZoneInfo(SPA_TIMEZONE)  # the demo's one timezone: the same zone the greeting and the session clock use
     clock = demo_clock(today, tz)
     dataset = DemoDataset(clock().date())
     if today is not None and today != datetime.now(tz).date():
@@ -455,7 +455,7 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
                 out("refused: the demo page did not identify itself as the demo business.")
                 return EXIT_REFUSED
         endpoint, driver, dataset = build_demo(
-            key, today=today, timezone=cfg.timezone, bearer_token=tool_token or None,
+            key, today=today, timezone=SPA_TIMEZONE, bearer_token=tool_token or None,
             log=lambda message: out("  " + message), driver=driver, dataset=dataset,
         )
         server = retell_http.make_http_server(endpoint, args.port)
@@ -490,6 +490,7 @@ def _demo_visual(args, cfg: Config, out) -> int:
     import tempfile
     from pathlib import Path
 
+    from .demo import SPA_TIMEZONE
     from .demo.dataset import DemoDataset
     from .demo.launch import demo_clock
     from .demo.screenshots import capture
@@ -500,7 +501,7 @@ def _demo_visual(args, cfg: Config, out) -> int:
     except ValueError:
         out("refused: --today must look like 2026-10-14.")
         return EXIT_REFUSED
-    dataset = DemoDataset(demo_clock(today, ZoneInfo(cfg.timezone))().date())
+    dataset = DemoDataset(demo_clock(today, ZoneInfo(SPA_TIMEZONE))().date())
     if args.command == "demo-day":
         from .demo.dataset import NotCovered
 
