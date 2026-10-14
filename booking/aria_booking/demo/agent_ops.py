@@ -380,6 +380,7 @@ def preflight(config: OperatorConfig, secrets: Any, out: Callable[[str], None], 
         ("check_slot", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": "Lily"}),
         ("check_slot", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": "Elva"}),
         ("check_slot", {"service_id": "facial-signature-facial-60", "date": tomorrow, "time": "16:00"}),
+        ("find_alternatives", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": "Elva"}),
     ]
     records = []
     for index, (name, args) in enumerate(cases):
@@ -395,8 +396,13 @@ def preflight(config: OperatorConfig, secrets: Any, out: Callable[[str], None], 
         records.append({"name": name, "args": args, "seconds": round(time.monotonic() - began, 3), "result": result})
     problems = []
     for record in records:
-        if record["name"] == "check_slot" and record["result"].get("source") != "demo_calendar":
-            problems.append("a check_slot reply does not say it is the demo calendar")
+        if record["name"] != "lookup_service" and record["result"].get("source") != "demo_calendar":
+            problems.append(f"a {record['name']} reply does not say it is the demo calendar")
+    options = records[4]["result"].get("options")
+    if records[4]["result"].get("status") != "alternatives" or not isinstance(options, list) or not options:
+        problems.append("find_alternatives offered no alternatives for the busy 4 PM slot")
+    elif any(str(option.get("start", "")).startswith(f"{tomorrow}T16:00") for option in options if isinstance(option, dict)):
+        problems.append("find_alternatives offered the very slot that is occupied")
     lily, elva = records[1]["result"], records[2]["result"]
     if lily.get("status") != "available" or elva.get("unavailable_reason") != "occupied":
         problems.append("the scripted examples (Lily free at 4, Elva booked at 4) did not hold: run the demo server WITHOUT --today so 'tomorrow' is the real tomorrow")

@@ -449,10 +449,76 @@ def test_preflight_passes_against_the_real_demo_server_and_records_tool_latency(
     assert agent_ops.preflight(config(tmp_path), FakeSecrets(), lines.append, base_url=base) == 0
     saved = State(tmp_path / "state").read("preflight.json")
     assert saved["problems"] == [] and saved["unsigned_rejected"] and saved["booking_route_absent"] and saved["paid_call_started"] is False
-    assert [r["name"] for r in saved["records"]] == ["lookup_service", "check_slot", "check_slot", "check_slot"]
+    assert [r["name"] for r in saved["records"]] == ["lookup_service", "check_slot", "check_slot", "check_slot", "find_alternatives"], "all three functions are called"
     assert saved["records"][1]["result"]["status"] == "available" and saved["records"][2]["result"]["unavailable_reason"] == "occupied"
-    assert all(r["result"].get("source") == "demo_calendar" for r in saved["records"] if r["name"] == "check_slot") and all(r["seconds"] < 5 for r in saved["records"])
+    assert all(r["result"].get("source") == "demo_calendar" for r in saved["records"] if r["name"] != "lookup_service") and all(r["seconds"] < 5 for r in saved["records"])
+    alternatives = saved["records"][4]["result"]
+    assert alternatives["status"] == "alternatives" and alternatives["options"] and not any(o["start"].endswith("T16:00:00-04:00") and o["start"].startswith(saved["records"][4]["args"]["date"])
+                                                                                          for o in alternatives["options"])
     assert KEY not in "\n".join(lines) and TOKEN not in "\n".join(lines)
+
+
+class Scripted:
+    """A tool server stand-in that answers every signed call correctly unless told to answer one tool differently."""
+
+    def __init__(self, **override):
+        self.override, self.called = override, []
+
+    def __call__(self, request, timeout=None):
+        url = request.full_url
+        if request.get_header("X-retell-signature") is None:
+            raise urllib.error.HTTPError(url, 401 if url.endswith("check_slot") else 404, "x", {}, io.BytesIO(b""))
+        name, body = url.rsplit("/", 1)[1], json.loads(request.data)
+        self.called.append(name)
+        if name in self.override:
+            return FakeResponse(json.dumps(self.override[name]).encode())
+        if name == "lookup_service":
+            reply = {"status": "found", "ok": True, "speak": "x"}
+        elif name == "check_slot":
+            busy = body["args"].get("staff") == "Elva"
+            reply = {"status": "unavailable" if busy else "available", "ok": not busy, "speak": "x", "source": "demo_calendar", **({"unavailable_reason": "occupied"} if busy else {})}
+        else:
+            date = body["args"]["date"]
+            reply = {"status": "alternatives", "ok": False, "speak": "x", "source": "demo_calendar", "options": [{"start": f"{date}T17:15:00-04:00", "technician": "Elva"}]}
+        return FakeResponse(json.dumps(reply).encode())
+
+
+def _preflight_with(tmp_path, **override):
+    scripted = Scripted(**override)
+    code = agent_ops.preflight(config(tmp_path), FakeSecrets(), lambda m: None, base_url="http://127.0.0.1:1", opener=scripted)
+    return code, scripted
+
+
+def test_preflight_calls_all_three_functions_and_passes_when_each_answers_correctly(tmp_path):
+    code, scripted = _preflight_with(tmp_path)
+    assert code == 0 and set(scripted.called) == {"lookup_service", "check_slot", "find_alternatives"}
+
+
+@pytest.mark.parametrize("label,reply,expected", [
+    ("no alternatives", {"status": "alternatives", "ok": False, "speak": "x", "source": "demo_calendar", "options": []}, "offered no alternatives"),
+    ("a different status that still lists options", {"status": "unknown", "ok": False, "speak": "x", "source": "demo_calendar",
+                                                      "options": [{"start": "2030-01-01T17:15:00-04:00"}]}, "offered no alternatives"),
+    ("options that are not a list", {"status": "alternatives", "ok": False, "speak": "x", "source": "demo_calendar", "options": "soon"}, "offered no alternatives"),
+    ("the occupied slot itself", None, "the very slot that is occupied"),
+    ("an unlabelled reply", {"status": "alternatives", "ok": False, "speak": "x", "options": [{"start": "2030-01-01T17:15:00-04:00"}]}, "find_alternatives reply does not say it is the demo calendar"),
+])
+def test_preflight_refuses_a_broken_find_alternatives(tmp_path, label, reply, expected):
+    if reply is None:  # offers exactly the busy 4 PM slot on the asked day
+        class Echo(Scripted):
+            def __call__(self, request, timeout=None):
+                if request.get_header("X-retell-signature") is not None and request.full_url.endswith("find_alternatives"):
+                    date = json.loads(request.data)["args"]["date"]
+                    self.override["find_alternatives"] = {"status": "alternatives", "ok": False, "speak": "x", "source": "demo_calendar",
+                                                          "options": [{"start": f"{date}T16:00:00-04:00", "technician": "Elva"}]}
+                return super().__call__(request, timeout)
+
+        scripted = Echo()
+    else:
+        scripted = Scripted(find_alternatives=reply)
+    with pytest.raises(OperatorError) as info:
+        agent_ops.preflight(config(tmp_path), FakeSecrets(), lambda m: None, base_url="http://127.0.0.1:1", opener=scripted)
+    assert expected in str(info.value), label
+    assert State(tmp_path / "state").read("preflight.json")["problems"], "the failure is recorded, not only raised"
 
 
 def test_preflight_fails_when_the_signing_key_differs(tmp_path, tool_server):

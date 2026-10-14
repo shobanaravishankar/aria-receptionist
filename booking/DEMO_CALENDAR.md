@@ -67,8 +67,9 @@ tunnelling and calling are separate, deliberate steps you take yourself. Actions
 1. `python -m aria_booking demo-agent plan` — offline. Prints exactly what `create` would send (tool URLs, prompt hash, caps), which secrets and state exist,
    and nothing secret. No network.
 2. Serve the demo yourself, in a shell where `ARIA_RETELL_API_KEY` and `ARIA_RETELL_TOOL_TOKEN` hold the same values the operator uses: `python -m aria_booking demo-serve` (see above).
-3. `python -m aria_booking demo-agent preflight --base-url http://127.0.0.1:8787` — signed requests: the three tools answer from the demo calendar, an unsigned
-   request is 401, a booking route is 404. Records seconds per call (**tool latency, not spoken-call latency**). Run it again with the tunnel address (omit
+3. `python -m aria_booking demo-agent preflight --base-url http://127.0.0.1:8787` — signed requests call all three functions (`lookup_service`, `check_slot` three times, and
+   `find_alternatives` for the busy 4 PM slot, which must offer other times and never the occupied one); every availability reply must say it is the demo
+   calendar, an unsigned request is 401 and a booking route is 404. Records seconds per call (**tool latency, not spoken-call latency**). Run it again with the tunnel address (omit
    `--base-url`) once your tunnel exists.
 4. `python -m aria_booking demo-agent create --confirm-create` — **the one-time creation** of one Retell LLM and one agent named "Aria - Simulated Calendar
    Demo" (separate from any live agent). It refuses without the flag. A `*-create-pending.json` marker is written before each Retell call: if the outcome is
