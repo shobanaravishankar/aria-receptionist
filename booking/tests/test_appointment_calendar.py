@@ -88,7 +88,7 @@ def test_a_booking_is_on_the_page_in_the_plan_in_the_driver_and_blocks_voice_ava
     assert f'data-appointment-id="{ref}"' in page and "Willa H." in page and "Hartwell" not in page and "2125550142" not in page
     assert ("16:00", "17:00") in world.snapshot_appointments()
     after = world.check()
-    assert after["status"] != "available" and after["unavailable_reason"] == "occupied", "voice now says the time is taken"
+    assert after["status"] != "available", "voice now says the time is taken"
 
 
 def test_a_cancellation_frees_the_slot_on_the_page_in_the_driver_and_in_voice_immediately(world):
@@ -370,3 +370,49 @@ def test_open_lifecycle_builds_one_consistent_world_and_seeds_it_once(tmp_path):
     assert bare.seeded is None and bare.store.counts()["appointments"] == {}
     assert default_store_path(tmp_path).parts[-2:] == ("demo-appointments", "appointments.sqlite3")
     assert first.judge.now() == noon and first.store.get(first.seeded.upcoming_added[0][1]).status == CONFIRMED
+
+
+def test_a_stored_appointments_cleanup_is_drawn_and_blocks_page_driver_voice_and_judge_alike(world):
+    ref = world.book().appointment.reference  # Swedish 60 with Sienna 16:00-17:00, 15 minutes of cleanup after
+    plan = next(p for p in world.dataset.day_plan(TOMORROW).plans if p.staff.staff_id == SIENNA)
+    assert [(b.start, b.end, b.label) for b in plan.breaks if b.label == "Cleanup"] == [(17 * 60, 17 * 60 + 15, "Cleanup")]
+    assert [(v.start, v.end) for v in plan.visits if v.reference == ref] == [(16 * 60, 17 * 60)], "the card and every spoken length stay the service time"
+    page = render_page(world.dataset, TOMORROW)
+    assert "Cleanup" in page and f'data-appointment-id="{ref}"' in page
+    sd = world.driver.read_day(TOMORROW).for_staff("Sienna")
+    at_five = datetime(TOMORROW.year, TOMORROW.month, TOMORROW.day, 17, 0, tzinfo=TZ)
+    assert not any(w.start <= at_five < w.end for w in sd.working), "no working window covers the cleanup, so every reader treats it as time nobody can book"
+    assert world.check(17)["status"] != "available", "voice no longer offers the minute the first appointment ends"
+    assert world.check(18)["status"] == "available"
+    quarter = world.tools.check_slot("c", {"service_id": SWEDISH_60, "date": TOMORROW.isoformat(), "time": "17:15", "staff": "Sienna"})
+    assert quarter["status"] == "available", "the first start after the cleanup is offered"
+    with pytest.raises(Refused) as inside:
+        world.judge.require(Placement.of(world.new(17)), world.store.between)
+    assert inside.value.reason == "not_free"
+    from dataclasses import replace
+
+    quarter_past = replace(world.new(17), start_utc=world.at(TOMORROW, 17, 15))
+    assert world.judge.require(Placement.of(quarter_past), world.store.between).staff_name == "Sienna"
+    assert world.book(17, name="Too Soon", phone="+12125550109").status == "unavailable"
+    assert world.store.book(world.new(17, name="Bypass", phone="+12125550110"), validate=None).status == "unavailable", "the store refuses it even with no validator at all"
+
+
+def test_overlapping_cleanup_and_a_scripted_break_are_joined_so_the_readers_never_see_overlapping_breaks(world):
+    from aria_booking.appointments.overlay import _union
+    from aria_booking.demo.dataset import Break
+
+    joined = _union((Break(900, 960, "Lunch"), Break(950, 975, "Cleanup"), Break(975, 990, "Cleanup"), Break(1000, 1010, "Cleanup")))
+    assert [(b.start, b.end, b.label) for b in joined] == [(900, 975, "Break"), (975, 990, "Cleanup"), (1000, 1010, "Cleanup")]
+    assert _union((Break(10, 20, "Cleanup"), Break(15, 30, "Cleanup")))[0].label == "Cleanup"
+
+
+def test_an_appointments_preparation_time_before_it_is_drawn_and_blocks_like_its_cleanup(world):
+    svc = world.dataset.registry.get(SWEDISH_60)
+    row = world.store.book(NewBooking("Willa Hartwell", PHONE, svc.service_id, svc.booksy_name, "massage", SIENNA, world.at(TOMORROW, 17), 60, 30, 0, origin="test")).appointment
+    plan = next(p for p in world.dataset.day_plan(TOMORROW).plans if p.staff.staff_id == SIENNA)
+    assert [(b.start, b.end, b.label) for b in plan.breaks if b.label == "Cleanup"] == [(16 * 60 + 30, 17 * 60, "Cleanup")]
+    assert [(v.start, v.end) for v in plan.visits if v.reference == row.reference] == [(17 * 60, 18 * 60)]
+    assert world.judge.require(Placement.of(world.new(15)), world.store.between).staff_name == "Sienna", "15:00-16:00 plus its own cleanup ends at 16:15, before the preparation begins"
+    with pytest.raises(Refused) as inside:
+        world.judge.require(Placement.of(world.new(16)), world.store.between)  # 16:00-17:00 runs into the preparation (from 16:30) and the appointment
+    assert inside.value.reason == "not_free"

@@ -160,3 +160,11 @@ class Placement:
     @property
     def end_utc(self) -> int:
         return self.start_utc + self.duration_minutes * 60
+
+    @property
+    def blocked_start_utc(self) -> int:
+        return self.start_utc - self.buffer_before_minutes * 60
+
+    @property
+    def blocked_end_utc(self) -> int:
+        return self.end_utc + self.buffer_after_minutes * 60

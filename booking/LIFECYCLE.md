@@ -32,10 +32,17 @@ An opt-in mode of the demo in which Aria can **find, book, move and cancel appoi
 * **A phone number identifies a DEMO record; it is not authentication.** It is normalised without guessing digits, never spoken back, never logged, never returned. Names are used
   only to tell records that share a number apart.
 * **Latest completed visit.** The reviewed history design over the store: only COMPLETED visits count; cancelled, no-show, upcoming and unknown-completion visits are excluded and an
-  unknown newer visit blocks an older answer. **Convention (please review):** when the demo opens, a confirmed appointment whose time has passed is marked completed (the simulated salon
-  is assumed to have done it); that never notifies anyone.
-* **Buffers.** The cleanup time of the appointment being booked is checked at commit (as `check_slot` does). An existing appointment's own cleanup time is not blocked against a later start
-  (the generated visits and the real calendar do not show it either).
+  unknown newer visit blocks an older answer. **A past appointment that a caller created is never marked completed** (nobody observed its outcome), not by a restart or by the passing
+  of time: it stays unknown for history. Only the FICTIONAL SEED fixtures settle: an upcoming seed whose time has passed becomes a completed seed visit when the demo opens, as that
+  fixture's own story (never a notification).
+* **Cleanup time.** A stored appointment occupies its service PLUS the cleanup before and after it that the registry gives that service (persisted with the row). The calendar draws it as a
+  shaded "Cleanup" block next to the card (the same way a break is drawn), so the page, the page reader, the driver, `check_slot`, `find_alternatives` and the commit judge all refuse a start
+  inside it, and the store enforces the same occupancy itself (including a race between a start and the other appointment's cleanup). The card and every spoken length stay the service time
+  only; the explanation says "needs until 5:15 PM to get ready after the 4 PM appointment". The generated visits and the live calendar do not carry cleanup, so the live reader's meaning of
+  an appointment is unchanged.
+* **A repeated confirmed request.** A retried booking, move or cancel with the same call and token is answered from what actually happened: `already_booked`, `already_rescheduled`,
+  `already_cancelled`, or, if the appointment has changed since, `stale` with the current state. It never asks again, never approves a different change, and queues nothing twice. A move onto where
+  the appointment already is is `unchanged` with no read-back.
 * **No fees or policies.** No tool holds or states any cancellation fee, deadline or policy, and the prompt forbids inventing one. The cancel reason is optional and capped; cancelling never
   depends on choosing another time; if the caller says they are busy, Aria offers another day or time first.
 

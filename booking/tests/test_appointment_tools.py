@@ -188,14 +188,23 @@ def test_future_and_other_clients_visits_are_never_the_answer(env):
     assert env.call("last_completed_visit", {"service_category": "head spa", "phone": CEDRIC_PHONE}, "h4")["status"] == "no_completed_visit"
 
 
-def test_an_unrecorded_past_appointment_is_unknown_and_blocks_an_older_answer_until_settled(tmp_path):
+def test_an_unrecorded_past_appointment_is_unknown_and_keeps_blocking_an_older_answer_even_after_a_restart(tmp_path):
     e = Env(tmp_path, seed=True)
     svc = e.lc.dataset.registry.get(SWEDISH_60)
-    e.lc.store.book(NewBooking(WILLA, "+12125550142", svc.service_id, svc.booksy_name, "massage", "910006", to_epoch(e.now - timedelta(days=1)), 60, 0, 15, origin="test"))
+    row = e.lc.store.book(NewBooking(WILLA, "+12125550142", svc.service_id, svc.booksy_name, "massage", "910006", to_epoch(e.now - timedelta(days=1)), 60, 0, 15, origin="test")).appointment
     blocked = e.call("last_completed_visit", {"service_category": "massage", "phone": WILLA_PHONE, "name": WILLA})
     assert blocked["status"] == "unable_to_confirm" and blocked["reason"] == "status_uncertain"
-    assert e.lc.store.settle_past() == 1
-    assert e.call("last_completed_visit", {"service_category": "massage", "phone": WILLA_PHONE, "name": WILLA})["status"] == "found"
+    later = datetime(2026, 10, 14, 10, tzinfo=TZ)
+    reopened = open_lifecycle(tmp_path / "env.sqlite3", today=later.date(), real_now=lambda: later)  # the demo is opened again the next day
+    assert reopened.store.get(row.reference).status == CONFIRMED and reopened.store.get(row.reference).version == 1, "nobody observed it, so it is not invented as completed"
+    again = Env.__new__(Env)
+    again.now, again.lc = later, reopened
+    again.log = []
+    again.endpoint, again.driver = build_lifecycle_demo(KEY, reopened, log=again.log.append)
+    again.tools = again.endpoint._tools
+    still = again.call("last_completed_visit", {"service_category": "massage", "phone": WILLA_PHONE, "name": WILLA})
+    assert still["status"] == "unable_to_confirm" and still["reason"] == "status_uncertain"
+    assert [e["kind"] for e in reopened.store.events(row.reference)] == ["booked"] and reopened.store.outbox_rows() == []
 
 
 # ---------------------------------------------------------------- BOOK
@@ -541,10 +550,9 @@ def test_a_move_to_the_same_time_and_a_nudge_over_its_own_old_time(env):
     booked = env.book(16, name=WILLA, phone=WILLA_PHONE)
     ref = booked["appointment"]["reference"]
     args = {"reference": ref, "phone": WILLA_PHONE, "name": WILLA, "date": TOMORROW.isoformat(), "time": "16:00", "staff": "Sienna"}
-    first = env.call("reschedule_appointment", args)
-    assert first["status"] == "confirmation_required", first
-    same = env.call("reschedule_appointment", {**args, "confirmed": True, "confirmation_token": first["confirmation_token"]})
-    assert same["status"] == "unchanged" and env.lc.store.get(ref).version == 1 and [r["kind"] for r in env.lc.store.outbox_rows()] == ["booked"]
+    same = env.call("reschedule_appointment", args)
+    assert same["status"] == "unchanged" and same["ok"] is True and "confirmation_token" not in same, "already there: nothing to confirm"
+    assert env.lc.store.get(ref).version == 1 and [r["kind"] for r in env.lc.store.outbox_rows()] == ["booked"]
     nudge = env.confirm("reschedule_appointment", {**args, "time": "16:15"}, call_id="n")  # 16:15 overlaps its own old 16:00: not a conflict
     assert nudge["status"] == "rescheduled" and env.lc.store.get(ref).start_utc == to_epoch(datetime(2026, 10, 14, 16, 15, tzinfo=TZ))
 
@@ -618,13 +626,113 @@ def test_past_cancelled_and_other_clients_appointments_are_never_listed(tmp_path
     assert all(datetime.fromisoformat(a["start"]) > e.now for a in listed)
 
 
-def test_opening_the_demo_settles_past_appointments_as_completed_once_and_never_notifies(tmp_path):
+def test_opening_the_demo_settles_only_the_fictional_seed_fixtures_and_never_a_callers_booking_and_never_notifies(tmp_path):
     first = Env(tmp_path)
     svc = first.lc.dataset.registry.get(SWEDISH_60)
-    row = first.lc.store.book(NewBooking(WILLA, "+12125550142", svc.service_id, svc.booksy_name, "massage", "910006", to_epoch(first.now) + 7200, 60, 0, 15, origin="test"), outbox=lambda s, p: None).appointment
-    later = Env.__new__(Env)  # the demo is opened again the next day
-    later.now = first.now + timedelta(days=1)
-    later.lc = open_lifecycle(tmp_path / "env.sqlite3", today=TODAY + timedelta(days=1), real_now=lambda: later.now)
-    assert later.lc.store.get(row.reference).status == COMPLETED and later.lc.store.get(row.reference).version == 2
-    assert later.lc.store.outbox_rows() == [] and [e["kind"] for e in later.lc.store.events(row.reference)] == ["booked", "settled"]
-    assert later.lc.store.settle_past() == 0
+    caller = first.lc.store.book(NewBooking(WILLA, "+12125550142", svc.service_id, svc.booksy_name, "massage", "910006", to_epoch(first.now) + 7200, 60, 0, 15, origin="voice"), outbox=lambda s, p: None).appointment
+    seeded = [r for r in first.lc.store.for_client(1, (CONFIRMED,)) if r.origin == "seed"]
+    assert seeded, "the fixtures have upcoming rows"
+    later_day = TODAY + timedelta(days=30)
+    later = datetime(later_day.year, later_day.month, later_day.day, 10, tzinfo=TZ)
+    reopened = open_lifecycle(tmp_path / "env.sqlite3", today=later_day, real_now=lambda: later)
+    for row in seeded:
+        assert reopened.store.get(row.reference).status == COMPLETED, "an upcoming fixture whose time has passed became a completed fixture visit"
+        assert reopened.store.events(row.reference)[-1] == {"kind": "settled", "detail": {"start": row.start_utc, "as": "completed", "fixture": True}, "at": reopened.store.events(row.reference)[-1]["at"]}
+    assert reopened.store.get(caller.reference).status == CONFIRMED, "a caller's own booking is never settled"
+    assert reopened.store.outbox_rows() == [] and reopened.store.settle_past_seeds() == 0
+
+
+
+
+# ---------------------------------------------------------------- LC1: an existing appointment's cleanup is time nobody can take
+
+
+def test_the_minute_an_appointment_ends_is_not_offered_or_booked_while_its_cleanup_runs(env):
+    ref = env.book(16)["appointment"]["reference"]  # Swedish 60 with Sienna 4-5 PM, 15 minutes of cleanup after
+    inside = env.call("check_slot", {"service_id": SWEDISH_60, "date": TOMORROW.isoformat(), "time": "17:00", "staff": "Sienna"})
+    assert inside["status"] != "available" and inside["unavailable_reason"] == "on_break"
+    assert inside["speak"].startswith("Sienna needs until 5:15 PM to get ready after the 4 PM appointment, so 5 PM isn't available.") and inside["ready_at"] == "17:15"
+    assert env.call("check_slot", {"service_id": SWEDISH_60, "date": TOMORROW.isoformat(), "time": "17:15", "staff": "Sienna"})["status"] == "available"
+    refused = env.call("book_appointment", env.book_args(17, name="Second Person", phone="+1 212 555 0189"))
+    assert refused["status"] != "confirmation_required" and "confirmation_token" not in refused and len(env.shown()) == 1, "never even read back"
+    alternatives = env.call("find_alternatives", {"service_id": SWEDISH_60, "date": TOMORROW.isoformat(), "time": "17:00", "staff": "Sienna"})
+    starts = [o["start"] for o in alternatives["options"]]
+    assert starts and not any(s.startswith(f"{TOMORROW.isoformat()}T17:00") or s.startswith(f"{TOMORROW.isoformat()}T17:05") for s in starts), starts
+    assert f"{TOMORROW.isoformat()}T17:15:00-04:00" in starts, "the first start after the cleanup is what is offered instead"
+    assert env.lc.store.get(ref).status == CONFIRMED
+
+
+def test_a_start_that_would_run_into_an_existing_appointment_or_its_cleanup_is_said_as_that(env):
+    env.book(16)
+    into = env.call("check_slot", {"service_id": SWEDISH_60, "date": TOMORROW.isoformat(), "time": "15:30", "staff": "Sienna"})
+    assert into["unavailable_reason"] == "conflicts_next" and "would run into Sienna's next appointment at 4 PM" in into["speak"]
+    no_time = env.call("check_slot", {"service_id": SWEDISH_60, "date": TOMORROW.isoformat(), "time": "15:00", "staff": "Sienna"})
+    assert no_time["unavailable_reason"] == "conflicts_next" and "wouldn't be time for the 15 minutes of cleanup after it" in no_time["speak"]
+    assert env.call("check_slot", {"service_id": SWEDISH_60, "date": TOMORROW.isoformat(), "time": "14:45", "staff": "Sienna"})["status"] == "available", "its own cleanup ends exactly as 4 PM begins"
+    taken = env.call("check_slot", {"service_id": SWEDISH_60, "date": TOMORROW.isoformat(), "time": "16:00", "staff": "Sienna"})
+    assert taken["unavailable_reason"] == "occupied" and taken["speak"].startswith("Sienna is already booked at 4 PM")
+
+
+def test_a_move_into_another_appointments_cleanup_is_refused_and_one_into_its_own_old_cleanup_is_not(env):
+    env.book(16)
+    mine = env.book(18, name="Mover", phone="+1 212 555 0190", call_id="mover")["appointment"]["reference"]
+    into_cleanup = env.call("reschedule_appointment", {"reference": mine, "phone": "+1 212 555 0190", "date": TOMORROW.isoformat(), "time": "17:00", "staff": "Sienna"})
+    assert into_cleanup["status"] in ("alternatives", "no_alternatives") and into_cleanup["ok"] is False and "get ready" in into_cleanup["speak"]
+    assert env.lc.store.get(mine).start_utc == to_epoch(datetime(2026, 10, 14, 18, tzinfo=TZ))
+    later = env.confirm("reschedule_appointment", {"reference": mine, "phone": "+1 212 555 0190", "date": TOMORROW.isoformat(), "time": "18:15", "staff": "Sienna"}, call_id="mover")
+    assert later["status"] == "rescheduled", "its own cleanup is never in its own way"
+
+
+# ---------------------------------------------------------------- LC3: a repeated confirmed move is answered from what actually happened
+
+
+def _moved(env):
+    booked = env.book(16, name=WILLA, phone=WILLA_PHONE)
+    args = {"reference": booked["appointment"]["reference"], "phone": WILLA_PHONE, "name": WILLA, "date": TOMORROW.isoformat(), "time": "18:00", "staff": "Sienna"}
+    read_back = env.call("reschedule_appointment", args, "move")
+    confirm = {**args, "confirmed": True, "confirmation_token": read_back["confirmation_token"]}
+    assert env.call("reschedule_appointment", confirm, "move")["status"] == "rescheduled"
+    return args["reference"], args, confirm
+
+
+def test_the_same_confirmed_move_repeated_is_reported_as_already_done_with_one_event_and_one_alert(env):
+    ref, args, confirm = _moved(env)
+    for _ in range(3):
+        again = env.call("reschedule_appointment", confirm, "move")
+        assert again["status"] == "already_rescheduled" and again["ok"] is True and "confirmation_token" not in again
+        assert again["speak"].startswith("That move was already made: your Swedish Massage, 1 hour appointment is on Wednesday, October 14 at 6 PM, with Sienna.")
+    assert env.lc.store.get(ref).version == 2 and [e["kind"] for e in env.lc.store.events(ref)] == ["booked", "rescheduled"]
+    assert [r["kind"] for r in env.lc.store.outbox_rows()] == ["booked", "rescheduled"]
+
+
+def test_a_repeated_move_after_a_later_change_reports_the_current_state_and_approves_nothing_new(env):
+    ref, args, confirm = _moved(env)
+    env.lc.store.reschedule(ref, start_utc=to_epoch(datetime(2026, 10, 14, 19, tzinfo=TZ)))
+    moved_again = env.call("reschedule_appointment", confirm, "move")
+    assert moved_again["status"] == "stale" and moved_again["ok"] is False and moved_again["reason"] == "changed_after_the_move" and "it is now on Wednesday, October 14 at 7 PM" in moved_again["speak"]
+    env.lc.store.cancel(ref)
+    cancelled = env.call("reschedule_appointment", confirm, "move")
+    assert cancelled["status"] == "stale" and "it is now cancelled" in cancelled["speak"]
+    assert env.lc.store.get(ref).status == CANCELLED and len(env.lc.store.outbox_rows()) == 2, "repeating the move queued nothing"
+
+
+def test_a_repeated_move_from_another_call_or_after_the_token_expired_never_re_approves_and_says_where_it_is(env):
+    ref, args, confirm = _moved(env)
+    other_call = env.call("reschedule_appointment", confirm, "someone-else")
+    assert other_call["status"] == "unchanged" and "confirmation_token" not in other_call, "another call's token is nothing, and the appointment is already there"
+    env.now += timedelta(minutes=10)
+    expired = env.call("reschedule_appointment", confirm, "move")
+    assert expired["status"] == "unchanged" and env.lc.store.get(ref).version == 2
+    different = env.call("reschedule_appointment", {**args, "time": "18:30"}, "move")
+    assert different["status"] == "confirmation_required", "a DIFFERENT move is a new read-back, never approved by the old token"
+
+
+def test_a_repeated_booking_confirmation_after_the_appointment_changed_reports_that_and_books_nothing(env):
+    args = env.book_args()
+    first = env.call("book_appointment", args)
+    confirm = {**args, "confirmed": True, "confirmation_token": first["confirmation_token"]}
+    ref = env.call("book_appointment", confirm)["appointment"]["reference"]
+    env.lc.store.cancel(ref)
+    again = env.call("book_appointment", confirm)
+    assert again["status"] == "stale" and again["reason"] == "changed_after_the_booking" and "it is now cancelled" in again["speak"] and again["ok"] is False
+    assert len(env.shown()) == 0 and env.counts()["appointments"]["confirmed"] == 4

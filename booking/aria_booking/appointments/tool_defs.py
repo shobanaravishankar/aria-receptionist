@@ -91,7 +91,7 @@ LIFECYCLE_TOOLS = [
         "reschedule_appointment",
         "Move ONE upcoming appointment to a new day and time in the prototype calendar, in TWO steps. First call it with the appointment's `reference`, the caller's complete phone number "
         "and the new date and time (and `staff` only if they asked for someone): it saves nothing and returns `confirmation_required` with one sentence naming the old and the new time and "
-        "a token. Read it; only after a clear yes call it again with the same details, the token and confirmed true. It is moved only if the result is `rescheduled` with ok true; if the new "
+        "a token. Read it; only after a clear yes call it again with the same details, the token and confirmed true. It is moved only if the result is `rescheduled` or `already_rescheduled` with ok true; if the new "
         "time is not available the original appointment stays exactly as it was and the tool offers real alternatives.",
         {"reference": {"type": "string", "description": REFERENCE_TEXT}, "phone": {"type": "string", "description": PHONE_TEXT}, "name": {"type": "string", "description": NAME_TEXT},
          "date": {"type": "string", "description": DATE_TEXT.replace("The day", "The NEW day")}, "time": {"type": "string", "description": TIME_TEXT.replace("The START", "The NEW START")},

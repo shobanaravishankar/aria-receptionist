@@ -136,7 +136,7 @@ def test_overlapping_but_not_identical_times_are_refused_and_touching_ones_are_a
     assert store.book(booking(24, minutes=60)).ok
     assert store.book(booking(24.5, name="B", phone="+12125550101", minutes=60)).status == "unavailable"
     assert store.book(booking(23.5, name="C", phone="+12125550102", minutes=60)).status == "unavailable"
-    assert store.book(booking(25, name="D", phone="+12125550103", minutes=60)).ok, "back to back is fine"
+    assert store.book(booking(25.25, name="D", phone="+12125550103", minutes=60)).ok, "starting when the 15 minutes of cleanup is over is fine"
     assert store.book(booking(24, name="E", phone="+12125550104", staff="910001")).ok, "another technician, same time"
 
 
@@ -386,3 +386,58 @@ def test_history_rows_are_only_for_seeding_and_never_notify_or_block_the_future(
     out = store.add_history(NewBooking("Willa Hartwell", PHONE, "s", "S", "massage", "910006", NOW - 24 * HOUR, 60, origin="test"), COMPLETED)
     assert out.appointment.status == COMPLETED and store.outbox_rows() == []
     assert store.book(booking(-24)).status == "booked", "a past completed visit does not block that time (it is not confirmed)"
+
+
+def test_a_technicians_occupied_time_includes_the_cleanup_before_and_after_each_appointment(tmp_path):
+    store = make(tmp_path)
+    first = store.book(booking(24, minutes=60, buffer_after=15)).appointment  # occupies 24:00 to 25:15
+    assert store.book(booking(25, name="B", phone="+12125550101")).reason == "slot_taken", "a start inside the cleanup is refused"
+    assert store.book(booking(25.0, name="B", phone="+12125550101", staff="910001")).ok, "another technician is unaffected"
+    ahead = booking(22.5, name="C", phone="+12125550102", minutes=60, buffer_after=15)  # 22:30 to 23:30, cleanup to 23:45: clear of the first
+    assert store.book(ahead).ok
+    into_it = booking(23, name="D", phone="+12125550103", minutes=60, buffer_after=15)  # 23:00 to 24:00 would run into 22:30's service and its own cleanup into the first
+    assert store.book(into_it).reason == "slot_taken"
+    inside = booking(22.75, name="E", phone="+12125550104", minutes=15, buffer_after=0)  # 22:45-23:00, inside the 22:30 appointment's own time
+    assert store.book(inside).status == "unavailable"
+    before_buffer = NewBooking("F", "+12125550105", "s", "S", "massage", "910006", NOW + int(25.5 * HOUR), 30, buffer_before_minutes=30, buffer_after_minutes=0)
+    assert store.book(before_buffer).reason == "slot_taken", "25:30 minus its own 30 minutes of preparation reaches back to 25:00, into the first one's cleanup (until 25:15)"
+    assert store.book(NewBooking("G", "+12125550106", "s", "S", "massage", "910006", NOW + int(25.75 * HOUR), 30, buffer_before_minutes=30, buffer_after_minutes=0)).ok
+    assert store.get(first.reference).status == CONFIRMED
+
+
+def test_cleanup_is_never_a_reason_to_refuse_a_move_onto_its_own_old_time_or_after_a_cancel(tmp_path):
+    store = make(tmp_path)
+    mine = store.book(booking(24, minutes=60, buffer_after=15)).appointment
+    assert store.reschedule(mine.reference, start_utc=NOW + int(24.5 * HOUR)).status == "rescheduled", "its own cleanup is not in its way"
+    store.cancel(mine.reference)
+    assert store.book(booking(24.5, name="B", phone="+12125550101")).ok, "a cancelled appointment occupies nothing, cleanup included"
+    done = store.add_history(NewBooking("H", "+12125550107", "s", "S", "massage", "910006", NOW + 30 * HOUR, 60, buffer_after_minutes=15, origin="test"), COMPLETED).appointment
+    assert done.status == COMPLETED and store.book(booking(30, name="I", phone="+12125550108")).ok, "a finished visit's cleanup is no longer in the way"
+
+
+def test_two_callers_racing_for_a_start_and_the_other_ones_cleanup_slot_book_exactly_one(tmp_path):
+    for round_ in range(4):
+        store = make(tmp_path, name=f"clean-race-{round_}.sqlite3")
+        results, gate = [], threading.Barrier(2)
+
+        def go(hours, who):
+            gate.wait()
+            results.append(store.book(booking(hours, name=f"Caller {who}", phone=f"+1212555020{who}", staff="910006")))
+
+        threads = [threading.Thread(target=go, args=(24, 1)), threading.Thread(target=go, args=(25, 2))]  # 24:00-25:00 (+15) versus 25:00-26:00
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert sorted(r.status for r in results) == ["booked", "unavailable"], results
+        assert store.counts()["appointments"] == {"confirmed": 1}
+
+
+def test_an_existing_appointments_preparation_time_before_it_is_occupied_too(tmp_path):
+    store = make(tmp_path)
+    prepared = NewBooking("P", "+12125550111", "s", "S", "massage", "910006", NOW + 30 * HOUR, 45, buffer_before_minutes=30, buffer_after_minutes=0)
+    assert store.book(prepared).ok  # occupies 29:30 to 30:45
+    ends_inside = booking(29, name="Q", phone="+12125550112", minutes=45, buffer_after=0)  # 29:00-29:45 runs into the 30 minutes of preparation
+    assert store.book(ends_inside).reason == "slot_taken"
+    ends_before = booking(28.75, name="R", phone="+12125550113", minutes=45, buffer_after=0)  # 28:45-29:30 ends exactly as the preparation begins
+    assert store.book(ends_before).ok

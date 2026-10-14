@@ -95,7 +95,7 @@ def test_the_menu_and_the_bookable_list_are_the_showcases():
 def test_every_change_is_read_back_and_confirmed_and_the_success_statuses_are_explicit():
     rules = section(PROMPT, "Hard rules")
     assert "**Every change is two steps**: a read-back, then a clear yes" in rules and "never reuse an old token" in rules
-    assert "`booked_verified` or `already_booked`; `cancelled` or `already_cancelled`; `rescheduled`)" in rules and "with `ok: true`" in rules
+    assert "`booked_verified` or `already_booked`; `cancelled` or `already_cancelled`; `rescheduled` or `already_rescheduled`)" in rules and "with `ok: true`" in rules
     booking = section(PROMPT, "Booking an appointment")
     assert "**This does not book anything yet**" in booking and "`confirmation_token` and `confirmed: true`" in booking
     assert "complete phone number including the area code" in booking and "Do not say the number back aloud" in booking

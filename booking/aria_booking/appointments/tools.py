@@ -21,7 +21,7 @@ import re
 import secrets
 import threading
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
 
 from ..catalog.bookable import staff_key
@@ -33,7 +33,7 @@ from ..history.models import (
 )
 from ..history.phone import normalize_phone
 from ..showcase.catalog import SHOWCASE_CATALOG
-from ..voice.speech import join_names, spoken_day, spoken_duration, spoken_price, spoken_slot
+from ..voice.speech import join_names, spoken_day, spoken_duration, spoken_price, spoken_slot, spoken_time
 from ..voice.tools import VoiceTools
 from .lifecycle import Lifecycle
 from .models import CANCELLED, COMPLETED, CONFIRMED, NO_SHOW, NewBooking, Placement, Refused, StoredAppointment, name_key, to_epoch
@@ -50,7 +50,7 @@ LIFECYCLE_ROUTES = {
     "/tools/cancel_appointment": "cancel_appointment",
     "/tools/reschedule_appointment": "reschedule_appointment",
 }
-LIFECYCLE_OK = frozenset({"booked_verified", "already_booked", "cancelled", "already_cancelled", "rescheduled", "unchanged", "found"})
+LIFECYCLE_OK = frozenset({"booked_verified", "already_booked", "cancelled", "already_cancelled", "rescheduled", "already_rescheduled", "unchanged", "found"})
 MAX_NUMBERS_PER_CALL = 3  # a caller cannot try number after number to find who is a client
 MAX_FAILED_MATCHES_PER_CALL = 5
 MAX_CHANGES_PER_CALL = 3
@@ -128,6 +128,39 @@ class LifecycleTools(VoiceTools):
         self._failed: dict[str, int] = {}
         self._changes: dict[str, int] = {}
         self._state_lock = threading.Lock()
+
+    def _why_not_one(self, snapshot, start: datetime, service, staff: str):
+        """The reviewed explanation, except when a STORED appointment is the cause. Its cleanup time is part of the time it occupies (the calendar draws it as a shaded
+        block), so the reviewed text would call it a break or the technician 'off'. Here it is said as what it is: already taken, getting ready, or running into the next one."""
+        reason, text, extra = super()._why_not_one(snapshot, start, service, staff)
+        person = next((s for s in self._lc.dataset.roster if s.name == staff), None)
+        if reason not in ("on_break", "conflicts_next", "occupied") or person is None:
+            return reason, text, extra
+        spec, moment = self._spec(service), to_epoch(start)
+        try:
+            rows = self._lc.store.occupied_between(
+                moment - spec.buffer_before_minutes * 60, moment + (spec.duration_minutes + spec.buffer_after_minutes) * 60, staff_id=person.staff_id,
+            )
+        except StoreError:
+            return reason, text, extra
+        if not rows:
+            return reason, text, extra
+        if any(r.start_utc <= moment < r.end_utc for r in rows):
+            return "occupied", f"{spoken_time(start)} on {spoken_day(start)} is already taken.", {}
+        before = [r for r in rows if r.start_utc < moment]
+        if before:
+            last = max(before, key=lambda r: r.end_utc)
+            ready = self._local(last) + timedelta(minutes=last.duration_minutes + last.buffer_after_minutes)
+            return "on_break", (
+                f"{staff} needs until {spoken_time(ready)} to get ready after the {spoken_time(self._local(last))} appointment, so {spoken_time(start)} isn't available."
+            ), {"ready_at": ready.strftime("%H:%M")}
+        following = min(rows, key=lambda r: r.start_utc)
+        at, length = self._local(following), spoken_duration(service.duration_minutes)
+        if following.start_utc < moment + spec.duration_minutes * 60:
+            return "conflicts_next", f"The {length} service starting at {spoken_time(start)} would run into {staff}'s next appointment at {spoken_time(at)}.", {"next_appointment": at.strftime("%H:%M")}
+        return "conflicts_next", (
+            f"The {length} service would fit before {staff}'s {spoken_time(at)} appointment, but there wouldn't be time for the {spec.buffer_after_minutes} minutes of cleanup after it."
+        ), {"next_appointment": at.strftime("%H:%M")}
 
     def book_slot(self, call_id: str, args: dict) -> dict:
         """The Booksy writer of the live line. It is not a route here and is refused outright if anything ever calls it."""
@@ -404,6 +437,10 @@ class LifecycleTools(VoiceTools):
             return self._unavailable()
         except Exception:  # an unforeseen failure: the transaction rolled back, but never claim either way
             return _reply("needs_review", self._contacting("Something went wrong and I can't confirm whether the booking went through. Please don't rely on it."), reason="exception")
+        if outcome.status == "replayed" and (outcome.appointment.status, outcome.appointment.start_utc, outcome.appointment.staff_id) != (CONFIRMED, p["start_utc"], p["staff_id"]):
+            now = f"it is now on {self._slot(outcome.appointment)}" if outcome.appointment.status == CONFIRMED else f"it is now {outcome.appointment.status.replace('_', ' ')}"
+            return _reply("stale", f"That booking was made earlier, but the appointment has changed since: {now}. I haven't booked anything again.", reason="changed_after_the_booking",
+                          appointment=self._view(outcome.appointment))
         if outcome.status in ("booked", "replayed"):  # the token stays until it expires, so a retry of this very request is answered from the first result
             return self._booked_reply(outcome, repeat=outcome.status == "replayed", call_id=call_id)
         if outcome.reason == "client_already_booked" and outcome.appointment is not None:
@@ -521,10 +558,35 @@ class LifecycleTools(VoiceTools):
     def reschedule_appointment(self, call_id: str, args: dict) -> dict:
         return self._labelled(call_id, self._with_lock(call_id, lambda: self._reschedule(call_id, args or {})))
 
+    def _repeat_of_a_move(self, call_id: str, args: dict, row: StoredAppointment) -> Optional[dict]:
+        """The same confirmed move arriving again (a retry, a repeated yes). If THIS request already moved the appointment, the answer is what is true now: already moved,
+        or moved and then changed since. Either way nothing is changed again and no second alert is queued. None when this request never happened."""
+        pending = self._take_pending("reschedule", call_id, args.get("confirmation_token")) if args.get("confirmed") is True else None
+        if pending is None or pending.payload.get("reference") != row.reference:
+            return None
+        if self._lc.store.request_reference(self._token_key("reschedule", call_id, args["confirmation_token"]), "reschedule") != row.reference:
+            return None
+        intended = (pending.payload["start_utc"], pending.payload["staff_id"])
+        if row.status == CONFIRMED and (row.start_utc, row.staff_id) == intended:
+            check = self._verify(row, expect_status=CONFIRMED)
+            if check is not None:
+                return check
+            return _reply(
+                "already_rescheduled", f"That move was already made: your {self._label(row)} appointment is on {self._slot(row)}, with {self._staff_name(row.staff_id)}. I haven't changed anything again.",
+                appointment=self._view(row),
+            )
+        now = f"it is now on {self._slot(row)} with {self._staff_name(row.staff_id)}" if row.status == CONFIRMED else f"it is now {row.status.replace('_', ' ')}"
+        return _reply(
+            "stale", f"That move was made earlier, but the appointment has changed since: {now}. I haven't changed anything more.", reason="changed_after_the_move", appointment=self._view(row),
+        )
+
     def _reschedule(self, call_id: str, args: dict) -> dict:
         row, problem = self._owned(call_id, args)
         if problem:
             return problem
+        replay = self._repeat_of_a_move(call_id, args, row)
+        if replay is not None:
+            return replay
         if row.status != CONFIRMED or row.start_utc <= to_epoch(self._now()):
             return _reply("not_reschedulable", self._contacting("I can't move that one, because it isn't an upcoming appointment."), reason="not_upcoming")
         service = self._lc.dataset.registry.get(row.service_id)
@@ -539,6 +601,8 @@ class LifecycleTools(VoiceTools):
         pending = self._take_pending("reschedule", call_id, args.get("confirmation_token")) if args.get("confirmed") is True else None
         if target is None:
             return self._cannot_move(call_id, row, service, day, start, named, refusal)
+        if (target, to_epoch(start)) == (row.staff_id, row.start_utc):  # already there: nothing to confirm and nothing to change
+            return _reply("unchanged", f"Your {self._label(row)} appointment is already on {self._slot(row)} with {self._staff_name(row.staff_id)}. Nothing was changed.", appointment=self._view(row))
         want = {"reference": row.reference, "version": row.version, "start_utc": to_epoch(start)}
         if pending is not None and all(pending.payload.get(k) == v for k, v in want.items()) and (named is None or pending.payload["staff_id"] == target):
             return self._commit_move(call_id, args["confirmation_token"], row, pending.payload["staff_id"], to_epoch(start))

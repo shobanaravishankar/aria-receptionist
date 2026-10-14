@@ -468,7 +468,7 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
         from dataclasses import replace
 
         driver = PlaywrightBooksyDriver(
-            replace(cfg, business_id=DEMO_BUSINESS_ID, local_dir=cfg.local_dir / "demo"), notify=out, load_timeout_seconds=SERVE_LOAD_TIMEOUT,
+            replace(cfg, business_id=DEMO_BUSINESS_ID, timezone=SPA_TIMEZONE, local_dir=cfg.local_dir / "demo"), notify=out, load_timeout_seconds=SERVE_LOAD_TIMEOUT,
             url_for_day=lambda day: calendar_url(args.site_port, day),
         )
     try:
@@ -518,7 +518,7 @@ def _demo_serve_lifecycle(args, cfg: Config, key: str, tool_token: str, today, o
     from .appointments.lifecycle import default_store_path, open_lifecycle
     from .appointments.sender import OwnerDestinationError, load_owner_destination
     from .appointments.store import StoreError
-    from .demo import DEMO_BUSINESS_ID, DEMO_LABEL
+    from .demo import DEMO_BUSINESS_ID, DEMO_LABEL, SPA_TIMEZONE
     from .demo.server import calendar_url, make_site
     from .showcase import SHOWCASE
 
@@ -539,7 +539,7 @@ def _demo_serve_lifecycle(args, cfg: Config, key: str, tool_token: str, today, o
         from dataclasses import replace
 
         driver = PlaywrightBooksyDriver(
-            replace(cfg, business_id=DEMO_BUSINESS_ID, local_dir=cfg.local_dir / "demo"), notify=out, load_timeout_seconds=SERVE_LOAD_TIMEOUT,
+            replace(cfg, business_id=DEMO_BUSINESS_ID, timezone=SPA_TIMEZONE, local_dir=cfg.local_dir / "demo"), notify=out, load_timeout_seconds=SERVE_LOAD_TIMEOUT,
             url_for_day=lambda day: calendar_url(args.site_port, day),
         )
     dispatcher = OutboxDispatcher(lifecycle.store, None, destination, log=lambda message: out("  " + message))  # no provider adapter exists: nothing can be sent

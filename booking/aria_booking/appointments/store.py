@@ -128,6 +128,14 @@ class Txn:
             args.append(staff_id)
         return self._all(where + " ORDER BY a.start_utc, a.appt_id", args)
 
+    def occupied_between(self, start_utc: int, end_utc: int, *, staff_id: str) -> list[StoredAppointment]:
+        """Confirmed appointments of one technician whose OCCUPIED time (the service plus its cleanup before and after) overlaps [start, end), oldest first."""
+        return self._all(
+            "WHERE a.status = 'confirmed' AND a.staff_id = ? AND a.start_utc - a.buffer_before_minutes * 60 < ? "
+            "AND a.start_utc + (a.duration_minutes + a.buffer_after_minutes) * 60 > ? ORDER BY a.start_utc, a.appt_id",
+            (staff_id, end_utc, start_utc),
+        )
+
     def for_client(self, client_id: int, statuses: Sequence[str] = STATUSES) -> list[StoredAppointment]:
         marks = ",".join("?" for _ in statuses)
         return self._all(f"WHERE a.client_id = ? AND a.status IN ({marks}) ORDER BY a.start_utc, a.appt_id", (client_id, *statuses))
@@ -142,6 +150,10 @@ class Txn:
     def client(self, client_id: int) -> Optional[ClientRecord]:
         row = self._conn.execute("SELECT * FROM clients WHERE client_id = ?", (client_id,)).fetchone()
         return _client(row) if row else None
+
+    def request_reference(self, request_key: str, kind: str) -> Optional[str]:
+        row = self._conn.execute("SELECT reference FROM requests WHERE request_key = ? AND kind = ?", (request_key, kind)).fetchone()
+        return row["reference"] if row else None
 
     def seeded_after(self, prefix: str, after_utc: int) -> bool:
         """Is there a seeded row (any status) whose seed key starts with ``prefix`` and whose start is after the given moment?"""
@@ -240,6 +252,10 @@ class AppointmentStore:
         with self._read() as tx:
             return tx.clients_with_phone(phone)
 
+    def occupied_between(self, start_utc: int, end_utc: int, *, staff_id: str) -> list[StoredAppointment]:
+        with self._read() as tx:
+            return tx.occupied_between(start_utc, end_utc, staff_id=staff_id)
+
     def client(self, client_id: int) -> Optional[ClientRecord]:
         with self._read() as tx:
             return tx.client(client_id)
@@ -247,6 +263,11 @@ class AppointmentStore:
     def seeded_after(self, prefix: str, after_utc: int) -> bool:
         with self._read() as tx:
             return tx.seeded_after(prefix, after_utc)
+
+    def request_reference(self, request_key: str, kind: str) -> Optional[str]:
+        """The reference a successful request of this kind was saved against, or None: whether this very request has already happened."""
+        with self._read() as tx:
+            return tx.request_reference(request_key, kind)
 
     def for_client(self, client_id: int, statuses: Sequence[str] = STATUSES) -> list[StoredAppointment]:
         with self._read() as tx:
@@ -442,14 +463,15 @@ class AppointmentStore:
             )
             return cursor.rowcount
 
-    def settle_past(self) -> int:
-        """SIMULATED-WORLD CONVENTION, run when the demo opens: a confirmed appointment whose time has passed is marked completed (the salon is assumed to have done it).
-        Without it, a past appointment nobody recorded an outcome for would stay 'unknown' and, by the reviewed history rule, block every older answer. Never notifies."""
+    def settle_past_seeds(self) -> int:
+        """Run when the demo opens, for the FICTIONAL SEED FIXTURES only: an upcoming seed whose time has passed becomes a completed seed visit, as the fixture's own story.
+        An appointment a caller created is never settled: nobody observed its outcome, so a past one stays 'unknown' and, by the reviewed history rule, keeps blocking an
+        older answer. Never notifies."""
         with self._write() as tx:
-            rows = tx._all("WHERE a.status = 'confirmed' AND a.start_utc + a.duration_minutes * 60 <= ?", (tx.now_utc,))
+            rows = tx._all("WHERE a.status = 'confirmed' AND a.origin = 'seed' AND a.start_utc + a.duration_minutes * 60 <= ?", (tx.now_utc,))
             for row in rows:
                 tx._conn.execute("UPDATE appointments SET status = 'completed', version = version + 1, updated_at = ? WHERE reference = ?", (tx.now_utc, row.reference))
-                self._event(tx, row.reference, "settled", {"start": row.start_utc, "as": "completed"})
+                self._event(tx, row.reference, "settled", {"start": row.start_utc, "as": "completed", "fixture": True})
             return len(rows)
 
     # ---- inside a transaction ---------------------------------------------------------------------------------
@@ -464,9 +486,10 @@ class AppointmentStore:
 
     @staticmethod
     def _guard(tx: Txn, placement: Placement, client_id: int) -> None:
-        """The store's own invariants, whatever the caller's validator did: no technician and no client is ever in two overlapping appointments."""
+        """The store's own invariants, whatever the caller's validator did. A technician's OCCUPIED time (the service plus its cleanup before and after) is never shared with
+        another appointment's, so a start inside someone's cleanup is refused here exactly as the judge refuses it. A client is never in two overlapping services."""
         end = placement.start_utc + placement.duration_minutes * 60
-        for other in tx.between(placement.start_utc, end, staff_id=placement.staff_id):
+        for other in tx.occupied_between(placement.blocked_start_utc, placement.blocked_end_utc, staff_id=placement.staff_id):
             if other.reference != placement.ignore_reference:
                 raise Refused("unavailable", "slot_taken", appointment=None)
         for other in tx.between(placement.start_utc, end):
