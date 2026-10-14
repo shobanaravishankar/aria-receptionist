@@ -131,3 +131,11 @@ def test_a_plan_in_lifecycle_mode_names_the_eight_functions_and_the_reviewed_fil
     assert code == 0 and "mode              : lifecycle (simulated appointment lifecycle)" in text
     assert "book_appointment, cancel_appointment, check_slot, find_alternatives, find_appointments, last_completed_visit, lookup_service, reschedule_appointment + end_call" in text
     assert "none reaches the live Booksy calendar" in text and "prompt_demo_lifecycle.md" in text
+
+
+def test_the_diagnostic_incomplete_calendar_reaches_the_lifecycle_dataset_only_when_chosen(isolated, tmp_path):
+    serve(tmp_path)
+    assert isolated["dataset"].diagnostic_unknown_hours == frozenset()
+    isolated.clear()
+    serve(tmp_path, "--diagnostic-incomplete-calendar")
+    assert isolated["dataset"].diagnostic_unknown_hours == frozenset({"910010"})

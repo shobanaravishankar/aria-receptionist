@@ -250,3 +250,11 @@ def test_demo_day_prints_the_scripted_day_and_refuses_what_is_not_covered():
     code, text = run(["demo-day", "--today", "2026-10-13", "--date", "2027-01-01"])
     assert code == cli.EXIT_REFUSED and "covers" in text
     assert run(["demo-day", "--date", "soon"])[0] == cli.EXIT_REFUSED
+
+
+def test_the_diagnostic_incomplete_calendar_flag_is_off_by_default_and_marks_one_column_when_chosen(isolated):
+    run(["demo-serve", "--today", "2026-10-13"])
+    assert isolated["endpoint"]._tools.driver.dataset.diagnostic_unknown_hours == frozenset(), "the normal demo's schedules are complete"
+    isolated.clear()
+    run(["demo-serve", "--today", "2026-10-13", "--diagnostic-incomplete-calendar"])
+    assert isolated["endpoint"]._tools.driver.dataset.diagnostic_unknown_hours == frozenset({"910010"})

@@ -137,6 +137,7 @@ class VoiceTools:
         self._check_days = max(1, check_search_days) if check_search_days is not None else search_days
         self._cache_seconds = max(0.0, float(read_cache_seconds))  # 0 = never reuse a read; read-only offers only, never the pre-save check
         self._day_cache: dict = {}
+        self._preferred_minutes: dict[str, int] = {}  # call_id -> the start time (minutes since midnight) the caller last asked for IN THAT CALL, so a follow-up search keeps it
         self._mono = monotonic
         self._timer = PhaseTimer(monotonic)
         # Where the calendar data comes from, when it is NOT the real calendar. Every availability reply carries source=<label>, and the first one
@@ -170,6 +171,15 @@ class VoiceTools:
         self._min_read = MIN_READ_SECONDS if self._request_budget is None else min(MIN_READ_SECONDS, self._request_budget / 2)
 
     # ---- helpers ---------------------------------------------------------------------------
+    def _remember_time(self, call_id: str, minutes: Optional[int]) -> None:
+        """The time the caller asked for in this call. Per call id, never shared; bounded so a long-running server cannot grow without limit."""
+        if minutes is None:
+            self._preferred_minutes.pop(call_id, None)
+            return
+        if call_id not in self._preferred_minutes and len(self._preferred_minutes) >= 512:
+            self._preferred_minutes.pop(next(iter(self._preferred_minutes)))
+        self._preferred_minutes[call_id] = minutes
+
     @property
     def last_timing(self) -> dict:
         return getattr(self._thread_state, "timing", {})
@@ -720,14 +730,16 @@ class VoiceTools:
         if problem:
             return problem
         self._set_context(call_id, service, named)
+        self._remember_time(call_id, start.hour * 60 + start.minute)
         spec = self._spec(service)
-        free, unknown = [], False
+        free, unreadable_staff = [], []
         for name in staffs:
             verdict = validate_slot(snapshot, spec, name, start, now=self._now(), min_lead_minutes=self.cfg.min_lead_minutes)
             if verdict.unknown:
-                unknown = True
+                unreadable_staff.append((name, verdict.unknown))
             elif verdict.ok:
                 free.append(name)
+        unknown = bool(unreadable_staff)
         length = spoken_duration(service.duration_minutes)
         if free:
             option = self._issue(call_id, start, service, free[0])
@@ -742,16 +754,46 @@ class VoiceTools:
                 f"{spoken_slot(start)} is open for the full {length} of {service.booksy_name}, with {free[0]}. Would you like me to book it?",
                 options=[option],
             ), age)
-        if unknown:
+        known = [name for name in staffs if name not in {n for n, _r in unreadable_staff}]
+        if unknown and (named or not known):  # a named person, or nobody whose schedule can be read: fail closed, exactly as before
             return _response("unknown", "I couldn't confirm the calendar for that day, so I can't tell you whether it's free. Let me not guess.")
+        if unknown:
+            return self._partly_unknown(call_id, snapshot, start, day, service, named, known, unreadable_staff, age)
         with self._timer.phase("search"):
             reason, explanation, extra = self._why_not(snapshot, start, service, staffs, named)
+            everyone = f"Everyone working that day who does this is booked or unavailable at {spoken_time(start)} for the full {spoken_duration(service.duration_minutes)}. " if len(staffs) > 1 and not named else ""
             slots, unreadable, _error, alt_age, cut_short = self._alternatives(
                 day, start.hour * 60 + start.minute, snapshot, service, named, days=self._check_days
             )
-            offered = self._offer(call_id, slots, unreadable, service, named, lead=explanation + " ", days_searched=self._check_days, cut_short=cut_short)
+            offered = self._offer(call_id, slots, unreadable, service, named, lead=everyone + explanation + " ", days_searched=self._check_days, cut_short=cut_short)
         offered.update(extra)
         offered["unavailable_reason"] = reason
+        offered["requested"] = start.isoformat()
+        return self._stamp_age(offered, max(age, alt_age))
+
+    def _partly_unknown(self, call_id, snapshot, start, day, service, named, known, unreadable_staff, age) -> dict:
+        """No one whose schedule can be read is free at the asked time, and someone who could do it has a schedule that cannot be read (for example, hours that are not shown).
+        Unknown is still never free, so nothing is promised, but the answer says what is actually the case instead of sounding like a failure of the calendar: the readable
+        schedules cannot take it (and why), the unreadable ones are not guessed at, and the genuinely open times from the readable schedules are offered."""
+        length = spoken_duration(service.duration_minutes)
+        _reason, explanation, extra = self._why_not(snapshot, start, service, known, None)
+        hours_missing = [n for n, r in unreadable_staff if "working hours unknown" in r]
+        other = [n for n, _r in unreadable_staff if n not in hours_missing]
+        parts = [f"{n}'s working hours aren't shown on the calendar, so I can't say whether {n} could take it" for n in hours_missing]
+        parts += [f"{n}'s schedule couldn't be read, so I can't say whether {n} could take it" for n in other]
+        lead = (
+            f"I can't confirm {spoken_slot(start)} for the full {length} of {service.booksy_name}. "
+            + ("None of the technicians whose schedules I can read can take it. " if len(known) > 1 else "")
+            + f"{explanation} {'; '.join(parts)}. "
+        )
+        with self._timer.phase("search"):
+            slots, unreadable, _error, alt_age, cut_short = self._alternatives(day, start.hour * 60 + start.minute, snapshot, service, named, days=self._check_days)
+            offered = self._offer(call_id, slots, unreadable, service, named, lead=lead, days_searched=self._check_days, cut_short=cut_short)
+        offered["status"], offered["ok"] = "unknown", False  # whatever else it found, the asked time could not be confirmed
+        offered.update(extra)
+        offered["reason"] = "partial_calendar"
+        offered["incomplete_schedules"] = [n for n, _r in unreadable_staff]
+        offered["unavailable_reason"] = _reason
         offered["requested"] = start.isoformat()
         return self._stamp_age(offered, max(age, alt_age))
 
@@ -766,7 +808,14 @@ class VoiceTools:
         if problem:
             return problem
         self._set_context(call_id, service, named)
-        preferred = (start.hour * 60 + start.minute) if start else 10 * 60
+        if start is not None:  # the caller gave a time (a new one replaces the old)
+            preferred = start.hour * 60 + start.minute
+            self._remember_time(call_id, preferred)
+        elif args.get("any_time") is True:  # the caller said any time works: drop the earlier preference
+            self._remember_time(call_id, None)
+            preferred = 10 * 60
+        else:  # no time given: keep the one asked for earlier in THIS call, if any
+            preferred = self._preferred_minutes.get(call_id, 10 * 60)
         slots, unreadable, first_error, oldest, cut_short = self._alternatives(day, preferred, None, service, named)
         if not slots and first_error is not None and first_error["status"] == "staff_unavailable":
             return self._stamp_age(first_error, oldest)

@@ -627,7 +627,7 @@ def lifecycle_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path)
         "  8. Something she cannot answer, or a system problem -> she says what she cannot confirm and gives the salon's contact (a number only once one is configured), never saying she transferred or called back.",
         "  9. 'Is this real?' -> truthful: a prototype with an invented calendar. She never says so unprompted.",
         "",
-        "The demo date is fixed when the demo server starts: after midnight Eastern, restart the server (not the tunnel or the agent). Past appointments are marked completed at each start.",
+        "The demo date is fixed when the demo server starts: after midnight Eastern, restart the server (not the tunnel or the agent). At each start, an upcoming FICTIONAL seed visit whose time has passed is shown as completed; an appointment YOU book is never marked completed for you, so a past one stays unknown for the 'last visit' answers.",
         "",
     ])
 

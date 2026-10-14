@@ -179,6 +179,7 @@ def test_the_page_label_says_appointments_exist_only_in_the_prototype_and_the_in
     text = (tmp_path / "state" / "test-instructions.txt").read_text(encoding="utf-8")
     assert "SIMULATED appointment lifecycle" in text and "python -m aria_booking demo-serve --lifecycle" in text
     assert "Willa Hartwell, number 212-555-0142" in text and "the SAME household number" in text and "Cedric Lowe, number 212-555-0177" in text
+    assert "an appointment YOU book is never marked completed for you" in text and "Past appointments are marked completed at each start" not in text
     assert "NO real salon calendar is touched" in text and "no text ever goes to a client" in text and "never saying she transferred or called back" in text
     assert KEY not in text and TOKEN not in text and PUBLIC not in text
 

@@ -57,6 +57,9 @@ def test_a_column_with_missing_hours_exists_only_as_a_deliberately_selected_diag
     assert [s.name for s in ds.roster if not s.hours_known] == ["Delphine"]
     delphine = plan_of(ds, ds.scripted_days[0], "Delphine")
     assert delphine is not None and delphine.shown_hours is None and delphine.visits == (), "present on the scripted day, hours not shown, nothing known about her day"
+    friday = date(2026, 10, 16)  # the first scripted day is a Saturday, when Delphine does not normally work: the diagnostic still shows her, hours missing
+    weekend = DemoDataset(friday, diagnostic_unknown_hours=("910010",))
+    assert plan_of(weekend, weekend.scripted_days[0], "Delphine") is not None and plan_of(DemoDataset(friday), DemoDataset(friday).scripted_days[0], "Delphine") is None
     assert all(s.hours_known for s in DemoDataset(TODAY).roster) and all(s.hours_known for s in ROSTER), "the module roster itself is never changed"
     with pytest.raises(ValueError, match="not on the roster"):
         DemoDataset(TODAY, diagnostic_unknown_hours=("999999",))

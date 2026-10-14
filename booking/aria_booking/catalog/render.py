@@ -53,6 +53,10 @@ DEMO_SECTION = """## You are connected to a DEMO calendar
 - If the caller asks who does a service, call `lookup_service`: for a service you can check it returns `technicians`, the calendar's own list. Give those
   names, and never say there is no list when it returned one. If the caller names a technician who is not on that list, say that technician does not do that
   service and name those who do; never swap in someone else.
+- If the caller gave a time earlier in this call and then asks for other times or another day, call `find_alternatives` WITHOUT a time: the server keeps the time they asked
+  for. Pass a `time` only when they give a new one, and `any_time: true` only when they say any time works. Never invent a preferred time.
+- If a check answers `unknown` and also returns `options`, say what the tool said (it names what could and could not be confirmed) and offer those times. Never say the
+  calendar is down, not responding or fully booked unless the tool says so, and never guess about a schedule it says it could not read.
 
 """
 
@@ -73,10 +77,21 @@ LIFECYCLE_SECTION = """## You are connected to a prototype calendar
 - If the caller asks who does a service, call `lookup_service`: for a service you can book it returns `technicians`, the calendar's own list. Give those names, and never say there
   is no list when it returned one. If the caller names a technician who is not on that list, say that technician does not do that service and name those who do; never swap in
   someone else.
+- If the caller gave a time earlier in this call and then asks for other times or another day, call `find_alternatives` WITHOUT a time: the server keeps the time they asked
+  for. Pass a `time` only when they give a new one, and `any_time: true` only when they say any time works. Never invent a preferred time.
+- If a check answers `unknown` and also returns `options`, say what the tool said (it names what could and could not be confirmed) and offer those times. Never say the
+  calendar is down, not responding or fully booked unless the tool says so, and never guess about a schedule it says it could not read.
 
 """
 
 # Descriptions for the availability-only tool file: they only CHECK, and say so. (The booking file keeps tools.json's wording.)
+ANY_TIME_PROPERTY = {
+    "type": "boolean",
+    "description": (
+        "Optional. Send true ONLY if the caller says any time works, to drop the time they asked for earlier in this call. Leave it out otherwise: when you omit `time`, the server keeps "
+        "the time the caller last asked for in THIS call, so do not guess one."
+    ),
+}
 AVAILABILITY_DESCRIPTIONS = {
     "check_slot": (
         "Check whether the caller's requested date and start time is OPEN for the FULL chosen service, and with which technician. Call this ONLY when "
@@ -223,6 +238,12 @@ def build_availability_tools(tools: dict) -> dict:
         tool = dict(tool)
         if tool["name"] in AVAILABILITY_DESCRIPTIONS:
             tool["description"] = AVAILABILITY_DESCRIPTIONS[tool["name"]]
+        if tool["name"] == "find_alternatives":
+            tool["parameters"] = json.loads(json.dumps(tool["parameters"]))
+            tool["parameters"]["properties"]["time"]["description"] = (
+                "Optional preferred START time in 24-hour HH:MM. Pass it when the caller gives or changes a time; if you leave it out, the time the caller last asked for in this call is kept."
+            )
+            tool["parameters"]["properties"]["any_time"] = ANY_TIME_PROPERTY
         if tool["name"] in AVAILABILITY_TIMEOUTS_MS:
             tool["timeout_ms"] = AVAILABILITY_TIMEOUTS_MS[tool["name"]]
         kept.append(tool)

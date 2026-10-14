@@ -97,11 +97,15 @@
           },
           "time": {
             "type": "string",
-            "description": "Optional preferred START time in 24-hour HH:MM."
+            "description": "Optional preferred START time in 24-hour HH:MM. Pass it when the caller gives or changes a time; if you leave it out, the time the caller last asked for in this call is kept."
           },
           "staff": {
             "type": "string",
             "description": "Optional. The technician's name ONLY if the caller asked for a particular person."
+          },
+          "any_time": {
+            "type": "boolean",
+            "description": "Optional. Send true ONLY if the caller says any time works, to drop the time they asked for earlier in this call. Leave it out otherwise: when you omit `time`, the server keeps the time the caller last asked for in THIS call, so do not guess one."
           }
         },
         "required": [
