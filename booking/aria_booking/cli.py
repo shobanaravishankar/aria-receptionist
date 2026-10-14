@@ -106,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today); 'tomorrow' means the day after it")
     p.add_argument("--via-page", action="store_true", help="answer by reading the demo PAGE in a Playwright window (the live code path) instead of the dataset")
     p = sub.add_parser("demo-agent", help="operate the demo's SEPARATE Retell test agent and voice page (plan, create once, verify, preflight, prepare-web); never places a call")
-    p.add_argument("action", choices=("plan", "store-secret", "create", "verify", "preflight", "prepare-web", "call-summary"))
+    p.add_argument("action", choices=("plan", "store-secret", "create", "update", "verify", "preflight", "prepare-web", "call-summary"))
     p.add_argument("--config", default=None, help="a JSON file of non-secret settings kept outside Git (see demo_agent.example.json); or set ARIA_DEMO_CONFIG")
     p.add_argument("--tunnel-url", default=None, help="the public https address of YOUR tunnel to the tool port (or ARIA_DEMO_TUNNEL_URL)")
     p.add_argument("--state-dir", default=None, help="where created ids, markers and results are kept (default: .local/demo-agent, git-ignored)")
@@ -115,6 +115,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--calendar-port", type=int, default=None, help="the demo calendar page's port, for the link in the page banner (default 8790)")
     p.add_argument("--page-port", type=int, default=None, help="the port the prepared voice page is served on; it is opened at http://localhost:<port>/ (default 5174)")
     p.add_argument("--confirm-create", action="store_true", help="required by `create`, which makes one Retell LLM and one agent")
+    p.add_argument("--confirm-update", action="store_true", help="required by `update`, which sends the reviewed prompt, tools and opening line to the EXISTING LLM (no new agent)")
     p.add_argument("--secret-name", default="retell_api_key", help="for store-secret: retell_api_key, tool_token or retell_public_key")
     p.add_argument("--base-url", default=None, help="for preflight: check this loopback or https address instead of the tunnel, e.g. http://127.0.0.1:8787")
     p = sub.add_parser("demo-day", help="print who works and what is booked on one demo day (invented data), so a demo can ask grounded questions")
@@ -170,7 +171,8 @@ def main(
         from .demo.agent_ops import run as run_demo_agent
 
         return run_demo_agent(
-            args.action, env, out, config_file=args.config, confirm_create=args.confirm_create, secret_name=args.secret_name, base_url=args.base_url,
+            args.action, env, out, config_file=args.config, confirm_create=args.confirm_create, confirm_update=args.confirm_update,
+            secret_name=args.secret_name, base_url=args.base_url,
             overrides={"tunnel_url": args.tunnel_url, "state_dir": args.state_dir, "web_dir": args.web_dir, "template_dir": args.template_dir,
                        "calendar_port": args.calendar_port, "page_port": args.page_port},
         )

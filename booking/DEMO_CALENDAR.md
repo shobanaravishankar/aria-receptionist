@@ -48,7 +48,7 @@ It prints the page address, e.g. `http://127.0.0.1:8790/pro/en-us/9000001/calend
 
 Everything the demo needs except secrets and live account state is in this repository. `python -m aria_booking demo-agent <action>` replaces the
 operator's earlier out-of-repo scripts. **It never places a call, starts a service, starts a tunnel or opens a browser**; creating the agent, serving,
-tunnelling and calling are separate, deliberate steps you take yourself. Actions: `plan`, `store-secret`, `create`, `verify`, `preflight`, `prepare-web`, `call-summary`.
+tunnelling and calling are separate, deliberate steps you take yourself. Actions: `plan`, `store-secret`, `create`, `update`, `verify`, `preflight`, `prepare-web`, `call-summary`.
 
 **Inputs you supply (none of these is in Git):**
 
@@ -90,10 +90,20 @@ the real tunnel address; `booking/.local/` (created ids, markers, preflight and 
 tunnel logs; Booksy login profiles and session files; real account and agent ids; call recordings and transcripts. The repository's `.gitignore` covers the
 state folder and `demo-config.js`, and a test fails if anything of that kind becomes trackable.
 
-**Not verified, and not claimed:** that Retell signs custom-function calls exactly as `verify_signature` expects (it fails closed with 401 if not; Retell's
-documentation now says to verify with the raw body and the API key); the field names in `call-summary`'s read of a call (copied from the operator's draft,
-not checked against Retell's documentation); spoken-call latency; the connection of the test agent to the page; and any voice test. Updating a tunnel address
-in an existing agent is not automated (the update call is not on the allow-list); create a new agent or change it in the Retell dashboard, then run `verify`.
+**Observed once, not a guarantee:** in the first supervised voice test the operator's review of the finished Retell call found that real function requests were
+accepted by this server's signature and token checks (`find_alternatives` and `check_slot` answered in about 0.4-0.5 s each) and that no booking function was called.
+
+**Not verified, and not claimed:** the field names in `call-summary`'s read of a call (copied from the operator's draft, not checked against Retell's
+documentation); spoken final-answer speed (Retell's end-to-end response samples include the spoken "checking" sentence, so they do not show it); and how Retell
+treats LLM versions after an update (its documentation does not say which LLM version a web call with `agent_version` 0 uses, so a change is proved only by a
+supervised call).
+
+**Changing the existing agent in place:** `python -m aria_booking demo-agent update --confirm-update` sends exactly the reviewed prompt, the three read-only
+functions (plus `end_call`) and the opening line to the one recorded LLM (a single allow-listed PATCH to `update-retell-llm/<recorded id>`; no new agent or LLM, the
+agent itself is never touched), then runs the same read-back as `create`. It is safe to repeat, removes the previous "verified" record first, and uses the recorded
+tunnel address unless `--tunnel-url` gives a new one (which also moves the functions to the new address). Use it after the prompt, the demo services or the tool file
+change; `verify` shows what differs beforehand and changes nothing. Restart `demo-serve` (not the tunnel) so it loads the same services, and re-run `prepare-web` for a
+changed page; the page server needs no restart.
 
 ## What to ask (the scripted days: the demo date + 1 and + 2)
 

@@ -49,6 +49,8 @@ class FakeRetell:
         self.agents: dict[str, dict] = {}
         self.fail: dict[str, object] = {}  # path -> HTTP status int, or "network"
         self.created = 0
+        self.updated = 0
+        self.ignore_updates = False  # an account that answers 200 to an update but does not apply it
 
     def __call__(self, request, timeout=None):
         path = request.full_url.removeprefix("https://api.retellai.com/")
@@ -69,6 +71,13 @@ class FakeRetell:
             self.agents[agent_id] = {**body, "agent_id": agent_id, "version": 0}
             self.created += 1
             return FakeResponse(json.dumps({"agent_id": agent_id, "agent_name": body["agent_name"], "version": 0}).encode())
+        if path.startswith("update-retell-llm/"):
+            llm_id = path.split("/", 1)[1]
+            assert request.get_method() == "PATCH" and llm_id in self.llms
+            if not self.ignore_updates:
+                self.llms[llm_id].update(body)
+            self.updated += 1
+            return FakeResponse(json.dumps({"llm_id": llm_id, "version": 0, "is_published": False}).encode())
         if path.startswith("get-agent/"):
             return FakeResponse(json.dumps(self.agents[path.split("/", 1)[1]]).encode())
         if path.startswith("get-retell-llm/"):
@@ -412,8 +421,10 @@ def test_no_path_that_starts_or_schedules_a_call_is_in_the_module():
     for forbidden in ("create-phone-call", "create-web-call", "create-batch", "register-phone", "import-phone", "schedule"):
         assert forbidden not in allowed, forbidden
     assert {p.pattern for _v, p in ALLOWED} == {
-        "^create-retell-llm$", "^create-agent$", "^get-agent/[A-Za-z0-9_.-]+$", "^get-retell-llm/[A-Za-z0-9_.-]+$", "^v3/list-calls$", "^v2/get-call/[A-Za-z0-9_.-]+$",
+        "^create-retell-llm$", "^create-agent$", "^get-agent/[A-Za-z0-9_.-]+$", "^get-retell-llm/[A-Za-z0-9_.-]+$", "^update-retell-llm/[A-Za-z0-9_.-]+$",
+        "^v3/list-calls$", "^v2/get-call/[A-Za-z0-9_.-]+$",
     }
+    assert {v for v, p in ALLOWED if "update" in p.pattern} == {"PATCH"} and not any("agent" in p.pattern and v == "PATCH" for v, p in ALLOWED), "no agent update, ever"
 
 
 def test_a_network_failure_surfaces_as_a_status_free_error_with_no_body():

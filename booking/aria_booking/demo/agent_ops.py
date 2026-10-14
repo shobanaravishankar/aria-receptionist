@@ -6,6 +6,8 @@ What each action does (and the hard limits):
   store-secret  Windows only. Encrypts one secret you type (hidden prompt) into your secret folder. Never overwrites.
   create        the ONE-TIME creation of the test agent: refuses without --confirm-create. Writes a 'pending' marker before each Retell call, so an
                 uncertain outcome is never retried blindly. Ends with the same read-back as ``verify``.
+  update        the ONE change in place: sends the reviewed prompt, tools and opening line to the existing LLM (refuses without --confirm-update; no new
+                agent), then runs the same read-back as ``verify``.
   verify        reads the agent and its LLM back from Retell and compares every field that matters with what the reviewed source says it must be.
   preflight     signed requests to the tool server (your loopback address or your tunnel): the three tools answer, an unsigned request is 401 and a
                 booking route is 404. Records seconds per call (tool latency, NOT spoken-call latency).
@@ -51,6 +53,7 @@ CLOCK_SECTION = (
 ALLOWED = (
     ("POST", re.compile(r"^create-retell-llm$")), ("POST", re.compile(r"^create-agent$")),
     ("GET", re.compile(r"^get-agent/[A-Za-z0-9_.-]+$")), ("GET", re.compile(r"^get-retell-llm/[A-Za-z0-9_.-]+$")),
+    ("PATCH", re.compile(r"^update-retell-llm/[A-Za-z0-9_.-]+$")),  # the ONE change in place: the recorded LLM's prompt, tools and opening line (see ``update``)
     ("POST", re.compile(r"^v3/list-calls$")), ("GET", re.compile(r"^v2/get-call/[A-Za-z0-9_.-]+$")),
 )
 CONFIG_KEYS = frozenset({
@@ -371,6 +374,41 @@ def create(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[
     return verify(config, secrets, api, out)
 
 
+def update(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[str], None], *, confirm: bool) -> int:
+    """Bring the EXISTING test agent's LLM in line with the reviewed source, in place: no new agent, no new LLM, no tunnel, no call.
+
+    Sends exactly the reviewed prompt, the three read-only functions (plus end_call) and the opening line to the one recorded LLM, then runs the same read-back as
+    ``create``. It is safe to repeat. The previous 'verified' record is removed first, so a stale one can never survive an uncertain result. The tunnel address is
+    the recorded one unless a new one is given, which also moves the functions to a new address. Nothing but the LLM is touched: the agent, its voice, model, call
+    cap and retention are unchanged (``verify`` reports them).
+    """
+    if not confirm:
+        raise OperatorError("updating the existing agent's LLM needs the explicit flag --confirm-update (run `verify` first: it shows what differs and changes nothing)")
+    state = State(config.state_dir)
+    if not state.exists("agent.json") or not state.exists("llm.json"):
+        raise OperatorError("no created agent is recorded here: run `create --confirm-create` first")
+    agent_state, llm_id = state.read("agent.json"), state.read("llm.json")["llm_id"]
+    if agent_state.get("llm_id") != llm_id:
+        raise OperatorError("the recorded agent and LLM do not belong together; refusing to update")
+    tunnel = validate_tunnel(config.tunnel_url or agent_state.get("tunnel", ""))
+    token = secrets.get("tool_token")
+    secrets.get("retell_api_key")  # fail early if the key is missing
+    prompt, tools = expected_prompt(), expected_tools(tunnel, token)
+    state.remove("configuration-verified.json")
+    try:
+        result = api.request(f"update-retell-llm/{llm_id}", {"general_prompt": prompt, "general_tools": tools, "begin_message": config.begin_message}, "PATCH")
+    except RetellApiError as exc:
+        if exc.definite:
+            raise
+        raise OperatorError(f"{exc}; the outcome is uncertain: run `verify` to see what the account holds (an update is safe to repeat)") from None
+    out(f"LLM updated in place (Retell reports version {result.get('version')}, published: {result.get('is_published')}); no new agent, LLM or tunnel was created.")
+    code = verify(replace(config, tunnel_url=tunnel), secrets, api, out)
+    state.write("agent.json", {**agent_state, "tunnel": tunnel, "source_commit": source_commit()})
+    state.write("last-update.json", {"updated_at": time.time(), "prompt_sha256": prompt_digest(prompt), "source_commit": source_commit(), "tunnel": tunnel,
+                                     "llm_version": result.get("version"), "llm_published": result.get("is_published")})
+    return code
+
+
 def sign_body(raw: bytes, key: str, now_ms: int) -> str:
     return f"v={now_ms},d=" + hmac.new(key.encode("utf-8"), raw + str(now_ms).encode("ascii"), hashlib.sha256).hexdigest()
 
@@ -523,12 +561,12 @@ def call_summary(config: OperatorConfig, secrets: Any, api: RetellApi, out: Call
     return 0
 
 
-ACTIONS = ("plan", "store-secret", "create", "verify", "preflight", "prepare-web", "call-summary")
+ACTIONS = ("plan", "store-secret", "create", "update", "verify", "preflight", "prepare-web", "call-summary")
 
 
 def run(
     action: str, env: Mapping[str, str], out: Callable[[str], None], *, config_file: Optional[str] = None, overrides: Optional[Mapping[str, Any]] = None,
-    confirm_create: bool = False, secret_name: str = "retell_api_key", base_url: Optional[str] = None, secrets: Any = None,
+    confirm_create: bool = False, confirm_update: bool = False, secret_name: str = "retell_api_key", base_url: Optional[str] = None, secrets: Any = None,
     api_factory: Optional[Callable[[Any], RetellApi]] = None, prompt: Optional[Callable[[str], str]] = None, opener: Callable[..., Any] = urllib.request.urlopen,
     clock: Callable[[], float] = time.time,
 ) -> int:
@@ -545,6 +583,8 @@ def run(
             return store_secret(secret_name, secrets, prompt or getpass.getpass, out)
         if action == "create":
             return create(config, secrets, factory(secrets), out, confirm=confirm_create)
+        if action == "update":
+            return update(config, secrets, factory(secrets), out, confirm=confirm_update)
         if action == "verify":
             return verify(config, secrets, factory(secrets), out)
         if action == "preflight":
