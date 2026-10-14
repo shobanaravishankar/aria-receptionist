@@ -1,12 +1,12 @@
 """The one demo dataset: staff, services, eligibility and a deterministic multi-day schedule. Invented; no real customer data.
 
-* Staff names are labels observed on the real calendar (reference only); ids are SYNTHETIC. The hidden internal test account that appears in the real
-  filter is deliberately NOT included (it would be confused with the voice agent's own name). One person, like the real owner column, shows NO
-  working hours, so her availability is UNKNOWN.
+* Staff names are fictional first names; ids are SYNTHETIC. Every standard column has complete working days and hours; a person who is not working that day
+  is simply not on that day's schedule (off duty is a KNOWN state, distinct from missing data). A column whose hours are MISSING exists only as a deliberate
+  diagnostic (``DemoDataset(..., diagnostic_unknown_hours=(id,))``): her availability is then UNKNOWN and never free, and the reader says so.
 * Schedules are generated per (date, staff) from a fixed seed, so any run produces the same calendar for the same demo date. The window the dataset
   covers is explicit; any other date raises NotCovered and the voice answers "can't confirm", never "free".
 * Two SCRIPTED days (tomorrow and the day after the demo date) pin the interesting cases so a demo is reliable: an available slot, an occupied slot, an
-  off-duty person, a visit that would cross into the next appointment, a buffer clash, a break, and a person whose hours are unknown.
+  off-duty person, a visit that would cross into the next appointment, a buffer clash and a break.
 * Clients are fictional first names with a surname initial, chosen from fixed lists.
 """
 
@@ -40,7 +40,7 @@ class DemoStaff:
     weekdays: frozenset  # Monday = 0
     hours: tuple[int, int]  # minutes since midnight
     categories: frozenset
-    hours_known: bool = True  # False: her column shows no hours, so her availability is unknown (like the real owner column)
+    hours_known: bool = True  # False (a diagnostic only): her column shows no hours, so her availability is unknown, never free
 
 
 def _days(*numbers: int) -> frozenset:
@@ -134,10 +134,15 @@ def _client(rng: random.Random) -> str:
 
 
 class DemoDataset:
-    def __init__(self, today: date, *, extra_staff: Iterable[DemoStaff] = (), overlay=None):
+    def __init__(self, today: date, *, extra_staff: Iterable[DemoStaff] = (), overlay=None, diagnostic_unknown_hours: Iterable[str] = ()):
         self.today = today
+        self.diagnostic_unknown_hours = frozenset(diagnostic_unknown_hours)  # staff ids whose hours are deliberately NOT shown (a test or diagnostic scenario)
         self.overlay = overlay  # appointments.overlay.StoreOverlay, or None: the plain generated calendar, which nothing can change
-        self.roster: tuple[DemoStaff, ...] = ROSTER + tuple(extra_staff)
+        everyone = ROSTER + tuple(extra_staff)
+        missing = self.diagnostic_unknown_hours - {s.staff_id for s in everyone}
+        if missing:
+            raise ValueError("diagnostic_unknown_hours names staff who are not on the roster: " + ", ".join(sorted(missing)))
+        self.roster: tuple[DemoStaff, ...] = tuple(replace(s, hours_known=False) if s.staff_id in self.diagnostic_unknown_hours else s for s in everyone)
         pairs = demo_services(self.roster)
         self._registry = BookableRegistry([service for service, _category in pairs], catalog=SHOWCASE_CATALOG)
         self._services: dict[str, list[BookableService]] = {}
@@ -232,6 +237,8 @@ class DemoDataset:
         first, second = self.scripted_days
         if day not in (first, second):
             return None
+        if staff.staff_id in self.diagnostic_unknown_hours and day == first:
+            return _DIAGNOSTIC_UNKNOWN_FIRST  # present on the scripted day with no hours shown, so the diagnostic is reproducible
         return (_SCRIPT_FIRST if day == first else _SCRIPT_SECOND).get(staff.staff_id)  # None: this person follows the generated schedule that day
 
     def _scripted(self, day: date, staff: DemoStaff, entry) -> StaffPlan:
@@ -257,15 +264,16 @@ class DemoDataset:
 # Scripted days. Each entry: (hours, breaks, visits) or "off". Visits are (start, end, service label, category), minutes since midnight.
 # Keyed by staff ID (names are display only).  FIRST day (tomorrow):  910006 (Sienna) free 3-8 PM (available at 4);  910001 (Marisol) booked 3:45-5:15
 # (occupied at 4);  910002 (Tamsin) free until a 5:00 PM visit (a 60-minute massage at 4:00 fits the gap only without its 15-minute buffer, a 90-minute one
-# crosses the visit);  910007 (Rowan) on a 3-5 PM break;  910008 (Imogen) is off;  910010 (Delphine): hours not shown (unknown).
+# crosses the visit);  910007 (Rowan) on a 3-5 PM break;  910008 (Imogen) is off. Everyone else follows the generated schedule that day.
 _SCRIPT_FIRST: dict = {
     "910006": ((600, 1200), (), [(690, 750, "Swedish Massage, 1 hour", "massage")]),
     "910001": ((600, 1200), (), [(600, 660, "Hot Stone Massage, 1 hour", "massage"), (945, 1035, "Deep Tissue Massage, 1 hour 30 minutes", "massage")]),
     "910002": ((600, 1200), (), [(660, 720, "Signature Facial", "facial"), (1020, 1080, "Back Facial", "facial")]),
     "910007": ((600, 1200), ((900, 1020, "Break"),), [(600, 615, "Eyebrows", "waxing")]),
     "910008": "off",
-    "910010": ((600, 1200), (), []),
 }
+# the diagnostic scenario only: a person on the first scripted day whose column shows no hours
+_DIAGNOSTIC_UNKNOWN_FIRST = ((600, 1200), (), [])
 # SECOND day: a different mix so a follow-up question has other answers.
 _SCRIPT_SECOND: dict = {
     "910006": ((600, 1200), (), [(600, 690, "Deep Tissue Massage, 1 hour 30 minutes", "massage"), (900, 960, "Aromatherapy Massage, 1 hour", "massage")]),

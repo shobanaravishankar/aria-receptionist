@@ -1,7 +1,7 @@
 """The demo's voice answers, through the SAME tool path the live calendar uses (VoiceTools -> deadlines -> read-only routes), over the demo dataset.
 
 Scripted day (the demo date plus one): Sienna is free from 3 PM; Marisol is booked 3:45-5:15 PM; Tamsin has a 5:00 PM visit; Rowan is on a 3-5 PM
-break; Imogen is off; Delphine's hours are not shown. Nothing here touches a browser, Booksy or the network except one loopback HTTP test.
+break; Imogen is off; Delphine works a complete day (her missing-hours column is a diagnostic scenario). Nothing here touches a browser, Booksy or the network except one loopback HTTP test.
 """
 
 from __future__ import annotations
@@ -102,8 +102,9 @@ def test_a_visit_that_would_run_into_a_break_says_the_break_not_the_closing_time
 
 
 def test_the_person_with_no_shown_hours_is_unknown_never_available():
-    tools, *_ = make()
-    reply = ask(tools, "Delphine", service=FACIAL)
+    dataset = DemoDataset(TODAY, diagnostic_unknown_hours=("910010",))  # the DIAGNOSTIC scenario: the normal demo has complete schedules
+    endpoint, _driver, _dataset = build_demo(KEY, today=TODAY, real_now=real_now, dataset=dataset)
+    reply = ask(endpoint._tools, "Delphine", service=FACIAL)
     assert reply["status"] == "unknown" and not reply.get("options") and "free" not in reply["speak"].replace("whether it's free", "")
 
 

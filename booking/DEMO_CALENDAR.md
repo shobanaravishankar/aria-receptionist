@@ -135,7 +135,8 @@ On the demo date + 1 (a massage at 4 PM unless stated). `python -m aria_booking 
 | "Tamsin at 4 for 90 minutes?" | the visit would **run into** her 5 PM appointment |
 | "Tamsin at 4 for an hour?" | fits before 5 PM but **not with the 15 minutes of cleanup** a massage needs; a 30-minute one is available |
 | "Rowan at 4?" | **off between 3 and 5 PM** (a break), so not available; offers 5 PM |
-| "Delphine for a facial?" | **unknown**: her column shows no hours, so the answer is "I can't confirm" |
+| "Delphine for a facial?" | answered from her real (complete) schedule like everyone else's. Every standard column has working days and hours; a person not working that day is off duty, a KNOWN state |
+| (diagnostic only) `demo-serve --diagnostic-incomplete-calendar` | Delphine's hours are not shown, so a time only she could take is **unknown** ("I can't confirm", never free); with others who are known-busy the answer says both things and offers real alternatives |
 | "Who is free at 4?" | the first eligible technician who really is (Sienna) |
 | "Who does the Microdermabrasion Facial?" | `lookup_service` lists the demo's **facial** technicians (Tamsin, Odette, Priya, Noor, Calista, Delphine) |
 | "Is this schedule real?" | answered truthfully: a prototype with an invented calendar, not the salon's real schedule (never volunteered otherwise) |

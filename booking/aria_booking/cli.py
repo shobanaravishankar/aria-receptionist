@@ -46,6 +46,7 @@ from .catalog.mapping_table import MappingTableError, load_mapping_table
 
 EXIT_OK, EXIT_REFUSED, EXIT_REVIEW, EXIT_NOT_SAVED = 0, 2, 3, 4
 
+DIAGNOSTIC_UNKNOWN = ("910010",)  # --diagnostic-incomplete-calendar: Delphine's hours are not shown
 SERVE_LOAD_TIMEOUT = 10.0  # the voice server gives up on a day page sooner than the interactive commands do: a caller is on the line
 
 # Every one of these must be given for `book`; each names one thing the run is allowed to do to the real account.
@@ -106,6 +107,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--site-port", type=int, default=8790, help="the demo calendar page's loopback port")
     p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today); 'tomorrow' means the day after it")
     p.add_argument("--via-page", action="store_true", help="answer by reading the demo PAGE in a Playwright window (the live code path) instead of the dataset")
+    p.add_argument("--diagnostic-incomplete-calendar", action="store_true", help="DIAGNOSTIC ONLY: one technician's working hours are not shown on the calendar, to exercise the "
+                                                                                 "'cannot confirm' path (unknown is never free). Off by default: the normal demo's schedules are complete.")
     p.add_argument("--lifecycle", action="store_true", help="the SIMULATED appointment lifecycle: find, book, move and cancel appointments in the prototype calendar (a local file, invented clients; "
                                                             "never Booksy). Without it the demo stays read-only.")
     p.add_argument("--store", default=None, help="with --lifecycle: the appointment file (default: .local/demo-appointments/appointments.sqlite3, git-ignored)")
@@ -457,7 +460,7 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
         return _demo_serve_lifecycle(args, cfg, key, tool_token, today, out)
     tz = ZoneInfo(SPA_TIMEZONE)  # the demo's one timezone: the same zone the greeting and the session clock use
     clock = demo_clock(today, tz)
-    dataset = DemoDataset(clock().date())
+    dataset = DemoDataset(clock().date(), diagnostic_unknown_hours=DIAGNOSTIC_UNKNOWN if args.diagnostic_incomplete_calendar else ())
     if today is not None and today != datetime.now(tz).date():
         out(f"WARNING: --today {today.isoformat()} is not the real date. A Retell agent's own clock is the real date, so for a live voice test leave --today off; "
             "otherwise 'tomorrow' will mean different days to the agent and to the calendar.")
@@ -525,7 +528,8 @@ def _demo_serve_lifecycle(args, cfg: Config, key: str, tool_token: str, today, o
     try:
         destination = load_owner_destination(cfg.local_dir)
         contact = contact_phrase(SHOWCASE)
-        lifecycle = open_lifecycle(Path(args.store) if args.store else default_store_path(cfg.local_dir), today=today)
+        lifecycle = open_lifecycle(Path(args.store) if args.store else default_store_path(cfg.local_dir), today=today,
+                                   diagnostic_unknown_hours=DIAGNOSTIC_UNKNOWN if args.diagnostic_incomplete_calendar else ())
     except (OwnerDestinationError, ValueError, StoreError) as exc:
         out(f"refused: {exc}")
         return EXIT_REFUSED

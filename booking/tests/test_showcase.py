@@ -70,7 +70,8 @@ def test_the_roster_is_ten_distinct_fictional_first_names_with_the_same_ids_sche
     assert [r.staff_id for r in ROSTER_ROWS] == [f"9100{n:02d}" for n in range(1, 11)]
     assert len({r.name for r in ROSTER_ROWS}) == 10 and all(len(r.name.split()) == 1 for r in ROSTER_ROWS)
     by_id = {r.staff_id: r for r in ROSTER_ROWS}
-    assert by_id["910010"].hours_known is False and sum(not r.hours_known for r in ROSTER_ROWS) == 1, "exactly one column shows no hours"
+    assert all(r.hours_known for r in ROSTER_ROWS), "every standard column shows its working days and hours (a missing-hours column is a diagnostic option only)"
+    assert by_id["910010"].weekdays == (0, 1, 2, 3, 4) and by_id["910010"].hours == (600, 1200) and by_id["910010"].categories == ("facial",)
     assert by_id["910001"].categories == ("massage", "body-scrub", "head-spa") and by_id["910006"].categories == ("massage", "head-spa")
     assert by_id["910003"].weekdays == (1, 3, 5) and by_id["910004"].weekdays == (2, 4, 6) and by_id["910009"].hours == (720, 1200)
 

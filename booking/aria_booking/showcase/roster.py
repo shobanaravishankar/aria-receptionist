@@ -15,7 +15,7 @@ class StaffRow(NamedTuple):
     weekdays: tuple  # Monday = 0
     hours: tuple  # minutes since midnight
     categories: tuple  # the service categories this person is assigned in the DEMO (synthetic eligibility)
-    hours_known: bool = True  # False: the column shows no hours, so availability is UNKNOWN (like a calendar column that lists none)
+    hours_known: bool = True  # every standard column shows its hours. False is a DIAGNOSTIC state (see DemoDataset): availability is then UNKNOWN, never free
 
 
 ROSTER_ROWS = (
@@ -28,7 +28,7 @@ ROSTER_ROWS = (
     StaffRow("910007", "Rowan", (0, 1, 2, 3, 4), (600, 1200), ("massage", "waxing")),
     StaffRow("910008", "Imogen", (0, 1, 3, 4, 5, 6), (600, 1200), ("lash", "waxing", "massage")),
     StaffRow("910009", "Calista", (1, 2, 3, 4, 5), (720, 1200), ("facial", "waxing")),
-    StaffRow("910010", "Delphine", (0, 1, 2, 3, 4), (600, 1200), ("facial",), hours_known=False),
+    StaffRow("910010", "Delphine", (0, 1, 2, 3, 4), (600, 1200), ("facial",)),
 )
 
 ROLE_BY_CATEGORY = {

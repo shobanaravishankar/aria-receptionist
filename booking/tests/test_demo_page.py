@@ -101,9 +101,12 @@ def test_one_column_per_shown_person_with_a_synthetic_staff_id_and_a_matching_he
     assert len(with_testid(html, "resource")) == len(plan.plans) and len(with_testid(html, "resource-content")) == len(plan.plans)
 
 
-def test_the_header_shows_the_real_hours_format_and_nothing_for_the_person_without_hours(dataset, html):
+def test_the_header_shows_the_real_hours_format_for_everyone_and_nothing_for_a_diagnostic_missing_column(dataset, html):
     hours = re.findall(r'class="_hours_10ie7_48">([^<]*)<', html)
-    assert "10:00 AM-8:00 PM" in hours and len(hours) == len(dataset.day_plan(TOMORROW).plans) - 1, "Delphine's header shows no hours"
+    assert "10:00 AM-8:00 PM" in hours and len(hours) == len(dataset.day_plan(TOMORROW).plans), "every standard column shows its hours"
+    diagnostic = DemoDataset(TODAY, diagnostic_unknown_hours=("910010",))
+    shown = re.findall(r'class="_hours_10ie7_48">([^<]*)<', render_page(diagnostic, TOMORROW))
+    assert len(shown) == len(diagnostic.day_plan(TOMORROW).plans) - 1, "the diagnostic column shows no hours"
 
 
 def test_the_staff_filter_is_the_real_shape_with_its_three_controls_and_every_staff_member(dataset, html):
@@ -164,7 +167,8 @@ def test_non_working_blocks_shade_the_hours_outside_the_day_and_the_breaks(datas
     assert 'data-label="Break"' in html
 
 
-def test_the_person_without_hours_is_shaded_nowhere(dataset):
+def test_the_person_without_hours_is_shaded_nowhere():
+    dataset = DemoDataset(TODAY, diagnostic_unknown_hours=("910010",))
     page = render_page(dataset, TOMORROW)
     column = page.split(f'data-resource="{dataset.roster[-1].staff_id}"', 1)[1].split("</div></div></div>", 1)[0]
     assert "non-working-event" not in column.split('class="_calendarColumn_1pknx_16"', 1)[0]

@@ -35,11 +35,11 @@ SIENNA, MARISOL, IMOGEN, DELPHINE = "910006", "910001", "910008", "910010"  # Si
 
 
 class World:
-    def __init__(self, tmp_path, today=TODAY, hour=10, name="world.sqlite3"):
+    def __init__(self, tmp_path, today=TODAY, hour=10, name="world.sqlite3", diagnostic_unknown_hours=()):
         self.now = datetime(today.year, today.month, today.day, hour, 0, tzinfo=TZ)
         self.clock = demo_clock(today, TZ, real_now=lambda: self.now)
         self.store = AppointmentStore(tmp_path / name, clock=lambda: to_epoch(self.clock()))
-        self.dataset = DemoDataset(today, overlay=StoreOverlay(self.store, TZ))
+        self.dataset = DemoDataset(today, overlay=StoreOverlay(self.store, TZ), diagnostic_unknown_hours=diagnostic_unknown_hours)
         self.judge = PlacementJudge(self.dataset, tz=TZ, clock=self.clock)
         self.endpoint, self.driver, _ = build_demo("test-key", today=today, real_now=lambda: self.now, dataset=self.dataset)
         self.tools = self.endpoint._tools
@@ -155,7 +155,6 @@ def test_a_day_is_the_local_wall_clock_day_across_a_clock_change():
     (dict(hour=19), "not_free"),                    # a 60-minute massage plus cleanup would run past the 8 PM close
     (dict(hour=11), "not_free"),                    # Sienna's scripted 11:30 visit
     (dict(staff="910007", hour=16), "not_free"),    # Rowan's scripted break
-    (dict(staff=DELPHINE, hour=12, service="facial-signature-facial-60"), "calendar_unknown"),  # hours not shown: unknown is not free
     (dict(day=TODAY + timedelta(days=60)), "not_covered"),
 ])
 def test_the_judge_refuses_what_check_slot_would_refuse_and_says_which_rule(world, change, expected):
@@ -164,6 +163,13 @@ def test_the_judge_refuses_what_check_slot_would_refuse_and_says_which_rule(worl
     with pytest.raises(Refused) as why:
         world.judge.require(Placement.of(world.new(**kw)), world.store.between)
     assert why.value.reason == expected
+
+
+def test_a_column_with_missing_hours_is_unknown_never_free_in_the_diagnostic_scenario(tmp_path):
+    diagnostic = World(tmp_path, diagnostic_unknown_hours=("910010",))
+    with pytest.raises(Refused) as why:
+        diagnostic.judge.require(Placement.of(diagnostic.new(hour=12, staff=DELPHINE, service="facial-signature-facial-60")), diagnostic.store.between)
+    assert why.value.status == "unknown" and why.value.reason == "calendar_unknown", "unknown is not free"
 
 
 def test_the_minimum_notice_and_a_day_off_are_their_own_refusals(world):

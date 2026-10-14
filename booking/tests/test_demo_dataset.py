@@ -42,9 +42,24 @@ def test_the_hidden_internal_test_account_is_not_in_the_demo_roster():
     assert "Aria" not in {s.name for s in ROSTER}, "it would be confused with the voice agent's own name"
 
 
-def test_one_person_has_no_hours_shown_like_the_real_owner_column():
-    unknown = [s for s in ROSTER if not s.hours_known]
-    assert [s.name for s in unknown] == ["Delphine"]
+def test_every_standard_column_has_known_working_hours_and_off_duty_is_a_known_state_not_missing_data(dataset):
+    assert all(s.hours_known for s in ROSTER), "the normal demo's schedules are complete, Delphine's included"
+    for day in all_days(dataset):
+        plans = dataset.day_plan(day).plans
+        assert all(p.shown_hours is not None for p in plans), f"{day}: someone on the schedule has no hours shown"
+        assert {p.staff.staff_id for p in plans} <= {s.staff_id for s in ROSTER}
+    shown = {p.staff.name for p in dataset.day_plan(dataset.scripted_days[0]).plans}
+    assert "Delphine" in shown and "Imogen" not in shown, "Imogen is off duty (known); Delphine works"
+
+
+def test_a_column_with_missing_hours_exists_only_as_a_deliberately_selected_diagnostic():
+    ds = DemoDataset(TODAY, diagnostic_unknown_hours=("910010",))
+    assert [s.name for s in ds.roster if not s.hours_known] == ["Delphine"]
+    delphine = plan_of(ds, ds.scripted_days[0], "Delphine")
+    assert delphine is not None and delphine.shown_hours is None and delphine.visits == (), "present on the scripted day, hours not shown, nothing known about her day"
+    assert all(s.hours_known for s in DemoDataset(TODAY).roster) and all(s.hours_known for s in ROSTER), "the module roster itself is never changed"
+    with pytest.raises(ValueError, match="not on the roster"):
+        DemoDataset(TODAY, diagnostic_unknown_hours=("999999",))
 
 
 def test_no_roster_name_is_silently_a_neighbour_of_another():
@@ -117,11 +132,15 @@ def test_visits_are_of_services_the_person_is_eligible_for(dataset):
                 assert v.category in plan.staff.categories, (plan.staff.name, v)
 
 
-def test_the_person_with_no_shown_hours_has_no_visits_and_no_header_hours(dataset):
-    for day in all_days(dataset):
-        for plan in dataset.day_plan(day).plans:
+def test_the_person_with_no_shown_hours_has_no_visits_and_no_header_hours():
+    ds = DemoDataset(TODAY, diagnostic_unknown_hours=("910010",))
+    seen = 0
+    for day in all_days(ds):
+        for plan in ds.day_plan(day).plans:
             if not plan.staff.hours_known:
+                seen += 1
                 assert plan.visits == () and plan.shown_hours is None
+    assert seen > 10
 
 
 def test_utilisation_is_realistic_not_empty_and_not_solid(dataset):
@@ -176,7 +195,7 @@ def test_tomorrow_always_has_the_pinned_cases_whatever_the_weekday(today):
     assert [(b.start, b.end) for b in rowan.breaks] == [(minute("15:00"), minute("17:00"))]
     assert plan_of(ds, tomorrow, "Imogen") is None, "off duty"
     delphine = plan_of(ds, tomorrow, "Delphine")
-    assert delphine is not None and delphine.shown_hours is None
+    assert delphine is None or delphine.shown_hours == (minute("10:00"), minute("20:00")), "Delphine is either off duty (a known state) or works with complete hours, never half-known"
 
 
 def test_the_second_scripted_day_is_a_different_mix(dataset):
@@ -188,7 +207,8 @@ def test_the_second_scripted_day_is_a_different_mix(dataset):
 def test_describe_day_lists_everyone_without_inventing_contact_details(dataset):
     lines = dataset.describe_day(dataset.scripted_days[0])
     text = "\n".join(lines)
-    assert "Sienna" in text and re.search(r"not working: .*Imogen", text) and "hours not shown" in text
+    assert "Sienna" in text and re.search(r"not working: .*Imogen", text) and "hours not shown" not in text and "Delphine: 10:00 AM-8:00 PM" in text
+    assert "hours not shown" in "\n".join(DemoDataset(TODAY, diagnostic_unknown_hours=("910010",)).describe_day(dataset.scripted_days[0]))
     assert not re.search(r"@|\d{3}[- ]\d{3}[- ]\d{4}", text)
 
 

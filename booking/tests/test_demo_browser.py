@@ -101,10 +101,32 @@ def test_the_real_reader_reads_the_page_exactly_as_the_dataset_answers(driver, d
         assert comparable(driver.read_day(day)) == comparable(answers.read_day(day)), day.isoformat()
 
 
+@pytest.fixture(scope="module")
+def diagnostic_driver(tmp_path_factory, channel):
+    diagnostic = DemoDataset(TODAY, diagnostic_unknown_hours=("910010",))
+    site = make_site(diagnostic, 0)
+    threading.Thread(target=site.serve_forever, daemon=True).start()
+    drv = make_driver(tmp_path_factory.mktemp("demo-browser-diagnostic"), site.server_address[1], channel)
+    yield drv, diagnostic
+    drv.close()
+    site.shutdown()
+    site.server_close()
+
+
+def test_the_diagnostic_missing_hours_column_reads_as_unknown_in_the_real_reader_and_equals_the_dataset(diagnostic_driver):
+    drv, diagnostic = diagnostic_driver
+    by_name = {sd.staff: sd for sd in drv.read_day(TOMORROW).staff_days}
+    assert by_name["Delphine"].working is None and by_name["Delphine"].appointments is not None, "hours not shown: unknown, never free"
+    answers = DemoCalendarDriver(diagnostic)
+    for day in (TOMORROW, TOMORROW + timedelta(days=1), TOMORROW + timedelta(days=5)):
+        assert comparable(drv.read_day(day)) == comparable(answers.read_day(day)), day.isoformat()
+
+
 def test_the_scripted_day_read_from_the_page_has_every_pinned_case(driver):
     by_name = {sd.staff: sd for sd in driver.read_day(TOMORROW).staff_days}
     assert "Imogen" not in by_name, "off duty"
-    assert by_name["Delphine"].working is None, "hours not shown: unknown"
+    assert by_name["Delphine"].working is not None and sorted((w.start.hour, w.end.hour) for w in by_name["Delphine"].working)[0][0] == 10, "complete hours: not unknown"
+    assert all(sd.working is not None for sd in by_name.values()), "no standard column is missing its hours"
     assert [(a.interval.start.hour, a.interval.start.minute) for a in by_name["Marisol"].appointments] == [(10, 0), (15, 45)]
     assert [(w.start.hour, w.end.hour) for w in by_name["Rowan"].working] == [(10, 15), (17, 20)], "her break splits the day"
     assert by_name["Sienna"].staff_id == "910006" and all(sd.staff_id.startswith("9100") for sd in by_name.values())
