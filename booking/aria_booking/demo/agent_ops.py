@@ -45,8 +45,17 @@ REPO_ROOT = BOOKING.parent
 RETELL_API = "https://api.retellai.com/"
 LEAD, BOOKED = name_of("910006"), name_of("910001")  # the scripted first day: LEAD is free at 4 PM, BOOKED is not (both come from the one roster)
 TOOL_NAMES = frozenset({"lookup_service", "check_slot", "find_alternatives"})
+LIFECYCLE_TOOL_NAMES = TOOL_NAMES | {"find_appointments", "last_completed_visit", "book_appointment", "cancel_appointment", "reschedule_appointment"}
 SOURCE_PROMPT = "voice_agent_draft/prompt_demo_calendar.md"
 SOURCE_TOOLS = "voice_agent_draft/tools_availability_only.json"
+# The two reviewed configurations the operator can hold. 'availability' (the default) is the read-only demo; 'lifecycle' is the SIMULATED appointment lifecycle (find, book, move,
+# cancel in the prototype calendar only). Neither has a function for the live Booksy calendar.
+MODES = {
+    "availability": {"prompt": SOURCE_PROMPT, "tools": SOURCE_TOOLS, "names": TOOL_NAMES, "label": "simulated availability only"},
+    "lifecycle": {"prompt": "voice_agent_draft/prompt_demo_lifecycle.md", "tools": "voice_agent_draft/tools_demo_lifecycle.json", "names": LIFECYCLE_TOOL_NAMES,
+                  "label": "simulated appointment lifecycle"},
+}
+LIFECYCLE_BOOKING_NOTE = "Appointments made here exist only in this prototype calendar"
 CLOCK_SECTION = (
     "\n\n## Session clock\nCurrent salon date and time: {{current_time_" + SPA_TIMEZONE + "}}. "
     f"The demo uses today's actual date in {SPA_TIMEZONE}. Resolve tomorrow from this date.\n"
@@ -60,7 +69,7 @@ ALLOWED = (
 )
 CONFIG_KEYS = frozenset({
     "tunnel_url", "agent_name", "voice_id", "model", "model_temperature", "language", "max_call_duration_ms", "data_storage_retention_days",
-    "begin_message", "state_dir", "web_dir", "calendar_port", "tools_port", "page_port",
+    "begin_message", "state_dir", "web_dir", "calendar_port", "tools_port", "page_port", "mode",
 })
 RETIRED_KEYS = frozenset({"template_dir"})  # the page is no longer built from a website template; config files that still name it keep loading
 
@@ -120,6 +129,11 @@ class OperatorConfig:
     calendar_port: int = 8790
     tools_port: int = 8787
     page_port: int = 5174
+    mode: str = "availability"  # or "lifecycle": which reviewed prompt and function set this agent is held to
+
+    def __post_init__(self) -> None:
+        if self.mode not in MODES:
+            raise OperatorError("mode must be one of: " + ", ".join(sorted(MODES)))
 
     @property
     def web_out(self) -> Path:
@@ -193,17 +207,17 @@ def source_commit() -> str:
         return "unknown"
 
 
-def expected_prompt(root: Path = BOOKING) -> str:
-    text = (root / SOURCE_PROMPT).read_text(encoding="utf-8")
+def expected_prompt(root: Path = BOOKING, mode: str = "availability") -> str:
+    text = (root / MODES[mode]["prompt"]).read_text(encoding="utf-8")
     if text.count("## Who you are") != 1:
         raise OperatorError("the reviewed prompt must contain the '## Who you are' section exactly once")
     return text[text.index("## Who you are"):] + CLOCK_SECTION
 
 
-def expected_tools(tunnel: str, token: str, root: Path = BOOKING) -> list[dict]:
-    custom = json.loads((root / SOURCE_TOOLS).read_text(encoding="utf-8"))["tools"]
-    if {t["name"] for t in custom} != TOOL_NAMES:
-        raise OperatorError("the reviewed tool file must hold exactly the three read-only functions")
+def expected_tools(tunnel: str, token: str, root: Path = BOOKING, mode: str = "availability") -> list[dict]:
+    custom = json.loads((root / MODES[mode]["tools"]).read_text(encoding="utf-8"))["tools"]
+    if {t["name"] for t in custom} != MODES[mode]["names"]:
+        raise OperatorError("the reviewed tool file must hold exactly the " + ("three read-only" if mode == "availability" else "eight lifecycle") + " functions")
     for tool in custom:
         tool.update(type="custom", url=f"{tunnel}/tools/{tool['name']}", headers={"Authorization": "Bearer " + token}, speak_after_execution=True, args_at_root=False)
     return custom + [{"type": "end_call", "name": "end_call", "description": "End when the caller says goodbye or is finished."}]
@@ -247,13 +261,15 @@ def plan(config: OperatorConfig, secrets: Any, out: Callable[[str], None]) -> in
         tunnel = validate_tunnel(config.tunnel_url)
     except OperatorError as exc:
         tunnel = f"(not set: {exc})"
-    prompt = expected_prompt()
-    tools = expected_tools(tunnel if tunnel.startswith("https://") else "https://<your-tunnel-host>", "<tool token>")
+    prompt = expected_prompt(mode=config.mode)
+    tools = expected_tools(tunnel if tunnel.startswith("https://") else "https://<your-tunnel-host>", "<tool token>", mode=config.mode)
     out("PLAN (nothing is created or contacted)")
+    out(f"  mode              : {config.mode} ({MODES[config.mode]['label']})")
     out(f"  agent name        : {config.agent_name}  (a SEPARATE test agent; no existing agent is changed)")
     out(f"  tunnel            : {tunnel}")
-    out(f"  functions         : {', '.join(sorted(t['name'] for t in tools if t['type'] == 'custom'))} + end_call; no booking function")
-    out(f"  prompt            : {SOURCE_PROMPT} from '## Who you are' + a session-clock line, {len(prompt)} characters, sha256 {prompt_digest(prompt)}")
+    out(f"  functions         : {', '.join(sorted(t['name'] for t in tools if t['type'] == 'custom'))} + end_call; "
+        + ("no booking function" if config.mode == "availability" else "they change only the PROTOTYPE calendar; none reaches the live Booksy calendar"))
+    out(f"  prompt            : {MODES[config.mode]['prompt']} from '## Who you are' + a session-clock line, {len(prompt)} characters, sha256 {prompt_digest(prompt)}")
     out(f"  settings          : model {config.model}, voice {config.voice_id}, {config.max_call_duration_ms // 1000}s call cap, {config.data_storage_retention_days}-day retention, contact memory off")
     out("  opening           : " + (f"fixed message: {config.begin_message}" if config.begin_message is not None else
                                     f"unset: the agent speaks first from the prompt, 'Good morning/afternoon/evening' by the local hour in {SPA_TIMEZONE} at the start of each call"))
@@ -329,7 +345,7 @@ def _read_back(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callab
     agent_state, llm_id = state.read("agent.json"), state.read("llm.json")["llm_id"]
     tunnel = validate_tunnel(config.tunnel_url)
     token = secrets.get("tool_token")
-    prompt, tools = expected_prompt(), expected_tools(tunnel, token)
+    prompt, tools = expected_prompt(mode=config.mode), expected_tools(tunnel, token, mode=config.mode)
     agent, llm = api.request("get-agent/" + agent_state["agent_id"]), api.request("get-retell-llm/" + llm_id)
     problems: list[str] = []
     _check(problems, "the agent does not use the recorded LLM", llm_id, (agent.get("response_engine") or {}).get("llm_id"))
@@ -341,7 +357,7 @@ def _read_back(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callab
     _check(problems, "contact memory is not off", (False, False), (memory.get("enable_read"), memory.get("enable_update")))
     _check(problems, "the prompt differs from the reviewed source", prompt, llm.get("general_prompt"))
     live = {t.get("name"): t for t in llm.get("general_tools") or [] if t.get("type") == "custom"}
-    _check(problems, "the set of custom functions", sorted(TOOL_NAMES), sorted(live))
+    _check(problems, "the set of custom functions", sorted(MODES[config.mode]["names"]), sorted(live))
     if "book_slot" in json.dumps(llm.get("general_tools") or []) or "book_slot" in (llm.get("general_prompt") or ""):
         problems.append("a booking function or instruction is present")
     for tool in tools:
@@ -358,10 +374,11 @@ def _read_back(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callab
         state.remove("configuration-verified.json")
         raise OperatorError("read-back does NOT match the reviewed configuration: " + "; ".join(problems))
     state.write("configuration-verified.json", {
-        "verified_at": time.time(), "tools": sorted(live), "booking_enabled": False, "prompt_sha256": prompt_digest(prompt),
+        "verified_at": time.time(), "tools": sorted(live), "booking_enabled": False, "mode": config.mode, "prompt_sha256": prompt_digest(prompt),
         "agent_name": agent.get("agent_name"), "source_commit": source_commit(),
     })
-    out("Separate simulated-calendar agent and all three read-only functions verified against the reviewed source; no call was started.")
+    out("Separate simulated-calendar agent and all three read-only functions verified against the reviewed source; no call was started." if config.mode == "availability" else
+        "Separate simulated-calendar agent and all eight lifecycle functions verified against the reviewed source (they change only the prototype calendar); no call was started.")
     engine = agent.get("response_engine") or {}
     out(f"Binding: the agent uses the recorded LLM (engine version {engine.get('version', 'not stated, so the latest')}); that LLM is version {llm.get('version')}, "
         f"published: {llm.get('is_published')}. Retell's documentation does not say which version a web call with agent_version {agent.get('version')} uses, "
@@ -376,7 +393,7 @@ def create(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[
     token = secrets.ensure_token() if hasattr(secrets, "ensure_token") else secrets.get("tool_token")
     secrets.get("retell_api_key")  # fail early, before anything is written, if the key is missing
     state = State(config.state_dir)
-    prompt, tools = expected_prompt(), expected_tools(tunnel, token)
+    prompt, tools = expected_prompt(mode=config.mode), expected_tools(tunnel, token, mode=config.mode)
     llm = _create_once(
         state, "llm",
         lambda: api.request("create-retell-llm", {
@@ -393,7 +410,7 @@ def create(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[
             "data_storage_retention_days": config.data_storage_retention_days, "contact_memory_config": {"enable_read": False, "enable_update": False},
         }, "POST"),
         lambda made: {"agent_id": made["agent_id"], "agent_name": made["agent_name"], "version": made.get("version", 0), "llm_id": llm["llm_id"],
-                      "tunnel": tunnel, "mode": "simulated availability only", "source_commit": source_commit()},
+                      "tunnel": tunnel, "mode": MODES[config.mode]["label"], "source_commit": source_commit()},
         {"llm_id": llm["llm_id"]},
     )
     return verify(config, secrets, api, out)
@@ -418,7 +435,7 @@ def update(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[
     tunnel = validate_tunnel(config.tunnel_url or agent_state.get("tunnel", ""))
     token = secrets.get("tool_token")
     secrets.get("retell_api_key")  # fail early if the key is missing
-    prompt, tools = expected_prompt(), expected_tools(tunnel, token)
+    prompt, tools = expected_prompt(mode=config.mode), expected_tools(tunnel, token, mode=config.mode)
     # Read first (nothing is changed yet): the agent must still point at the recorded LLM, and its other settings are noted so they can be shown unchanged.
     agent_before, llm_before = api.request("get-agent/" + agent_state["agent_id"]), api.request("get-retell-llm/" + llm_id)
     if (agent_before.get("response_engine") or {}).get("llm_id") != llm_id:
@@ -464,7 +481,12 @@ def preflight(config: OperatorConfig, secrets: Any, out: Callable[[str], None], 
         ("find_alternatives", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": BOOKED}),
     ]
     records = []
-    for index, (name, args) in enumerate(cases):
+    extra = list(_lifecycle_cases(tomorrow)) if config.mode == "lifecycle" else []
+    for index, (name, args) in enumerate([*cases, *extra]):
+        if callable(args):  # a case that needs an earlier answer (the reference of an appointment the lookup returned)
+            args = args(records)
+        if args.get("confirmed") or args.get("confirmation_token"):
+            raise OperatorError("a preflight case must never confirm anything: it only reads and reads back")
         raw = json.dumps({"name": name, "call": {"call_id": f"demo-preflight-{index}"}, "args": args}).encode("utf-8")
         request = urllib.request.Request(f"{base}/tools/{name}", data=raw, headers={
             "Content-Type": "application/json", "Authorization": "Bearer " + token, "X-Retell-Signature": sign_body(raw, key, int(clock() * 1000))})
@@ -487,6 +509,8 @@ def preflight(config: OperatorConfig, secrets: Any, out: Callable[[str], None], 
     lily, elva = records[1]["result"], records[2]["result"]
     if lily.get("status") != "available" or elva.get("unavailable_reason") != "occupied":
         problems.append(f"the scripted examples ({LEAD} free at 4, {BOOKED} booked at 4) did not hold: run the demo server WITHOUT --today so 'tomorrow' is the real tomorrow")
+    if config.mode == "lifecycle":
+        problems.extend(_lifecycle_problems(records[len(cases):]))
     for suffix, expected in (("check_slot", 401), ("book_slot", 404)):
         try:
             with opener(urllib.request.Request(f"{base}/tools/{suffix}", data=b"{}"), timeout=15):
@@ -506,8 +530,40 @@ def preflight(config: OperatorConfig, secrets: Any, out: Callable[[str], None], 
     return 0
 
 
+def _lifecycle_cases(tomorrow: str):
+    """Extra preflight cases for the lifecycle mode. None confirms anything: a booking or cancellation is only taken to its read-back, which saves nothing."""
+    from ..appointments.seed import WILLA
+
+    name, phone = WILLA
+    yield "find_appointments", {"phone": phone, "name": name}
+    yield "last_completed_visit", {"service_category": "lashes", "phone": phone, "name": name}
+    yield "book_appointment", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": LEAD, "client_name": "Preflight Check", "phone": "+1 212 555 0100"}
+    yield "cancel_appointment", lambda records: {
+        "reference": ((records[-3]["result"].get("appointments") or [{}])[0].get("reference") or "AAAAAA"), "phone": phone, "name": name,  # the lookup's first appointment
+    }
+
+
+def _lifecycle_problems(records: list) -> list[str]:
+    found, last, book, cancel = (r["result"] for r in records)
+    problems = []
+    if found.get("status") != "found" or not found.get("appointments"):
+        problems.append("the seeded fictional client was not found: start the demo server with --lifecycle so the store is seeded")
+    if last.get("status") != "found":
+        problems.append("the latest completed visit of the seeded client was not found")
+    if book.get("status") != "confirmation_required" or not book.get("confirmation_token"):
+        problems.append("the booking read-back did not come back as a read-back")
+    if cancel.get("status") != "confirmation_required":
+        problems.append("the cancellation read-back did not come back as a read-back")
+    for reply in (found, last, book, cancel):
+        if reply.get("source") != "demo_calendar":
+            problems.append("a lifecycle reply does not say it is the demo calendar")
+    return problems
+
+
 def test_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path) -> str:
     """The generated steps for one supervised voice test. They name the one address that works with the Retell public key and the scripted cases."""
+    if config.mode == "lifecycle":
+        return lifecycle_instructions(config, tomorrow, web_dir)
     calendar = f"http://localhost:{config.calendar_port}/pro/en-us/9000001/calendar?date={tomorrow}&view=day&staffers=working"
     return "\n".join([
         "SUPERVISED VOICE TEST of the SIMULATED calendar (invented data; booking is disabled; the call uses Retell minutes and is your decision).",
@@ -534,9 +590,52 @@ def test_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path) -> s
     ])
 
 
+def lifecycle_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path) -> str:
+    from ..appointments.seed import ANSEL, CEDRIC, WILLA
+
+    calendar = f"http://localhost:{config.calendar_port}/pro/en-us/9000001/calendar?date={tomorrow}&view=day&staffers=working"
+    return "\n".join([
+        "SUPERVISED VOICE TEST of the SIMULATED appointment lifecycle (invented clients and appointments; the call uses Retell minutes and is your decision).",
+        "Appointments you book, move or cancel exist only in the prototype calendar's local file. NO real salon calendar is touched. No text goes to anyone unless you have set up",
+        "an owner number AND an SMS provider (neither exists yet), and no text ever goes to a client.",
+        "",
+        "1. Start the demo server with the lifecycle mode (it seeds the fictional clients below once and keeps every appointment between restarts):",
+        "     python -m aria_booking demo-serve --lifecycle",
+        "2. Serve the prepared page and leave it running:",
+        f"     python -m http.server {config.page_port} --bind 127.0.0.1 --directory {web_dir}",
+        "3. Open EXACTLY this address, then press the voice button and allow the microphone:",
+        f"     {config.page_url}",
+        f"   Do NOT use http://127.0.0.1:{config.page_port}/ (the Retell public key allows localhost, not the numeric address).",
+        "4. The calendar page Aria reads and writes (refresh it after each change; it must agree with what she says):",
+        f"     {calendar}",
+        "",
+        "The fictional clients (reserved 555-01xx numbers: they reach no real phone, and nothing is ever sent to them):",
+        f"  - {WILLA[0]}, number {WILLA[1][2:5]}-{WILLA[1][5:8]}-{WILLA[1][8:]} ({WILLA[1]}): upcoming waxing (a Tuesday), head spa (a Friday) and massage (a Sunday); past completed lash, massage and facial; a cancelled lash and a missed facial.",
+        f"  - {ANSEL[0]}: the SAME household number, one upcoming facial (a Thursday): when you give that number, Aria must ask for the full name to tell the two apart.",
+        f"  - {CEDRIC[0]}, number {CEDRIC[1][2:5]}-{CEDRIC[1][5:8]}-{CEDRIC[1][8:]}: no upcoming appointment, one past facial (the 'no upcoming' answer).",
+        "  - any other number: not found. Always give the COMPLETE number with the area code.",
+        "",
+        "What to try (say each in your own words):",
+        "  1. 'When is my upcoming waxing appointment?' -> she asks for your full phone number, gives the waxing day first, then briefly the head spa and the massage.",
+        "  2. 'What appointments do I have?' -> the three in order, with the technician and local time.",
+        "  3. 'When was my last lash appointment?' -> the completed one (not the cancelled one); 'last facial' -> not the missed one; 'last waxing' -> none completed.",
+        f"  4. Book: 'A one-hour deep tissue massage tomorrow ({tomorrow}) at 4 with {LEAD}' -> she checks, asks your name and number, reads it back, and only after your yes books it and gives a reference.",
+        "     Then refresh the calendar page: the appointment is there. Ask her again for your upcoming appointments: it is listed. Say 'yes' twice or hang up and call again: it is never booked twice.",
+        "  5. Cancel: 'I need to cancel my massage' -> she may ask why (you can decline), offers another time if you say you are busy, reads back what she will cancel and cancels only after your yes. The slot is free on the page.",
+        "  6. Move: 'Can I move it to Thursday at 2?' -> she reads back old and new time; the original stays if the new time is not free.",
+        f"  7. A time that is taken ({BOOKED} at 4 tomorrow) -> she says so and offers real alternatives; she never books it.",
+        "  8. Something she cannot answer, or a system problem -> she says what she cannot confirm and gives the salon's contact (a number only once one is configured), never saying she transferred or called back.",
+        "  9. 'Is this real?' -> truthful: a prototype with an invented calendar. She never says so unprompted.",
+        "",
+        "The demo date is fixed when the demo server starts: after midnight Eastern, restart the server (not the tunnel or the agent). Past appointments are marked completed at each start.",
+        "",
+    ])
+
+
 def prepare_web(config: OperatorConfig, secrets: Any, out: Callable[[str], None], *, clock: Callable[[], float] = time.time) -> int:
     """The isolated Serenity voice page: built from the showcase source (brand, fictional roster, independent menu) plus a PUBLIC-only config. The earlier salon's
     website files are not used and the repository's website template is never touched."""
+    from ..showcase import SHOWCASE
     from ..showcase.site import build_site
 
     state = State(config.state_dir)
@@ -549,7 +648,8 @@ def prepare_web(config: OperatorConfig, secrets: Any, out: Callable[[str], None]
     target = config.web_out
     tomorrow = (datetime.fromtimestamp(clock(), ZoneInfo(SPA_TIMEZONE)) + timedelta(days=1)).date().isoformat()
     settings = {"publicKey": public_key, "agentId": agent["agent_id"], "agentVersion": agent.get("version", 0)}
-    build_site(target, settings=settings, calendar_port=config.calendar_port, retention_days=config.data_storage_retention_days)
+    showcase = replace(SHOWCASE, booking_note=LIFECYCLE_BOOKING_NOTE) if config.mode == "lifecycle" else SHOWCASE
+    build_site(target, showcase=showcase, settings=settings, calendar_port=config.calendar_port, retention_days=config.data_storage_retention_days)
     instructions = state.dir / "test-instructions.txt"
     instructions.write_text(test_instructions(config, tomorrow, target), encoding="utf-8", newline="\n")
     out(f"Isolated {SALON_NAME} voice page prepared in {target} with the prototype label and the separate test agent.")

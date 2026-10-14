@@ -105,6 +105,8 @@ encrypted-file folder outside the repo, never from Git; it can start no call, se
 
 The demo's brand, fictional roster, independent menu and the generated Serenity Spa website are described in `SHOWCASE.md` (`python -m aria_booking showcase-preview`).
 
+An opt-in **simulated appointment lifecycle** (find, book, move and cancel in the prototype calendar only, a durable owner-alert outbox, a salon-contact fallback; never Booksy) is described in `LIFECYCLE.md` (`python -m aria_booking demo-serve --lifecycle`).
+
 ### Browser adapters: Playwright (default, headful, read-only) and Selenium (original)
 
 `login`, `find` and `serve` WITHOUT booking approvals use the Playwright adapter by default (`--browser selenium` selects the original for

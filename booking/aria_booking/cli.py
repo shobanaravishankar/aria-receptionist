@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Callable, Mapping, Optional
 from zoneinfo import ZoneInfo
 
@@ -105,6 +106,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--site-port", type=int, default=8790, help="the demo calendar page's loopback port")
     p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today); 'tomorrow' means the day after it")
     p.add_argument("--via-page", action="store_true", help="answer by reading the demo PAGE in a Playwright window (the live code path) instead of the dataset")
+    p.add_argument("--lifecycle", action="store_true", help="the SIMULATED appointment lifecycle: find, book, move and cancel appointments in the prototype calendar (a local file, invented clients; "
+                                                            "never Booksy). Without it the demo stays read-only.")
+    p.add_argument("--store", default=None, help="with --lifecycle: the appointment file (default: .local/demo-appointments/appointments.sqlite3, git-ignored)")
     p = sub.add_parser("demo-agent", help="operate the demo's SEPARATE Retell test agent and voice page (plan, create once, verify, preflight, prepare-web); never places a call")
     p.add_argument("action", choices=("plan", "store-secret", "create", "update", "verify", "preflight", "prepare-web", "call-summary"))
     p.add_argument("--config", default=None, help="a JSON file of non-secret settings kept outside Git (see demo_agent.example.json); or set ARIA_DEMO_CONFIG")
@@ -113,6 +117,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--web-dir", default=None, help="where prepare-web writes the page (default: <state dir>/web)")
     p.add_argument("--calendar-port", type=int, default=None, help="the demo calendar page's port, for the link in the page banner (default 8790)")
     p.add_argument("--page-port", type=int, default=None, help="the port the prepared voice page is served on; it is opened at http://localhost:<port>/ (default 5174)")
+    p.add_argument("--mode", choices=("availability", "lifecycle"), default=None, help="which reviewed configuration the agent is held to: the read-only availability demo (default) or the "
+                                                                                       "simulated appointment lifecycle")
     p.add_argument("--confirm-create", action="store_true", help="required by `create`, which makes one Retell LLM and one agent")
     p.add_argument("--confirm-update", action="store_true", help="required by `update`, which sends the reviewed prompt, tools and opening line to the EXISTING LLM (no new agent)")
     p.add_argument("--secret-name", default="retell_api_key", help="for store-secret: retell_api_key, tool_token or retell_public_key")
@@ -175,7 +181,7 @@ def main(
             args.action, env, out, config_file=args.config, confirm_create=args.confirm_create, confirm_update=args.confirm_update,
             secret_name=args.secret_name, base_url=args.base_url,
             overrides={"tunnel_url": args.tunnel_url, "state_dir": args.state_dir, "web_dir": args.web_dir,
-                       "calendar_port": args.calendar_port, "page_port": args.page_port},
+                       "calendar_port": args.calendar_port, "page_port": args.page_port, "mode": args.mode},
         )
 
     if args.command in ("demo-screenshots", "demo-compare", "demo-day"):
@@ -447,6 +453,8 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
     except ValueError:
         out("refused: --today must look like 2026-10-14.")
         return EXIT_REFUSED
+    if args.lifecycle:
+        return _demo_serve_lifecycle(args, cfg, key, tool_token, today, out)
     tz = ZoneInfo(SPA_TIMEZONE)  # the demo's one timezone: the same zone the greeting and the session clock use
     clock = demo_clock(today, tz)
     dataset = DemoDataset(clock().date())
@@ -492,6 +500,84 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
     except KeyboardInterrupt:
         out("stopped.")
     finally:
+        server.server_close()
+        site.shutdown()
+        site.server_close()
+        driver.close()
+    return EXIT_OK
+
+
+def _demo_serve_lifecycle(args, cfg: Config, key: str, tool_token: str, today, out) -> int:
+    """The simulated appointment lifecycle: the same calendar page and signed voice endpoint, over ONE local appointment file, with find / book / move / cancel tools. There is no
+    Booksy driver and no Booksy route. Owner alerts wait in the file's outbox until an owner number AND an SMS provider exist (neither does yet); nothing is ever sent to a client."""
+    import threading
+
+    from .appointments.contact import contact_phrase
+    from .appointments.dispatcher import AlertWorker, OutboxDispatcher
+    from .appointments.launch import build_lifecycle_demo
+    from .appointments.lifecycle import default_store_path, open_lifecycle
+    from .appointments.sender import OwnerDestinationError, load_owner_destination
+    from .appointments.store import StoreError
+    from .demo import DEMO_BUSINESS_ID, DEMO_LABEL
+    from .demo.server import calendar_url, make_site
+    from .showcase import SHOWCASE
+
+    try:
+        destination = load_owner_destination(cfg.local_dir)
+        contact = contact_phrase(SHOWCASE)
+        lifecycle = open_lifecycle(Path(args.store) if args.store else default_store_path(cfg.local_dir), today=today)
+    except (OwnerDestinationError, ValueError, StoreError) as exc:
+        out(f"refused: {exc}")
+        return EXIT_REFUSED
+    if today is not None and today != datetime.now(lifecycle.tz).date():
+        out(f"WARNING: --today {today.isoformat()} is not the real date. A Retell agent's own clock is the real date, so for a live voice test leave --today off; "
+            "otherwise 'tomorrow' will mean different days to the agent and to the calendar.")
+    site = make_site(lifecycle.dataset, args.site_port)
+    threading.Thread(target=site.serve_forever, name="demo-site", daemon=True).start()
+    driver = None
+    if args.via_page:
+        from dataclasses import replace
+
+        driver = PlaywrightBooksyDriver(
+            replace(cfg, business_id=DEMO_BUSINESS_ID, local_dir=cfg.local_dir / "demo"), notify=out, load_timeout_seconds=SERVE_LOAD_TIMEOUT,
+            url_for_day=lambda day: calendar_url(args.site_port, day),
+        )
+    dispatcher = OutboxDispatcher(lifecycle.store, None, destination, log=lambda message: out("  " + message))  # no provider adapter exists: nothing can be sent
+    worker = AlertWorker(dispatcher, log=lambda message: out("  " + message))
+    try:
+        if driver is not None and driver.verify_business() != DEMO_BUSINESS_ID:
+            out("refused: the demo page did not identify itself as the demo business.")
+            return EXIT_REFUSED
+        endpoint, driver = build_lifecycle_demo(
+            key, lifecycle, bearer_token=tool_token or None, log=lambda message: out("  " + message), driver=driver, contact=contact, on_committed=worker.trigger,
+        )
+        server = retell_http.make_http_server(endpoint, args.port)
+    except (DriverError, OSError) as exc:
+        site.shutdown()
+        site.server_close()
+        if driver is not None:
+            driver.close()
+        out(f"stopped: {exc}")
+        return EXIT_REFUSED
+    counts = lifecycle.store.counts()
+    out(f"{DEMO_LABEL.upper()}: SIMULATED APPOINTMENT LIFECYCLE. Invented clients and appointments in a local file; this is NOT Booksy and no real salon calendar can be reached or changed.")
+    out(f"calendar page (open in a browser): {calendar_url(args.site_port)}")
+    out(f"voice tools: 127.0.0.1:{args.port} (loopback only; expose it with a tunnel you control). Appointments are kept in {lifecycle.store.path}")
+    out(f"appointments: {sum(counts['appointments'].values())} records (seeded: {len(lifecycle.seeded.upcoming_added)} upcoming and {lifecycle.seeded.history_added} past made now; "
+        f"{len(lifecycle.seeded.upcoming_skipped)} could not be placed)")
+    waiting = counts["outbox"].get("pending", 0)
+    out("owner alerts: " + ("NOT sent: no SMS provider is set up yet" + (" (an owner number is configured)" if destination else " and no owner number is configured") + f"; {waiting} alert(s) waiting in the outbox"))
+    out("contact fallback: " + ("the configured salon name and number" if contact else "no salon number is configured, so Aria says to contact the salon and gives none"))
+    first, second = lifecycle.dataset.scripted_days
+    out(f"demo date {lifecycle.dataset.today.isoformat()}; scripted days {first.isoformat()} and {second.isoformat()}; covered {lifecycle.dataset.first_day.isoformat()} to {lifecycle.dataset.last_day.isoformat()}")
+    out("Press Ctrl+C to stop.")
+    worker.start()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        out("stopped.")
+    finally:
+        worker.stop()
         server.server_close()
         site.shutdown()
         site.server_close()

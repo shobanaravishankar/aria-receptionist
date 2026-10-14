@@ -28,10 +28,13 @@ CATEGORY_TITLES = OrderedDict([
 ])
 MARKER = "<!-- KNOWLEDGE -->"
 DRAFT_DIR = Path(__file__).resolve().parents[2] / "voice_agent_draft"
-MODES = ("booking", "availability")
+MODES = ("booking", "availability", "lifecycle")  # 'lifecycle' (the simulated-appointment demo) has its own template with no mode markers; it only changes the knowledge heading
 GENERATED = {"booking": "prompt_test_only.md", "availability": "prompt_availability_only.md"}
 AVAILABILITY_TOOLS_FILE = "tools_availability_only.json"
 DEMO_PROMPT_FILE = "prompt_demo_calendar.md"  # the availability-only prompt for the DEMO calendar (invented data); it uses the same tool file
+LIFECYCLE_TEMPLATE_FILE = "prompt_template_lifecycle.md"  # the conversation template of the SIMULATED-appointment demo (find, book, move, cancel)
+LIFECYCLE_PROMPT_FILE = "prompt_demo_lifecycle.md"
+LIFECYCLE_TOOLS_FILE = "tools_demo_lifecycle.json"
 DEMO_SECTION = """## You are connected to a DEMO calendar
 
 - The calendar behind your tools is a prototype calendar with invented appointments and invented clients, shown on a page that is labelled
@@ -50,6 +53,26 @@ DEMO_SECTION = """## You are connected to a DEMO calendar
 - If the caller asks who does a service, call `lookup_service`: for a service you can check it returns `technicians`, the calendar's own list. Give those
   names, and never say there is no list when it returned one. If the caller names a technician who is not on that list, say that technician does not do that
   service and name those who do; never swap in someone else.
+
+"""
+
+LIFECYCLE_SECTION = """## You are connected to a prototype calendar
+
+- The calendar behind your tools is a prototype calendar with invented appointments and invented clients, shown on a page that is labelled "Prototype showcase". It is not the
+  salon's real schedule, and nothing in it is a real person's appointment. The appointments you book, move or cancel with your tools are saved in that prototype calendar and
+  appear on its page, and nowhere else.
+- Do NOT announce this and do not say "demo", "simulated" or "prototype" on your own, in the greeting or in any answer: speak naturally as the receptionist and give
+  availability and appointments as the tools return them. If the caller asks whether the schedule, the availability or an appointment is real or live, or whether this is a demo,
+  answer truthfully: this is a prototype with an invented calendar, not the salon's real schedule, and the appointments made here exist only in it. Never describe an invented
+  appointment as a real one.
+- Names, times and who is free come only from the tool. If the tool says it does not see the technician the caller named, say so and ask who they meant; never swap in a
+  similar-sounding name. If the tool asks which person (several share a first name), ask the caller.
+- Offer or run a calendar check or a booking ONLY for a service under "What you can check and book right now", or one that `lookup_service` returns with `bookable` true. For every
+  other service: give the information, say plainly that you cannot book it here, suggest the caller contact the salon, and do NOT offer a check or call a calendar tool. Never
+  build a `service_id` yourself from a service name or length.
+- If the caller asks who does a service, call `lookup_service`: for a service you can book it returns `technicians`, the calendar's own list. Give those names, and never say there
+  is no list when it returned one. If the caller names a technician who is not on that list, say that technician does not do that service and name those who do; never swap in
+  someone else.
 
 """
 
@@ -148,6 +171,9 @@ def render_knowledge(catalog: Catalog = DEFAULT_CATALOG, registry: BookableRegis
     if mode == "booking":
         lines += ["", "### What can be booked online right now", ""]
         none, action = "Nothing. Online booking is not available; tell the caller to contact the salon directly.", "check availability for it or book it"
+    elif mode == "lifecycle":
+        lines += ["", "### What you can check and book right now", ""]
+        none, action = "Nothing. Availability checks and booking are not available; tell the caller to contact the salon directly.", "check availability for it or book it"
     else:
         lines += ["", "### What you can check availability for right now", ""]
         none, action = "Nothing. Availability checks are not available; tell the caller to contact the salon directly.", "check availability for it"
@@ -206,6 +232,28 @@ def build_availability_tools(tools: dict) -> dict:
     return out
 
 
+LIFECYCLE_TOOLS_STATUS = (
+    "SIMULATED-LIFECYCLE demo tools: find, book, move and cancel appointments in the PROTOTYPE calendar only. There is no function for the live Booksy calendar. "
+    "DRAFT FOR REVIEW. Not imported into Retell, not deployed."
+)
+
+
+def build_lifecycle_tools(availability_tools: dict) -> dict:
+    """The availability-only tool file's three read tools (reviewed definitions, descriptions adjusted for a line that can book) plus the five lifecycle tools."""
+    from ..appointments.tool_defs import LIFECYCLE_DESCRIPTIONS, LIFECYCLE_TOOLS
+
+    kept = []
+    for tool in availability_tools["tools"]:
+        tool = dict(tool)
+        if tool["name"] in LIFECYCLE_DESCRIPTIONS:
+            tool["description"] = LIFECYCLE_DESCRIPTIONS[tool["name"]]
+        kept.append(tool)
+    out = {k: v for k, v in availability_tools.items() if k != "tools"}
+    out["_status"] = LIFECYCLE_TOOLS_STATUS
+    out["tools"] = kept + [json.loads(json.dumps(tool)) for tool in LIFECYCLE_TOOLS]
+    return out
+
+
 def opening_section(salon_name: str) -> str:
     """How Aria opens every call. The greeting word comes from the spa's local hour at the START OF THAT CALL: Retell fills ``{{current_hour_<zone>}}`` in per call, so
     nothing is frozen when the server starts or this file is generated. (An opening message cannot branch on a variable, so the agent's opening message is left unset
@@ -250,7 +298,16 @@ DEMO_WORDING = (
 TEMPLATE_EXAMPLE_TECHNICIAN = "Lily"  # the first name the shared template uses in its two example sentences; the demo shows a fictional roster name there instead
 
 
-def build_demo_prompt(template: str, catalog: Catalog | None = None, salon_name: str | None = None, showcase=None) -> str:
+LIFECYCLE_HEADER = """# Aria on the {name} showcase, simulated appointment lifecycle: agent prompt (GENERATED)
+
+> Generated by `python -m aria_booking.catalog.render --write` from the lifecycle conversation template and the {name} showcase menu (`aria_booking/showcase`). Do not edit it
+> by hand: a test fails if it differs. Its functions find, book, move and cancel appointments in a PROTOTYPE calendar with invented data, and none touches any real
+> salon calendar. Only the text from the first section heading below onward is sent to the agent.
+
+"""
+
+
+def build_demo_prompt(template: str, catalog: Catalog | None = None, salon_name: str | None = None, showcase=None, lifecycle: bool = False) -> str:
     """The availability-only prompt for the Serenity showcase: the shared conversation rules, plus knowledge rendered from the SHOWCASE source.
 
     The salon facts (name, example hours, no address, phone only when configured) and the services (the independently written Serenity menu) come from the showcase,
@@ -269,11 +326,12 @@ def build_demo_prompt(template: str, catalog: Catalog | None = None, salon_name:
     if salon_name:
         showcase = replace(showcase, name=salon_name)  # the facts block and the opening both follow the one name
     name = showcase.name
-    text = build_prompt(template, catalog=catalog or SHOWCASE_CATALOG, registry=demo_registry(), mode="availability", intro=showcase_intro(showcase))
-    heading = "## While the calendar is being checked"
+    text = build_prompt(template, catalog=catalog or SHOWCASE_CATALOG, registry=demo_registry(), mode="lifecycle" if lifecycle else "availability",
+                        intro=showcase_intro(showcase))
+    heading = "## While a tool is working" if lifecycle else "## While the calendar is being checked"
     if text.count(heading) != 1:
-        raise ValueError("the prompt template must contain the 'While the calendar is being checked' section exactly once")
-    text = text.replace(heading, DEMO_SECTION + heading)
+        raise ValueError(f"the prompt template must contain the '{heading[3:]}' section exactly once")
+    text = text.replace(heading, (LIFECYCLE_SECTION if lifecycle else DEMO_SECTION) + heading)
     early = "## Two sources, never mixed"
     if text.count(early) != 1:
         raise ValueError("the prompt template must contain the 'Two sources, never mixed' section exactly once")
@@ -282,21 +340,27 @@ def build_demo_prompt(template: str, catalog: Catalog | None = None, salon_name:
     if text.count(marker) != 1:
         raise ValueError("the prompt template must contain the 'Who you are' section exactly once")
     head, body = text.split(marker)
-    body = body.replace(SALON_NAME_ON_WEBSITE, name)
-    # the shared template illustrates "stated conditions" with a claim from the earlier salon's website; the showcase menu makes no such claim
-    legacy = " (for example, that prenatal massage is offered in the second\n  and third trimesters)"
-    if body.count(legacy) != 1:
-        raise ValueError("the shared template's legacy 'stated conditions' example changed: update the demo prompt adaptation")
-    body = body.replace(legacy, ", if the menu lists any")
-    for old, new in DEMO_WORDING:
-        if body.count(old) != 1:
-            raise ValueError(f"the shared template's wording changed ({old!r}): update the demo prompt adaptation")
-        body = body.replace(old, new)
-    body = re.sub(rf"\b{TEMPLATE_EXAMPLE_TECHNICIAN}\b", name_of("910006"), body)
+    if lifecycle:
+        # the lifecycle template is written for the showcase: it already says "menu", has no legacy example, and uses two placeholders
+        body = body.replace("{SALON}", name).replace("{TECH}", name_of("910006"))
+        if re.search(r"\{[A-Z]{2,}\}", body):
+            raise ValueError("the lifecycle template has a placeholder that was not filled")
+    else:
+        body = body.replace(SALON_NAME_ON_WEBSITE, name)
+        # the shared template illustrates "stated conditions" with a claim from the earlier salon's website; the showcase menu makes no such claim
+        legacy = " (for example, that prenatal massage is offered in the second\n  and third trimesters)"
+        if body.count(legacy) != 1:
+            raise ValueError("the shared template's legacy 'stated conditions' example changed: update the demo prompt adaptation")
+        body = body.replace(legacy, ", if the menu lists any")
+        for old, new in DEMO_WORDING:
+            if body.count(old) != 1:
+                raise ValueError(f"the shared template's wording changed ({old!r}): update the demo prompt adaptation")
+            body = body.replace(old, new)
+        body = re.sub(rf"\b{TEMPLATE_EXAMPLE_TECHNICIAN}\b", name_of("910006"), body)
     leaks = find_leaks(body, allowed=(showcase.contact_phone,) if showcase.contact_phone else ())
     if leaks:
         raise ValueError("the demo prompt still contains the earlier salon's identifiers: " + ", ".join(leaks))
-    return DEMO_HEADER.format(name=name) + marker + body
+    return (LIFECYCLE_HEADER if lifecycle else DEMO_HEADER).format(name=name) + marker + body
 
 
 def main(argv: list[str]) -> int:
@@ -310,9 +374,15 @@ def main(argv: list[str]) -> int:
             print("wrote", DRAFT_DIR / name)
         (DRAFT_DIR / DEMO_PROMPT_FILE).write_text(build_demo_prompt(template), encoding="utf-8", newline="\n")
         print("wrote", DRAFT_DIR / DEMO_PROMPT_FILE)
+        lifecycle_template = (DRAFT_DIR / LIFECYCLE_TEMPLATE_FILE).read_text(encoding="utf-8")
+        (DRAFT_DIR / LIFECYCLE_PROMPT_FILE).write_text(build_demo_prompt(lifecycle_template, lifecycle=True), encoding="utf-8", newline="\n")
+        print("wrote", DRAFT_DIR / LIFECYCLE_PROMPT_FILE)
         tools = json.loads((DRAFT_DIR / "tools.json").read_text(encoding="utf-8"))
-        (DRAFT_DIR / AVAILABILITY_TOOLS_FILE).write_text(json.dumps(build_availability_tools(tools), indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+        availability = build_availability_tools(tools)
+        (DRAFT_DIR / AVAILABILITY_TOOLS_FILE).write_text(json.dumps(availability, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         print("wrote", DRAFT_DIR / AVAILABILITY_TOOLS_FILE)
+        (DRAFT_DIR / LIFECYCLE_TOOLS_FILE).write_text(json.dumps(build_lifecycle_tools(availability), indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+        print("wrote", DRAFT_DIR / LIFECYCLE_TOOLS_FILE)
     else:
         print(render_knowledge(registry=registry))
     return 0

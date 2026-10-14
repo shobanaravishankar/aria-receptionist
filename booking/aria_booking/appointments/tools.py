@@ -57,7 +57,7 @@ MAX_CHANGES_PER_CALL = 3
 NAME_MAX = 80
 SHOWN_UPCOMING = 3
 CATEGORY_WORDS = {"waxing": "waxing", "lash": "lash", "body-scrub": "body scrub", "couples": "couples"}  # added to a service name only when the name does not say it
-FALLBACK_CONTACT = "Please contact the salon directly."
+GENERIC_CONTACT = "contact the salon directly"  # what the reviewed tools say; replaced by the configured name and number when there is one
 
 
 def _reply(status: str, speak: str, **data: Any) -> dict:
@@ -102,7 +102,7 @@ class StoreHistorySource:
 
 
 class LifecycleTools(VoiceTools):
-    def __init__(self, lifecycle: Lifecycle, cfg, driver, clock: Callable[[], datetime], *, contact_line: str = FALLBACK_CONTACT,
+    def __init__(self, lifecycle: Lifecycle, cfg, driver, clock: Callable[[], datetime], *, contact: Optional[str] = None,
                  on_committed: Optional[Callable[[], None]] = None, **kwargs: Any):
         def no_writer(*args: Any, **kw: Any):
             raise AssertionError("the simulated lifecycle has no Booksy writer")
@@ -118,7 +118,7 @@ class LifecycleTools(VoiceTools):
         )
         self._read_only = False  # this line can book: its own, simulated way (no Booksy route exists, see LIFECYCLE_ROUTES)
         self._lc = lifecycle
-        self._contact = contact_line
+        self._contact = contact  # e.g. "contact Serenity Spa at 2 1 2, ...": None until the owner supplies a number
         self._on_committed = on_committed  # called AFTER a change has committed, to wake the alert worker; never before, never on a refusal
         self._classifier = Classifier(SHOWCASE_CATALOG)
         self._history = HistoryLookup(StoreHistorySource(lifecycle.store, self._tz, clock, self._staff_name), clock, classifier=self._classifier)
@@ -170,8 +170,20 @@ class LifecycleTools(VoiceTools):
         length = spoken_duration(minutes)
         return name if length.lower() in name.lower() else f"{name}, {length}"
 
+    def _branded(self, reply: dict) -> dict:
+        """With a configured number, every 'contact the salon directly' (also in the reviewed tools' own answers) names the salon and gives the number."""
+        if self._contact and isinstance(reply.get("speak"), str):
+            reply["speak"] = reply["speak"].replace(GENERIC_CONTACT, self._contact)
+        return reply
+
+    def _labelled(self, call_id: str, reply: dict) -> dict:
+        return self._branded(super()._labelled(call_id, reply))
+
+    def lookup_service(self, call_id: str, args: dict) -> dict:
+        return self._branded(super().lookup_service(call_id, args))
+
     def _contacting(self, text: str) -> str:
-        return f"{text} {self._contact}"
+        return f"{text} Please {self._contact or GENERIC_CONTACT}."
 
     def _token_key(self, kind: str, call_id: str, token: str) -> str:
         return hashlib.sha256(f"{kind}|{call_id}|{token}".encode("utf-8")).hexdigest()[:32]
@@ -574,7 +586,7 @@ class LifecycleTools(VoiceTools):
         elif reason == "not_free" and snapshot is not None:
             _code, text, _extra = self._why_not(snapshot, start, service, [who], named)
         elif reason in ("calendar_unknown", "not_covered"):
-            return _reply("unknown", f"I couldn't confirm that time on the calendar, so I haven't changed anything. {lead}{self._contact}", reason=reason)
+            return _reply("unknown", self._contacting(f"I couldn't confirm that time on the calendar, so I haven't changed anything. {lead}".rstrip()), reason=reason)
         else:
             return _reply("refused", self._contacting(f"I can't move it to then. {lead}"), reason=reason)
         slots, unreadable, _error, _age, cut_short = self._alternatives(day, start.hour * 60 + start.minute, None, service, named)

@@ -13,15 +13,15 @@ from ..demo import DEMO_BUSINESS_ID, SPA_TIMEZONE
 from ..demo.driver import DemoCalendarDriver
 from ..voice.retell_http import RetellEndpoint
 from .lifecycle import Lifecycle
-from .tools import FALLBACK_CONTACT, LIFECYCLE_ROUTES, LifecycleTools
+from .tools import LIFECYCLE_ROUTES, LifecycleTools
 
 
 def build_lifecycle_demo(
     api_key: str, lifecycle: Lifecycle, *, bearer_token: Optional[str] = None, log: Callable[[str], None] = lambda message: None,
-    driver: Optional[Any] = None, contact_line: str = FALLBACK_CONTACT, **tool_kwargs: Any,
+    driver: Optional[Any] = None, contact: Optional[str] = None, **tool_kwargs: Any,
 ):
     """(endpoint, driver). ``driver`` may be a page-reading driver pointed at the demo site; by default it reads the shared calendar directly."""
     cfg = Config(business_id=DEMO_BUSINESS_ID, timezone=SPA_TIMEZONE)
     driver = driver or DemoCalendarDriver(lifecycle.dataset, timezone=SPA_TIMEZONE, clock=lifecycle.clock)
-    tools = LifecycleTools(lifecycle, cfg, driver, lifecycle.clock, contact_line=contact_line, **tool_kwargs)
+    tools = LifecycleTools(lifecycle, cfg, driver, lifecycle.clock, contact=contact, **tool_kwargs)
     return RetellEndpoint(tools, api_key, bearer_token=bearer_token, routes=LIFECYCLE_ROUTES, log=log), driver

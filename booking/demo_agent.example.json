@@ -10,5 +10,7 @@
   "data_storage_retention_days": 7,
   "calendar_port": 8790,
   "tools_port": 8787,
-  "page_port": 5174
+  "page_port": 5174,
+  "_mode": "availability (the read-only demo, the default) or lifecycle (the simulated appointment lifecycle: see LIFECYCLE.md)",
+  "mode": "availability"
 }

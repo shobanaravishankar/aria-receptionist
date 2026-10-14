@@ -42,13 +42,14 @@ class Showcase:
     timezone: str = "America/New_York"
     example_hours: str = "every day, 10:00 AM to 8:00 PM"
     contact_phone: Optional[str] = None  # None until the owner supplies one: nothing is spoken or shown as a number, and none is invented
+    contact_name: Optional[str] = None  # the name spoken with that number in a fallback ("contact <name> at ..."); None = the brand name
     location: Optional[str] = None  # deliberately none: the showcase belongs to no town
     prototype_label: str = "Prototype showcase: example content and a simulated calendar"
     booking_note: str = "Booking is not part of this prototype"  # appended to the label; change it only when a simulated booking mode really exists
     theme: Theme = field(default_factory=Theme)
 
 
-_KEYS = frozenset({"name", "tagline", "timezone", "example_hours", "contact_phone", "location", "prototype_label", "booking_note"})
+_KEYS = frozenset({"name", "tagline", "timezone", "example_hours", "contact_phone", "contact_name", "location", "prototype_label", "booking_note"})
 
 
 def load_showcase(path: Optional[str] = None, overrides: Optional[Mapping[str, object]] = None) -> Showcase:
