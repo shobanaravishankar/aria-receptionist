@@ -101,7 +101,7 @@ def _card(plan: StaffPlan, visit, ordinal: int) -> str:
     size = "sizeL_mf7bh_241" if height >= 99 else "sizeM_mf7bh_218" if height >= 59 else "sizeS_mf7bh_195"
     tid = f"calendar-content-calendar-grid-calendar-card-{plan.staff.staff_id}-{ordinal}"
     return (
-        f'<div class="_cardWrap_mf7bh_10" data-testid="{tid}" data-appointment-id="x" style="top:{top}px;height:{height}px">'
+        f'<div class="_cardWrap_mf7bh_10" data-testid="{tid}" data-appointment-id="{_esc(visit.reference or "x")}" style="top:{top}px;height:{height}px">'
         f'<div class="_card_mf7bh_10 _padding-right-0_mf7bh_174 _{size}" style="--cat:{border};--tint:{tint}">'
         f'<div class="_cardBorder_mf7bh_65"></div>'
         f'<p class="_header_mf7bh_73 _text_mf7bh_57"><span class="hour_from">{_clock12(visit.start)}</span> - <span class="hour_till">{_clock12(visit.end)}</span></p>'

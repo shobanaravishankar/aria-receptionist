@@ -139,6 +139,17 @@ class Txn:
     def clients_with_phone(self, phone: str) -> list[ClientRecord]:
         return [_client(r) for r in self._conn.execute("SELECT * FROM clients WHERE phone = ? ORDER BY client_id", (phone,)).fetchall()]
 
+    def client(self, client_id: int) -> Optional[ClientRecord]:
+        row = self._conn.execute("SELECT * FROM clients WHERE client_id = ?", (client_id,)).fetchone()
+        return _client(row) if row else None
+
+    def seeded_after(self, prefix: str, after_utc: int) -> bool:
+        """Is there a seeded row (any status) whose seed key starts with ``prefix`` and whose start is after the given moment?"""
+        row = self._conn.execute(
+            "SELECT 1 FROM appointments WHERE substr(seed_key, 1, ?) = ? AND start_utc > ? LIMIT 1", (len(prefix), prefix, after_utc)
+        ).fetchone()
+        return row is not None
+
 
 def _client(row: sqlite3.Row) -> ClientRecord:
     return ClientRecord(row["client_id"], row["name"], row["phone"])
@@ -228,6 +239,14 @@ class AppointmentStore:
     def clients_with_phone(self, phone: str) -> list[ClientRecord]:
         with self._read() as tx:
             return tx.clients_with_phone(phone)
+
+    def client(self, client_id: int) -> Optional[ClientRecord]:
+        with self._read() as tx:
+            return tx.client(client_id)
+
+    def seeded_after(self, prefix: str, after_utc: int) -> bool:
+        with self._read() as tx:
+            return tx.seeded_after(prefix, after_utc)
 
     def for_client(self, client_id: int, statuses: Sequence[str] = STATUSES) -> list[StoredAppointment]:
         with self._read() as tx:

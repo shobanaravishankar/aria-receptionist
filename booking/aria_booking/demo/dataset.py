@@ -76,6 +76,7 @@ class Visit:
     service: str
     category: str
     client: str
+    reference: str = ""  # set only for an appointment held in the appointment store; the generated filler visits have none
 
 
 @dataclass(frozen=True)
@@ -133,8 +134,9 @@ def _client(rng: random.Random) -> str:
 
 
 class DemoDataset:
-    def __init__(self, today: date, *, extra_staff: Iterable[DemoStaff] = ()):
+    def __init__(self, today: date, *, extra_staff: Iterable[DemoStaff] = (), overlay=None):
         self.today = today
+        self.overlay = overlay  # appointments.overlay.StoreOverlay, or None: the plain generated calendar, which nothing can change
         self.roster: tuple[DemoStaff, ...] = ROSTER + tuple(extra_staff)
         pairs = demo_services(self.roster)
         self._registry = BookableRegistry([service for service, _category in pairs], catalog=SHOWCASE_CATALOG)
@@ -167,8 +169,21 @@ class DemoDataset:
     def scripted_days(self) -> tuple[date, date]:
         return self.today + timedelta(days=1), self.today + timedelta(days=2)
 
+    def category_of(self, service_id: str) -> str:
+        return self._category[service_id]
+
     # ---- the schedule -------------------------------------------------------------------------------
-    def day_plan(self, day: date) -> DayPlan:
+    def day_plan(self, day: date, *, rows=None) -> DayPlan:
+        """The day as the page shows it and the voice reads it: the generated schedule with the stored appointments drawn in. ``rows`` replaces what
+        is read from the store (a write transaction passes its own, so a commit is judged against the state it will join)."""
+        plan = self.base_day_plan(day)
+        if self.overlay is None:
+            if rows:
+                raise ValueError("this dataset has no appointment store to draw rows from")
+            return plan
+        return self.overlay.apply(plan, self.roster, rows)
+
+    def base_day_plan(self, day: date) -> DayPlan:
         if not self.covers(day):
             raise NotCovered(f"the demo calendar covers {self.first_day.isoformat()} to {self.last_day.isoformat()} only")
         plans = []
