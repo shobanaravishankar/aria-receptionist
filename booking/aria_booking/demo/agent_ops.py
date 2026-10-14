@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 from zoneinfo import ZoneInfo
 
-from . import SALON_NAME
+from . import SALON_NAME, SPA_TIMEZONE
 from .secret_store import DpapiSecrets, SecretMissing, provider_from_environment
 
 BOOKING = Path(__file__).resolve().parents[2]
@@ -47,8 +47,8 @@ TOOL_NAMES = frozenset({"lookup_service", "check_slot", "find_alternatives"})
 SOURCE_PROMPT = "voice_agent_draft/prompt_demo_calendar.md"
 SOURCE_TOOLS = "voice_agent_draft/tools_availability_only.json"
 CLOCK_SECTION = (
-    "\n\n## Session clock\nCurrent salon date and time: {{current_time_America/New_York}}. "
-    "The demo uses today's actual date in America/New_York. Resolve tomorrow from this date.\n"
+    "\n\n## Session clock\nCurrent salon date and time: {{current_time_" + SPA_TIMEZONE + "}}. "
+    f"The demo uses today's actual date in {SPA_TIMEZONE}. Resolve tomorrow from this date.\n"
 )
 # The only Retell paths this module can ever call. Nothing that creates a call, a phone call, a batch or a schedule is here.
 ALLOWED = (
@@ -100,11 +100,6 @@ class RetellApi:
 # ---------------------------------------------------------------- configuration
 
 
-def opening_line(salon_name: str = SALON_NAME) -> str:
-    """What Aria says first. It names the SAME salon as the prompt (both come from ``demo.SALON_NAME``) and does not announce that the calendar is a demo."""
-    return f"Hi, I'm Aria, your AI receptionist for {salon_name}. I can explain our services and check availability. What would you like to know?"
-
-
 @dataclass(frozen=True)
 class OperatorConfig:
     tunnel_url: str = ""
@@ -115,7 +110,9 @@ class OperatorConfig:
     language: str = "en-US"
     max_call_duration_ms: int = 300_000
     data_storage_retention_days: int = 7
-    begin_message: str = field(default_factory=lambda: opening_line())
+    # None = UNSET: Retell's model speaks first, following the prompt's 'Your opening line' section, which picks Good morning/afternoon/evening from the spa's local hour
+    # at the start of EACH call (an opening message cannot branch on a variable). A string here is a fixed opening message instead.
+    begin_message: Optional[str] = None
     state_dir: Path = field(default_factory=lambda: BOOKING / ".local" / "demo-agent")
     template_dir: Path = field(default_factory=lambda: REPO_ROOT)
     web_dir: Optional[Path] = None
@@ -257,6 +254,8 @@ def plan(config: OperatorConfig, secrets: Any, out: Callable[[str], None]) -> in
     out(f"  functions         : {', '.join(sorted(t['name'] for t in tools if t['type'] == 'custom'))} + end_call; no booking function")
     out(f"  prompt            : {SOURCE_PROMPT} from '## Who you are' + a session-clock line, {len(prompt)} characters, sha256 {prompt_digest(prompt)}")
     out(f"  settings          : model {config.model}, voice {config.voice_id}, {config.max_call_duration_ms // 1000}s call cap, {config.data_storage_retention_days}-day retention, contact memory off")
+    out("  opening           : " + (f"fixed message: {config.begin_message}" if config.begin_message is not None else
+                                    f"unset: the agent speaks first from the prompt, 'Good morning/afternoon/evening' by the local hour in {SPA_TIMEZONE} at the start of each call"))
     out(f"  secrets from      : {secrets.describe()}")
     for name in ("retell_api_key", "tool_token", "retell_public_key"):
         out(f"    {name:18}: " + ("available" if secrets.has(name) else "NOT available"))
@@ -381,7 +380,7 @@ def create(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[
         state, "llm",
         lambda: api.request("create-retell-llm", {
             "model": config.model, "model_temperature": config.model_temperature, "general_prompt": prompt, "general_tools": tools,
-            "begin_message": config.begin_message,
+            **({"begin_message": config.begin_message} if config.begin_message is not None else {}),  # unset: the model opens per the prompt
         }, "POST"),
         lambda made: {"llm_id": made["llm_id"]}, {"name": config.agent_name},
     )
@@ -426,7 +425,7 @@ def update(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[
     settings_before = _settings(agent_before, llm_before)
     state.remove("configuration-verified.json")
     try:
-        result = api.request(f"update-retell-llm/{llm_id}", {"general_prompt": prompt, "general_tools": tools, "begin_message": config.begin_message}, "PATCH")
+        result = api.request(f"update-retell-llm/{llm_id}", {"general_prompt": prompt, "general_tools": tools, "begin_message": config.begin_message}, "PATCH")  # null clears an earlier fixed opening message
     except RetellApiError as exc:
         if exc.definite:
             raise
@@ -455,7 +454,7 @@ def preflight(config: OperatorConfig, secrets: Any, out: Callable[[str], None], 
     if base_url and not re.match(r"^https?://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$", base) and not base.startswith("https://"):
         raise OperatorError("--base-url must be a loopback address or an https address")
     key, token = secrets.get("retell_api_key"), secrets.get("tool_token")
-    tomorrow = (datetime.fromtimestamp(clock(), ZoneInfo("America/New_York")) + timedelta(days=1)).date().isoformat()
+    tomorrow = (datetime.fromtimestamp(clock(), ZoneInfo(SPA_TIMEZONE)) + timedelta(days=1)).date().isoformat()
     cases = [
         ("lookup_service", {"query": "Signature Facial"}),
         ("check_slot", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": "Lily"}),
@@ -527,7 +526,7 @@ def test_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path) -> s
         "  - Who does the Microdermabrasion Facial?                                 -> the demo's facial technicians (not Lily)",
         "  - Is Lily available for a Microdermabrasion Facial?                      -> Lily does not do it; offers those who do",
         "  - Is this schedule real?                                                 -> truthful: a prototype with an invented calendar (never said unprompted)",
-        f"  The greeting names {SALON_NAME}; the page itself still carries the website template's own text and the simulation banner.",
+        f"  The opening is spoken by the agent, not fixed: 'Good morning/afternoon/evening! This is Aria at {SALON_NAME}. ...', the word following the spa's local hour at the start of the call. The page itself still carries the website template's own text and the simulation banner.",
         "",
         "The demo date is fixed when the demo server starts: after midnight Eastern, restart the server (not the tunnel or the agent) for these cases to hold.",
         "",
@@ -550,7 +549,7 @@ def prepare_web(config: OperatorConfig, secrets: Any, out: Callable[[str], None]
     target.mkdir(parents=True, exist_ok=True)
     note_old = "Nothing is recorded by this page."
     note_new = f"Retell may retain this test call for review for up to {config.data_storage_retention_days} days."
-    tomorrow = (datetime.fromtimestamp(clock(), ZoneInfo("America/New_York")) + timedelta(days=1)).date().isoformat()
+    tomorrow = (datetime.fromtimestamp(clock(), ZoneInfo(SPA_TIMEZONE)) + timedelta(days=1)).date().isoformat()
     calendar = f"http://localhost:{config.calendar_port}/pro/en-us/9000001/calendar?date={tomorrow}&amp;view=day&amp;staffers=working"
     banner = (
         '<aside data-testid="demo-page-banner" style="position:sticky;top:0;z-index:2000;background:#fff0c0;color:#39270e;padding:12px 20px;text-align:center;'

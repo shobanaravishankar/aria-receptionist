@@ -21,7 +21,7 @@ from aria_booking import cli
 from aria_booking.demo import agent_ops
 from aria_booking.demo.agent_ops import (
     ACTIONS, ALLOWED, CLOCK_SECTION, BOOKING, OperatorConfig, OperatorError, RetellApi, RetellApiError, State, expected_prompt, expected_tools, load_config,
-    opening_line, run, sign_body, validate_tunnel,
+    run, sign_body, validate_tunnel,
 )
 from aria_booking.demo.launch import build_demo
 from aria_booking.demo.secret_store import DpapiSecrets, EnvSecrets, SecretMissing, provider_from_environment
@@ -271,7 +271,8 @@ def test_create_makes_one_llm_and_one_agent_with_the_reviewed_settings_and_reads
     llm = next(iter(fake.llms.values()))
     agent = next(iter(fake.agents.values()))
     assert llm["general_prompt"] == expected_prompt() and llm["model"] == "gpt-4.1"
-    assert llm["begin_message"] == opening_line() and "Serenity Spa" in llm["begin_message"] and not any(w in llm["begin_message"].lower() for w in ("demo", "simulat", "glamour"))
+    assert "begin_message" not in llm, "the opening message is UNSET: the model speaks first, from the prompt, by the local hour of each call"
+    assert "Good morning" in llm["general_prompt"] and "{{current_hour_America/New_York}}" in llm["general_prompt"]
     assert {t["name"] for t in llm["general_tools"] if t["type"] == "custom"} == {"lookup_service", "check_slot", "find_alternatives"}
     assert agent["agent_name"] == "Aria - Simulated Calendar Demo" and agent["max_call_duration_ms"] == 300_000 and agent["data_storage_retention_days"] == 7
     assert agent["contact_memory_config"] == {"enable_read": False, "enable_update": False}
@@ -828,7 +829,7 @@ def test_prepare_web_writes_test_instructions_beside_the_state_not_inside_the_se
     assert "http://localhost:5174/" in steps and "Do NOT use http://127.0.0.1:5174/" in steps and "domain error" in steps
     assert "http://localhost:8790/pro/en-us/9000001/calendar?date=2026-10-14&view=day&staffers=working" in steps
     assert "Microdermabrasion Facial" in steps and "Is Lily available tomorrow at 4" in steps
-    assert "Is this schedule real?" in steps and "The greeting names Serenity Spa" in steps
+    assert "Is this schedule real?" in steps and "The opening is spoken by the agent, not fixed" in steps and "This is Aria at Serenity Spa" in steps and "local hour at the start of the call" in steps
     assert "after midnight Eastern, restart the server (not the tunnel or the agent)" in steps
     for secret in (KEY, TOKEN, PUBLIC):
         assert secret not in steps

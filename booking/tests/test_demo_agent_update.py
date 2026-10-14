@@ -223,10 +223,12 @@ def test_the_binding_between_the_agent_and_the_llm_is_reported_with_what_is_and_
     assert "engine version 3" in "\n".join(again)
 
 
-def test_a_changed_opening_line_is_corrected_by_the_update_and_checked_by_the_read_back(tmp_path):
+def test_an_old_fixed_opening_message_is_cleared_by_the_update_and_checked_by_the_read_back(tmp_path):
     fake = _stale(tmp_path, field="begin_message", value="Hi, this is an old greeting.")
     _update(tmp_path, fake)
-    assert fake.llms["llm_1"]["begin_message"] == OperatorConfig().begin_message
+    patch = [c for c in fake.calls if c[0] == "PATCH"][0][2]
+    assert "begin_message" in patch and patch["begin_message"] is None, "an explicit null clears it, so the model speaks first"
+    assert fake.llms["llm_1"]["begin_message"] is None
     ignoring = _stale(tmp_path / "second", field="begin_message", value="Hi, this is an old greeting.")
     ignoring.ignore_updates = True
     with pytest.raises(OperatorError, match="the opening line"):

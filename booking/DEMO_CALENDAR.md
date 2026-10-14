@@ -15,6 +15,13 @@ from the **same** invented data. Everything on it is simulated and says so.
 - **The spoken name is "Serenity Spa":** one constant (`demo.SALON_NAME`) feeds both the greeting and the generated prompt (from "Who you are" on; services, lengths,
   prices, hours, address and the original public agent's name are untouched, and the other prompts are not renamed). The page still shows the website template's own
   text. To change the name, edit the constant, run `python -m aria_booking.catalog.render --write`, then `demo-agent update --confirm-update`.
+- **The opening is spoken per call:** "Good morning/afternoon/evening! This is Aria at Serenity Spa. I'd love to help you get some relaxation on the calendar. To get started,
+  are you looking for a massage, a facial, or maybe a full spa day?" (no "Hello", no "AI receptionist", warm and upbeat). The word follows the spa's local hour at the START
+  of each call: Retell fills `{{current_hour_America/New_York}}` in per call (before 12 morning, 12 up to 17 afternoon, 17 on evening; `demo.SPA_TIMEZONE` is the one
+  configured zone). An opening message cannot branch on a variable, and the docs show per-call variables only on the server-side create-web-call API, so the agent's
+  opening message is left **unset** (Retell then has the model speak first) and the prompt's "Your opening line" section carries the wording and the hour rule.
+  The tests prove the prompt, the unset message in create/update/read-back and the hour rule; that the model follows it is proved only in a call. "A full spa day"
+  is an invitation, not a package: the prompt forbids inventing one.
 - **No Booksy, no fall-back:** `demo-serve` can only build the dataset (or, with `--via-page`, a reader pointed at the demo page); it can never build a
   Booksy browser. The live `serve` can never use the dataset. If `--via-page` cannot start, the command stops; it never quietly answers from the dataset.
 - **No booking, ever:** the endpoint has no booking route and the tool file has no booking function. The booking approvals do not exist on this command.

@@ -12,3 +12,12 @@ conversation itself does not announce "demo" or "simulated" unprompted; asked wh
 DEMO_BUSINESS_ID = "9000001"  # synthetic: used only in the demo page's address
 DEMO_LABEL = "Demo calendar - simulated availability"
 SALON_NAME = "Serenity Spa"  # the name Aria SPEAKS (greeting and prompt) in the prototype; the website knowledge underneath is unchanged
+SPA_TIMEZONE = "America/New_York"  # the spa's own local time: the session clock, the greeting's time of day and the checks all use this one zone
+
+# The greeting's time of day, from the spa's local hour AT THE START OF EACH CALL (Retell fills the hour in per call): [0, 12) morning, [12, 17) afternoon, [17, 24) evening.
+MORNING_UNTIL, AFTERNOON_UNTIL = 12, 17
+
+
+def greeting_word(hour: float) -> str:
+    """The word Aria opens with for a local hour (0 <= hour < 24, fractions allowed, as Retell's current_hour variable gives). The prompt states the same boundaries."""
+    return "Good morning" if hour < MORNING_UNTIL else "Good afternoon" if hour < AFTERNOON_UNTIL else "Good evening"

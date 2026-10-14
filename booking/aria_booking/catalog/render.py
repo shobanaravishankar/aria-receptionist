@@ -181,6 +181,29 @@ def build_availability_tools(tools: dict) -> dict:
     return out
 
 
+def opening_section(salon_name: str) -> str:
+    """How Aria opens every call. The greeting word comes from the spa's local hour at the START OF THAT CALL: Retell fills ``{{current_hour_<zone>}}`` in per call, so
+    nothing is frozen when the server starts or this file is generated. (An opening message cannot branch on a variable, so the agent's opening message is left unset
+    and the model speaks this first.)"""
+    from ..demo import AFTERNOON_UNTIL, MORNING_UNTIL, SPA_TIMEZONE
+
+    hour = "{{current_hour_" + SPA_TIMEZONE + "}}"
+    return (
+        "## Your opening line\n\n"
+        "You speak first. Start every call with this wording, delivered warmly and with a bright, upbeat, smiling lift on the welcome:\n\n"
+        f"> <Greeting>! This is Aria at {salon_name}. I'd love to help you get some relaxation on the calendar. To get started, are you looking for a massage, "
+        "a facial, or maybe a full spa day?\n\n"
+        f"- <Greeting> is \"Good morning\" when {hour} is below {MORNING_UNTIL}, \"Good afternoon\" from {MORNING_UNTIL} up to (not including) {AFTERNOON_UNTIL}, and "
+        f"\"Good evening\" from {AFTERNOON_UNTIL} on. {hour} is the spa's own local hour (0 to 24, with fractions) at the start of THIS call: use it, never another "
+        "time zone and never a time you assumed.\n"
+        "- Do not begin with \"Hello\" or \"Hi\", and do not call yourself an AI receptionist in the opening. If a caller later asks directly whether you are an AI or "
+        "an automated assistant, answer truthfully.\n"
+        "- Sound conversational and unhurried: short sentences, a little extra lift on the greeting, then your normal warm, calm pace.\n"
+        "- \"A full spa day\" is only an invitation to talk about services. Do not describe, price or promise a package you do not find in the services below: offer "
+        "the listed services, say what you can check availability for, and say plainly when you do not have something.\n\n"
+    )
+
+
 SALON_NAME_ON_WEBSITE = "Glamour Day Spa"  # the exact salon name in the website knowledge and the template; service names such as "Glamour Full Set" do not contain it
 
 
@@ -193,16 +216,21 @@ def build_demo_prompt(template: str, catalog: Catalog = DEFAULT_CATALOG, salon_n
     from ..demo import SALON_NAME
     from ..demo.dataset import demo_registry
 
+    name = salon_name or SALON_NAME
     text = build_prompt(template, catalog=catalog, registry=demo_registry(), mode="availability")
     heading = "## While the calendar is being checked"
     if text.count(heading) != 1:
         raise ValueError("the prompt template must contain the 'While the calendar is being checked' section exactly once")
     text = text.replace(heading, DEMO_SECTION + heading)
+    early = "## Two sources, never mixed"
+    if text.count(early) != 1:
+        raise ValueError("the prompt template must contain the 'Two sources, never mixed' section exactly once")
+    text = text.replace(early, opening_section(name) + early)
     marker = "## Who you are"
     if text.count(marker) != 1:
         raise ValueError("the prompt template must contain the 'Who you are' section exactly once")
     head, body = text.split(marker)
-    return head + marker + body.replace(SALON_NAME_ON_WEBSITE, salon_name or SALON_NAME)
+    return head + marker + body.replace(SALON_NAME_ON_WEBSITE, name)
 
 
 def main(argv: list[str]) -> int:

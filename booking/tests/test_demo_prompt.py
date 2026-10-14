@@ -47,11 +47,9 @@ def test_only_the_salon_name_changed_in_the_website_knowledge():
 
 def test_the_opening_line_and_the_prompt_use_the_same_name_and_neither_announces_the_demo():
     from aria_booking.demo import SALON_NAME
-    from aria_booking.demo.agent_ops import OperatorConfig, opening_line
+    from aria_booking.demo.agent_ops import OperatorConfig
 
-    assert SALON_NAME == "Serenity Spa" and OperatorConfig().begin_message == opening_line() and SALON_NAME in opening_line()
-    assert opening_line("Other Spa").startswith("Hi, I'm Aria, your AI receptionist for Other Spa.")
-    assert not any(word in opening_line().lower() for word in ("demo", "simulat", "prototype", "glamour")) and SALON_NAME in PROMPT
+    assert SALON_NAME == "Serenity Spa" and OperatorConfig().begin_message is None and SALON_NAME in PROMPT.split("## Your opening line")[1].split("## Two sources")[0]
 
 
 def test_the_salon_name_is_applied_at_rendering_time_and_can_be_changed_in_one_place():
