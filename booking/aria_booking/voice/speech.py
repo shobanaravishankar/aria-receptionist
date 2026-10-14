@@ -35,5 +35,12 @@ def join_choices(labels: list[str]) -> str:
     return ", ".join(labels[:-1]) + ", or " + labels[-1]
 
 
+def join_names(names: list[str]) -> str:
+    """'A', 'A and B', 'A, B and C': a list of people who ALL do something (join_choices says 'or' because the caller picks one)."""
+    if len(names) == 1:
+        return names[0]
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
 def spoken_price(price_usd) -> str:
     return "the price isn't listed" if price_usd is None else f"${price_usd}"

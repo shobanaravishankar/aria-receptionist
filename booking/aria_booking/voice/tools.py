@@ -44,7 +44,7 @@ from ..config import Config
 from ..driver import DriverError, SignInRequired
 from ..models import DaySnapshot, ServiceSpec, Slot, add_minutes, to_utc
 from ..timing import PhaseTimer
-from .speech import join_choices, spoken_day, spoken_duration, spoken_price, spoken_slot, spoken_time
+from .speech import join_choices, join_names, spoken_day, spoken_duration, spoken_price, spoken_slot, spoken_time
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
@@ -111,6 +111,7 @@ class VoiceTools:
         check_search_days: Optional[int] = None,
         source_label: Optional[str] = None,
         source_note: Optional[str] = None,
+        providers: Optional[Callable[[BookableService], list[str]]] = None,
         read_cache_seconds: float = 0.0,
         monotonic: Callable[[], float] = time.monotonic,
     ):
@@ -141,6 +142,9 @@ class VoiceTools:
         # Where the calendar data comes from, when it is NOT the real calendar. Every availability reply carries source=<label>, and the first one
         # in each call also SAYS it (source_note), enforced here so the caller hears it whatever the model does.
         self._source_label, self._source_note = source_label, source_note
+        # Who does a service, ONLY for a calendar that is not the real one (the demo's synthetic roster). Without a source label this is never used,
+        # so the live path cannot state an unverified technician list.
+        self._providers = providers if source_label else None
         self._source_announced: set[str] = set()
         self._announce_lock = threading.Lock()
         self._thread_state = threading.local()  # last_timing is per request thread: overlapping requests must not overwrite each other's log
@@ -665,10 +669,13 @@ class VoiceTools:
         length = spoken_duration(item.duration_minutes) if item.duration_minutes else "no listed length"
         note = f" Note: {item.notes}" if item.notes else ""
         booking = "I can check availability for it." if can_book else "I can tell you about it, but I can't book it online yet."
+        technicians = (self._providers(mapped) if self._providers and can_book else None) or []
+        who = f" On the simulated demo calendar, {join_names(technicians)} {'does' if len(technicians) == 1 else 'do'} this service." if technicians else ""
         return _response(
             "service_info",
-            f"{item.name}: {length}, {spoken_price(item.price_usd)} as listed on our website ({item.retrieved_on}). {item.description} {booking}{note}",
+            f"{item.name}: {length}, {spoken_price(item.price_usd)} as listed on our website ({item.retrieved_on}). {item.description} {booking}{who}{note}",
             item=item.to_public(), bookable=can_book, **({"bookable_service_id": mapped.service_id} if can_book else {}),
+            **({"technicians": technicians, "technicians_source": self._source_label} if technicians else {}),
         )
 
     # ---- the calendar functions -----------------------------------------------------------------

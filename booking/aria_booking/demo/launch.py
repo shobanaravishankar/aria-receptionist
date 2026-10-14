@@ -56,6 +56,7 @@ def build_demo(
         raise AssertionError("the demo has no booking service and no writer route")
 
     tool_kwargs.setdefault("read_cache_seconds", 0.0)  # the demo is instant and its answers should never carry an 'as of' age
+    tool_kwargs.setdefault("providers", dataset.providers)  # who does a service, from the demo's own synthetic roster
     endpoint = build_endpoint(
         cfg, driver, no_writer, clock, api_key, booking_approved=False, bearer_token=bearer_token, registry=dataset.registry, log=log,
         source_label=SOURCE_LABEL, source_note=SOURCE_NOTE, **tool_kwargs,

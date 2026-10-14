@@ -113,6 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--web-dir", default=None, help="where prepare-web writes the page (default: <state dir>/web)")
     p.add_argument("--template-dir", default=None, help="the website template folder (default: the repository root)")
     p.add_argument("--calendar-port", type=int, default=None, help="the demo calendar page's port, for the link in the page banner (default 8790)")
+    p.add_argument("--page-port", type=int, default=None, help="the port the prepared voice page is served on; it is opened at http://localhost:<port>/ (default 5174)")
     p.add_argument("--confirm-create", action="store_true", help="required by `create`, which makes one Retell LLM and one agent")
     p.add_argument("--secret-name", default="retell_api_key", help="for store-secret: retell_api_key, tool_token or retell_public_key")
     p.add_argument("--base-url", default=None, help="for preflight: check this loopback or https address instead of the tunnel, e.g. http://127.0.0.1:8787")
@@ -171,7 +172,7 @@ def main(
         return run_demo_agent(
             args.action, env, out, config_file=args.config, confirm_create=args.confirm_create, secret_name=args.secret_name, base_url=args.base_url,
             overrides={"tunnel_url": args.tunnel_url, "state_dir": args.state_dir, "web_dir": args.web_dir, "template_dir": args.template_dir,
-                       "calendar_port": args.calendar_port},
+                       "calendar_port": args.calendar_port, "page_port": args.page_port},
         )
 
     if args.command in ("demo-screenshots", "demo-compare", "demo-day"):

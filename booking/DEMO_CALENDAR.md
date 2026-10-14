@@ -36,7 +36,7 @@ It prints the page address, e.g. `http://127.0.0.1:8790/pro/en-us/9000001/calend
 
 ## Wiring a NEW test agent and the page (no live agent is touched by this repo)
 
-1. **Agent prompt:** `voice_agent_draft/prompt_demo_calendar.md` (generated from the same template as the other prompts, over the demo's 34 services; it adds a
+1. **Agent prompt:** `voice_agent_draft/prompt_demo_calendar.md` (generated from the same template as the other prompts, over the demo's 35 services; it adds a
    section saying the calendar is simulated and that a name the tool does not find is asked about, never swapped).
 2. **Functions:** `voice_agent_draft/tools_availability_only.json` — `lookup_service`, `check_slot`, `find_alternatives`. There is no booking function.
    Replace `<YOUR-TUNNEL-HOST>` with the host of a tunnel to port 8787 that Sol or Shobana starts; the Retell key (with the webhook badge) is the signing key.
@@ -79,7 +79,10 @@ tunnelling and calling are separate, deliberate steps you take yourself. Actions
    memory off. Any difference is a refusal that lists what differs.
 5. `python -m aria_booking demo-agent prepare-web` — builds the isolated voice page from the repository's website template plus a public-only
    `demo-config.js` (agent id, version, public key; never a secret), with the "Demo calendar: simulated availability · Booking disabled" banner and the
-   retention sentence. Serve the folder it prints with any static server; the template files in the repository are never modified.
+   retention sentence. The template files in the repository are never modified. It prints the serve command and writes `test-instructions.txt` (in the state
+   folder) with the steps and scripted questions. **Open the page at `http://localhost:5174/` (`--page-port` or `page_port` changes the number), never at
+   `http://127.0.0.1:5174/`:** the Retell public key's allowed-domain list names `localhost` (and the operator's published domain), not the numeric address, and
+   a call from it fails with a domain error. The page now keeps that specific error on screen instead of replacing it with the generic microphone message.
 6. A supervised call, after Sol or Shobana start it. `call-summary` can then list the newest call's tool events and timings (no transcript text is kept).
 
 **Intentionally local (not and never in Git):** the Retell API key, tool token and public key; encrypted `.dpapi` files and their folder; the config file with
@@ -106,6 +109,8 @@ On the demo date + 1 (a massage at 4 PM unless stated). `python -m aria_booking 
 | "Linda at 4?" | **off between 3 and 5 PM** (a break), so not available; offers 5 PM |
 | "Fiona for a facial?" | **unknown**: her column shows no hours, so the answer is "I can't confirm" |
 | "Who is free at 4?" | the first eligible technician who really is (Lily) |
+| "Who does the Microdermabrasion Facial?" | `lookup_service` lists the demo's **facial** technicians (Pinny Du, Maggie Jin, Anna Zheng, Ada, Jessica DU, Fiona Tsao), said to be from the simulated calendar |
+| "Is Lily available for a Microdermabrasion Facial?" | Lily Xie is a massage and head-spa technician in the demo roster, so **she does not do it**; it offers those who do (she is never made facial-eligible or swapped out) |
 | "Is Tinny free?" | "I don't see Tinny": it does **not** become Pinny Du; the agent asks who was meant |
 | a date more than 35 days out | **unknown** ("I couldn't confirm that day"), never free; further than 60 days: asks for a nearer date |
 

@@ -55,7 +55,7 @@ ALLOWED = (
 )
 CONFIG_KEYS = frozenset({
     "tunnel_url", "agent_name", "voice_id", "model", "model_temperature", "language", "max_call_duration_ms", "data_storage_retention_days",
-    "begin_message", "state_dir", "template_dir", "web_dir", "calendar_port", "tools_port",
+    "begin_message", "state_dir", "template_dir", "web_dir", "calendar_port", "tools_port", "page_port",
 })
 
 
@@ -113,10 +113,17 @@ class OperatorConfig:
     web_dir: Optional[Path] = None
     calendar_port: int = 8790
     tools_port: int = 8787
+    page_port: int = 5174
 
     @property
     def web_out(self) -> Path:
         return self.web_dir or (self.state_dir / "web")
+
+    @property
+    def page_url(self) -> str:
+        """The ONE address to open the voice page at. 'localhost', never the numeric loopback address: the Retell public key's allowed-domain list
+        names localhost (and the operator's published domain), not 127.0.0.1, so a call from http://127.0.0.1:<port>/ is refused with a domain error."""
+        return f"http://localhost:{self.page_port}/"
 
 
 def validate_tunnel(url: str) -> str:
@@ -246,6 +253,7 @@ def plan(config: OperatorConfig, secrets: Any, out: Callable[[str], None]) -> in
     for name in ("retell_api_key", "tool_token", "retell_public_key"):
         out(f"    {name:18}: " + ("available" if secrets.has(name) else "NOT available"))
     out(f"  local state       : {config.state_dir}  (" + (", ".join(sorted(p.name for p in config.state_dir.glob('*') if p.is_file())) or "empty") + ")")
+    out(f"  voice page        : prepared in {config.web_out}; open it at {config.page_url} (localhost, not 127.0.0.1)")
     out(f"  source commit     : {source_commit()}")
     out("  to create it      : python -m aria_booking demo-agent create --confirm-create   (one time; this plan did not do it)")
     return 0
@@ -425,6 +433,32 @@ def preflight(config: OperatorConfig, secrets: Any, out: Callable[[str], None], 
     return 0
 
 
+def test_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path) -> str:
+    """The generated steps for one supervised voice test. They name the one address that works with the Retell public key and the scripted cases."""
+    calendar = f"http://localhost:{config.calendar_port}/pro/en-us/9000001/calendar?date={tomorrow}&view=day&staffers=working"
+    return "\n".join([
+        "SUPERVISED VOICE TEST of the SIMULATED calendar (invented data; booking is disabled; the call uses Retell minutes and is your decision).",
+        "",
+        "1. Serve the prepared page and leave it running:",
+        f"     python -m http.server {config.page_port} --bind 127.0.0.1 --directory {web_dir}",
+        "2. Open EXACTLY this address in the browser, then press the voice button and allow the microphone:",
+        f"     {config.page_url}",
+        f"   Do NOT use http://127.0.0.1:{config.page_port}/ : the Retell public key's allowed domains name localhost (and your published domain), not the numeric",
+        "   address, and a call from it fails with a domain error.",
+        "3. What Aria sees (the same invented data), for the day after the demo server's start date:",
+        f"     {calendar}",
+        "",
+        f"Scripted cases for tomorrow ({tomorrow}), when the demo server was started today (see DEMO_CALENDAR.md, 'What to ask'):",
+        "  - Is Lily available tomorrow at 4 for a one-hour deep tissue massage?   -> yes, with Lily Xie",
+        "  - What about Elva?                                                       -> booked at 4; offers her other times",
+        "  - Who does the Microdermabrasion Facial?                                 -> the demo's facial technicians (not Lily)",
+        "  - Is Lily available for a Microdermabrasion Facial?                      -> Lily does not do it; offers those who do",
+        "",
+        "The demo date is fixed when the demo server starts: after midnight Eastern, restart the server (not the tunnel or the agent) for these cases to hold.",
+        "",
+    ])
+
+
 def prepare_web(config: OperatorConfig, secrets: Any, out: Callable[[str], None], *, clock: Callable[[], float] = time.time) -> int:
     """The isolated voice page: the repository's website template, a demo banner, and a PUBLIC-only config. The template files are copied, never changed."""
     state = State(config.state_dir)
@@ -458,7 +492,11 @@ def prepare_web(config: OperatorConfig, secrets: Any, out: Callable[[str], None]
         shutil.copyfile(template / name, target / name)
     settings = {"publicKey": public_key, "agentId": agent["agent_id"], "agentVersion": agent.get("version", 0)}
     (target / "demo-config.js").write_text("/* Public-only isolated demo page. Generated; not for Git. */\nwindow.RETELL_DEMO = " + json.dumps(settings) + ";\n", encoding="utf-8")
-    out(f"Isolated voice page prepared in {target} with the simulated-calendar banner and the separate test agent (serve it with: python -m http.server --directory <that folder>).")
+    instructions = state.dir / "test-instructions.txt"
+    instructions.write_text(test_instructions(config, tomorrow, target), encoding="utf-8", newline="\n")
+    out(f"Isolated voice page prepared in {target} with the simulated-calendar banner and the separate test agent.")
+    out(f"Serve it:  python -m http.server {config.page_port} --bind 127.0.0.1 --directory {target}")
+    out(f"Open it at {config.page_url}  (localhost, NOT 127.0.0.1: the Retell public key allows localhost, not the numeric address). Steps: {instructions}")
     return 0
 
 

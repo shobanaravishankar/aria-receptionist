@@ -9,5 +9,6 @@
   "max_call_duration_ms": 300000,
   "data_storage_retention_days": 7,
   "calendar_port": 8790,
-  "tools_port": 8787
+  "tools_port": 8787,
+  "page_port": 5174
 }

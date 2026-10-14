@@ -29,6 +29,7 @@ let client = null;       // RetellClient (created once)
 let call = null;         // active WebCallSession, or null
 let starting = false;    // request in flight, not yet "live"
 let everLive = false;    // did this call reach "live" before ending?
+let failure = null;      // the specific message of a failed start/call; the "ended" event that follows an error must not replace it with the generic one
 let lastFocus = null;
 
 /* ---------------- helpers ---------------- */
@@ -55,10 +56,11 @@ function loadSdk() {
 
 function friendlyError(err) {
   const raw = (err && (err.message || String(err))) || "Unknown error";
+  // Domain/key problems first: "origin not allowed (403)" contains "not allowed" and must not be reported as a blocked microphone.
+  if (/origin|domain|forbidden|unauthori[sz]ed|\b40[13]\b/i.test(raw))
+    return "This web address isn’t on the Retell key’s allowed domains yet — add it in Retell → API Keys → Public Keys, then try again. (" + raw + ")";
   if (/denied|permission|notallowed|not allowed/i.test(raw))
     return "Microphone blocked. Allow it for this site in your browser, then press “Speak to an agent” again.";
-  if (/origin|domain|allowed|403|forbidden|unauthorized|401/i.test(raw))
-    return "This web address isn’t on the Retell key’s allowed domains yet — add it in Retell → API Keys → Public Keys, then try again. (" + raw + ")";
   if (/network|failed to fetch|load|timeout/i.test(raw))
     return "Network problem reaching Aria. Check the connection and try again. (" + raw + ")";
   return "Couldn’t start the call: " + raw;
@@ -94,6 +96,7 @@ async function startCall() {
   if (typeof window.__closeAvatarPanel === "function") window.__closeAvatarPanel();
 
   starting = true;
+  failure = null;                  // a new attempt: forget the last failure
   document.documentElement.dataset.ariaCall = "1";
   endBtn.hidden = true;
   retryBtn.hidden = true;
@@ -145,6 +148,15 @@ function onStatus(status) {
 }
 
 function onEnd() {
+  if (failure) {
+    // An error already said why this call failed (and showed it). Retell also fires "ended" afterwards: keep the specific message.
+    reset();
+    setStatus("error", failure);
+    retryBtn.textContent = "Try again";
+    retryBtn.hidden = false;
+    closeBtn.hidden = false;
+    return;
+  }
   const connected = everLive;
   reset();
   if (connected) {
@@ -164,6 +176,7 @@ function onError(err) {
 
 function fail(err) {
   const message = friendlyError(err);
+  failure = message;
   reset();
   setStatus("error", message);
   retryBtn.hidden = false;

@@ -64,7 +64,7 @@ DEMO_FAMILIES = (
     ("massage", "Deep Tissue Massage", 15), ("massage", "Swedish Massage", 15), ("massage", "Hot Stone Massage", 15),
     ("massage", "Aromatherapy Massage", 15), ("massage", "Anti-Stress Massage", 15), ("massage", "Reflexology Massage", 15),
     ("facial", "Express Facial", 10), ("facial", "Signature Facial", 10), ("facial", "Back Facial", 10), ("facial", "Teen Facial", 10),
-    ("facial", "HydraFacial Treatment", 10), ("facial", "Gentleman Facial", 10),
+    ("facial", "HydraFacial Treatment", 10), ("facial", "Gentleman Facial", 10), ("facial", "Microdermabrasion Facial", 10),
     ("lash", "Eyelash Tinting", 0), ("lash", "Eyelash Lifting", 0), ("lash", "Eyebrow Tinting", 0),
     ("waxing", "Eyebrows", 0), ("waxing", "Lip", 0), ("waxing", "Full Face", 0), ("waxing", "Full Leg", 5), ("waxing", "Brazilian Line", 5),
     ("head-spa", "Head Scalp Massage", 5), ("head-spa", "Head Scalp Detoxification", 5),
@@ -166,6 +166,10 @@ class DemoDataset:
     @property
     def registry(self) -> BookableRegistry:
         return self._registry
+
+    def providers(self, service: BookableService) -> list[str]:
+        """Who does this service in the DEMO: the roster members whose synthetic category assignment covers it, in roster order. Demo-only facts, not the salon's."""
+        return [staff.name for staff in self.roster if staff.staff_id in service.eligible_staff_ids]
 
     @property
     def scripted_days(self) -> tuple[date, date]:

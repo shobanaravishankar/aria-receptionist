@@ -588,7 +588,7 @@ def _prepared(tmp_path, secrets=None, **kw):
 
 def test_the_page_is_built_from_the_template_with_the_banner_and_a_public_only_config(tmp_path):
     code, web, lines = _prepared(tmp_path)
-    assert code == 0 and "serve it with" in lines[0]
+    assert code == 0 and "Isolated voice page prepared" in lines[0] and any("python -m http.server" in line for line in lines)
     page = (web / "index.html").read_text(encoding="utf-8")
     assert "<title>Aria — Simulated Calendar Demo</title>" in page and 'data-testid="demo-page-banner"' in page
     assert "Demo calendar: simulated availability · Booking disabled" in page and "http://localhost:8790/pro/en-us/9000001/calendar?date=2026-10-14&amp;view=day" in page
@@ -781,3 +781,55 @@ def test_nothing_in_the_operator_runs_a_server_a_tunnel_or_a_browser():
         source = (BOOKING / "aria_booking" / "demo" / name).read_text(encoding="utf-8")
         for needle in ("cloudflared", "Popen", "serve_forever", "playwright", "selenium", "webbrowser", "os.system"):
             assert needle not in source, (name, needle)
+
+
+# ---------------------------------------------------------------- the one address that works with the Retell public key
+
+
+def test_the_voice_page_address_is_localhost_never_the_numeric_loopback_address():
+    assert OperatorConfig().page_url == "http://localhost:5174/"
+    assert OperatorConfig(page_port=6000).page_url == "http://localhost:6000/"
+    assert load_config({}, overrides={"page_port": 6100}).page_url == "http://localhost:6100/"
+    assert "127.0.0.1" not in OperatorConfig().page_url
+
+
+def test_the_example_config_names_the_page_port_and_the_loader_accepts_it(tmp_path):
+    cfg = load_config({}, file=str(BOOKING / "demo_agent.example.json"))
+    assert cfg.page_port == 5174 and cfg.page_url == "http://localhost:5174/"
+
+
+def test_prepare_web_prints_the_serve_command_and_the_localhost_address(tmp_path):
+    code, web, lines = _prepared(tmp_path, page_port=5999)
+    text = "\n".join(lines)
+    assert code == 0 and f"python -m http.server 5999 --bind 127.0.0.1 --directory {web}" in text
+    assert "Open it at http://localhost:5999/" in text and "NOT 127.0.0.1" in text
+
+
+def test_prepare_web_writes_test_instructions_beside_the_state_not_inside_the_served_folder(tmp_path):
+    _code, web, _lines = _prepared(tmp_path)
+    steps = (tmp_path / "state" / "test-instructions.txt").read_text(encoding="utf-8")
+    assert "test-instructions.txt" not in {p.name for p in web.iterdir()}, "the steps are not served with the page"
+    assert "http://localhost:5174/" in steps and "Do NOT use http://127.0.0.1:5174/" in steps and "domain error" in steps
+    assert "http://localhost:8790/pro/en-us/9000001/calendar?date=2026-10-14&view=day&staffers=working" in steps
+    assert "Microdermabrasion Facial" in steps and "Is Lily available tomorrow at 4" in steps
+    assert "after midnight Eastern, restart the server (not the tunnel or the agent)" in steps
+    for secret in (KEY, TOKEN, PUBLIC):
+        assert secret not in steps
+
+
+def test_the_instructions_follow_the_configured_ports(tmp_path):
+    _prepared(tmp_path, page_port=6200, calendar_port=9911)
+    steps = (tmp_path / "state" / "test-instructions.txt").read_text(encoding="utf-8")
+    assert "http://localhost:6200/" in steps and "localhost:9911/pro/en-us/9000001/calendar" in steps and "5174" not in steps
+
+
+def test_plan_shows_the_page_address(tmp_path):
+    lines = []
+    assert agent_ops.plan(config(tmp_path, page_port=5300), FakeSecrets(), lines.append) == 0
+    assert "open it at http://localhost:5300/ (localhost, not 127.0.0.1)" in "\n".join(lines)
+
+
+def test_the_cli_passes_the_page_port_through(tmp_path):
+    lines = []
+    assert cli.main(["demo-agent", "plan", "--tunnel-url", TUNNEL, "--state-dir", str(tmp_path / "s"), "--page-port", "5888"], environ={}, out=lines.append) == 0
+    assert "http://localhost:5888/" in "\n".join(lines)
