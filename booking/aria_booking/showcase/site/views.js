@@ -131,7 +131,8 @@
   function startWatching() { stamp = null; failures = 0; schedule(0); }
   function stopWatching() { clearTimeout(timer); timer = null; }
   function refreshActive() { if (current === "calendar") refreshTimes(true); else if (current === "staff-calendar") refreshStaff(); }
-  document.addEventListener("visibilitychange", function () { if (document.visibilityState !== "hidden" && current) { stamp = null; schedule(0); } else stopWatching(); });
+  // Hidden: stop asking, but KEEP the last stamp seen. When the tab is shown again the first answer is compared with it, so a booking made meanwhile is noticed and the open view refreshed.
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState !== "hidden" && current) schedule(0); else stopWatching(); });
 
   // ---------------------------------------------------------------- customer calendar: open times
   var form = document.getElementById("open-times-form");

@@ -712,6 +712,83 @@ def test_open_times_on_screen_follow_a_change_by_themselves_while_the_view_is_op
     assert any(t == "4 PM" and "Sienna" in techs for t, techs in before) and not any(t == "4 PM" and "Sienna" in techs for t, techs in after)
 
 
+def set_visibility(page, value: str) -> None:
+    """The event a browser sends when its tab is hidden or shown, sent deterministically."""
+    page.evaluate("""value => {
+        Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => value});
+        document.dispatchEvent(new Event('visibilitychange'));
+    }""", value)
+
+
+@pytest.mark.parametrize("view", ["staff", "open_times"])
+def test_a_booking_made_while_the_tab_was_hidden_shows_when_it_is_shown_again(driver, fresh, view):
+    lc = fresh["lc"]
+
+    def work(page):
+        if view == "staff":
+            go_to(page, '[data-testid="nav-staff-calendar"]', "view-staff")
+            staff_frame(page).wait_for_selector('[data-testid="date-switcher-next"]')
+            click_next_day(page)
+            wait_for_day(page, TOMORROW.isoformat())
+        else:
+            open_calendar(page)
+            pick(page, "Swedish Massage", "1 hr · $85", TOMORROW.isoformat())
+            assert any(t == "4 PM" and "Sienna" in who for t, who in open_slots(page))
+        page.wait_for_timeout(1500)  # the stamp of what is on screen is known
+        set_visibility(page, "hidden")
+        page.wait_for_timeout(300)
+        book(lc, "Return Visit Person", "+12125550196", 16)
+        set_visibility(page, "visible")
+        if view == "staff":
+            return frame_text_has(page, "Return P.", 6), frame_day(page)
+        page.wait_for_function("() => { const t = [...document.querySelectorAll('#ot-results .slot')].find(li => li.querySelector('.slot-time').textContent === '4 PM'); return !t || !t.textContent.includes('Sienna'); }", timeout=6000)
+        return True, None
+
+    shown, day = run(driver, fresh, work)
+    assert shown is True and day in (None, TOMORROW.isoformat()), "refreshed on return, on the day that was showing"
+
+
+def test_nothing_is_asked_while_the_tab_is_hidden_and_one_question_comes_at_once_when_it_is_shown(driver, fresh):
+    def work(page):
+        counts = []
+        page.on("request", lambda request: counts.append(request.url) if "/demo/changes" in request.url else None)
+        go_to(page, '[data-testid="nav-calendar"]', "view-calendar")
+        page.wait_for_timeout(1500)
+        set_visibility(page, "hidden")
+        page.wait_for_timeout(200)
+        hidden_from = len(counts)
+        page.wait_for_timeout(3000)
+        while_hidden = len(counts) - hidden_from
+        set_visibility(page, "visible")
+        page.wait_for_timeout(400)
+        return while_hidden, len(counts) - hidden_from - while_hidden
+
+    while_hidden, on_return = run(driver, fresh, work)
+    assert while_hidden == 0, "paused while the tab is hidden"
+    assert on_return >= 1, "and it asks as soon as the tab is shown"
+
+
+def test_a_question_still_in_flight_when_the_tab_is_hidden_does_not_start_another_round(driver, fresh):
+    def work(page):
+        page.evaluate("""() => {
+            const original = window.fetch;
+            window.__held = []; window.__asked = 0;
+            window.fetch = (url, ...rest) => {
+                if (!String(url).includes('/demo/changes')) return original(url, ...rest);
+                window.__asked += 1;
+                return new Promise(resolve => window.__held.push(() => original(url, ...rest).then(resolve)));   // the answer is held until the test lets it through
+            };
+        }""")
+        go_to(page, '[data-testid="nav-calendar"]', "view-calendar")
+        page.wait_for_function("() => window.__asked >= 1")
+        set_visibility(page, "hidden")
+        page.evaluate("window.__held.splice(0).forEach(release => release())")  # the answer arrives AFTER the tab was hidden
+        page.wait_for_timeout(3500)
+        return page.evaluate("window.__asked")
+
+    assert run(driver, fresh, work) == 1, "no new round of questions is scheduled while the tab is hidden, even when an answer arrives late"
+
+
 def test_the_page_only_asks_whether_anything_changed_while_a_view_is_open(driver, fresh):
     def work(page):
         counts = []
