@@ -41,6 +41,7 @@ You also need: the Retell public key's **allowed domains** to include the websit
 | `PORT` / `ARIA_PORT`, `ARIA_HOST` | variable | the host sets `PORT`; the default listen address is `0.0.0.0` |
 | `ARIA_SERVE_SITE` | variable | `0` for a backend that only serves the calendar and the tools (the website is elsewhere) |
 | `ARIA_PREFERENCES` | variable | `1` to also answer the three preferred-technician functions (demo only, default off: set it only when the agent was updated with the reviewed `lifecycle-preferences` prompt and tools) |
+| `ARIA_SHOWCASE_CONFIG` | variable | the path of a small JSON file (kept outside Git, on the volume) with the fictional `location` and `contact_phone`; checked at start, and a bad file stops the backend with the reason. Unset = no address and no number anywhere (see SHOWCASE.md, "A fictional address and phone number") |
 | `ARIA_AVATAR_IMAGE` | variable | a web-sized avatar file inside the image/volume, for the website the backend serves (see SHOWCASE.md); the likeness is never committed |
 
 A wrong or missing setting stops the server at start with every problem named and what to change (`python -m aria_booking demo-public-serve` with nothing set shows them all).

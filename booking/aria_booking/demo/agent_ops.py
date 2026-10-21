@@ -38,6 +38,7 @@ from zoneinfo import ZoneInfo
 
 from . import SALON_NAME, SPA_TIMEZONE
 from ..appointments.tool_defs import PREFERENCE_TOOL_NAMES
+from ..showcase.config import LIFECYCLE_BOOKING_NOTE, Showcase, resolve_showcase
 from ..showcase.roster import name_of
 from .secret_store import DpapiSecrets, SecretMissing, provider_from_environment
 
@@ -60,7 +61,6 @@ MODES = {
                               "names": LIFECYCLE_TOOL_NAMES | PREFERENCE_TOOL_NAMES, "label": "simulated appointment lifecycle with preferred technicians"},
 }
 LIFECYCLE_MODES = frozenset({"lifecycle", "lifecycle-preferences"})  # the modes whose functions change the PROTOTYPE calendar
-LIFECYCLE_BOOKING_NOTE = "Appointments made here exist only in this prototype calendar"
 CLOCK_SECTION = (
     "\n\n## Session clock\nCurrent salon date and time: {{current_time_" + SPA_TIMEZONE + "}}. "
     f"The demo uses today's actual date in {SPA_TIMEZONE}. Resolve tomorrow from this date.\n"
@@ -74,7 +74,7 @@ ALLOWED = (
 )
 CONFIG_KEYS = frozenset({
     "tunnel_url", "agent_name", "voice_id", "model", "model_temperature", "language", "max_call_duration_ms", "data_storage_retention_days",
-    "begin_message", "state_dir", "web_dir", "calendar_port", "tools_port", "page_port", "mode", "avatar_image", "backend_url",
+    "begin_message", "state_dir", "web_dir", "calendar_port", "tools_port", "page_port", "mode", "avatar_image", "backend_url", "showcase_file",
 })
 RETIRED_KEYS = frozenset({"template_dir"})  # the page is no longer built from a website template; config files that still name it keep loading
 
@@ -136,11 +136,23 @@ class OperatorConfig:
     page_port: int = 5174
     mode: str = "availability"  # or "lifecycle" / "lifecycle-preferences": which reviewed prompt and function set this agent is held to
     backend_url: str = ""  # the https address of the PUBLIC backend (``demo-public-serve``): the page then reads its calendar from there and is built to upload to a static host (Netlify)
+    showcase_file: str = ""  # the optional JSON file (kept outside Git) with the fictional address and phone: ARIA_SHOWCASE_CONFIG. Empty = nothing configured, as before.
     avatar_image: str = ""  # path of a square transparent png/webp/svg for the floating Aria avatar; empty = the built-in illustration. Kept out of Git (it may be a real likeness).
 
     def __post_init__(self) -> None:
         if self.mode not in MODES:
             raise OperatorError("mode must be one of: " + ", ".join(sorted(MODES)))
+
+    def resolved_showcase(self) -> Showcase:
+        """The showcase the prepared page is built from (the file over the defaults, with the lifecycle label ending in the lifecycle modes)."""
+        try:
+            return resolve_showcase(path=self.showcase_file, lifecycle=self.mode in LIFECYCLE_MODES)
+        except ValueError as exc:
+            raise OperatorError(f"ARIA_SHOWCASE_CONFIG / showcase_file: {exc}") from None
+
+    def prompt_showcase(self) -> Optional[Showcase]:
+        """None when no file is configured (the agent is then held to the committed prompt, exactly as before); otherwise the showcase the prompt must be rendered from."""
+        return self.resolved_showcase() if self.showcase_file else None
 
     @property
     def web_out(self) -> Path:
@@ -197,6 +209,8 @@ def load_config(env: Mapping[str, str], *, file: Optional[str] = None, overrides
         values["avatar_image"] = env["ARIA_AVATAR_IMAGE"].strip()
     if (env.get("ARIA_BACKEND_URL") or "").strip():
         values["backend_url"] = env["ARIA_BACKEND_URL"].strip()
+    if (env.get("ARIA_SHOWCASE_CONFIG") or "").strip():
+        values["showcase_file"] = env["ARIA_SHOWCASE_CONFIG"].strip()
     values.update({k: v for k, v in (overrides or {}).items() if v not in (None, "")})
     for key in ("state_dir", "web_dir"):
         if key in values and values[key] is not None:
@@ -218,8 +232,20 @@ def source_commit() -> str:
         return "unknown"
 
 
-def expected_prompt(root: Path = BOOKING, mode: str = "availability") -> str:
-    text = (root / MODES[mode]["prompt"]).read_text(encoding="utf-8")
+def render_prompt(root: Path, mode: str, showcase: Showcase) -> str:
+    """The reviewed prompt for ``mode`` rendered from its template with THIS showcase (the same builder that wrote the committed file)."""
+    from ..catalog.render import LIFECYCLE_TEMPLATE_FILE, build_demo_prompt
+
+    template = (root / "voice_agent_draft" / (LIFECYCLE_TEMPLATE_FILE if mode in LIFECYCLE_MODES else "prompt_template.md")).read_text(encoding="utf-8")
+    try:
+        return build_demo_prompt(template, showcase=showcase, lifecycle=mode in LIFECYCLE_MODES, preferences=mode == "lifecycle-preferences")
+    except ValueError as exc:
+        raise OperatorError(f"the prompt could not be rendered from the showcase: {exc}") from None
+
+
+def expected_prompt(root: Path = BOOKING, mode: str = "availability", showcase: Optional[Showcase] = None) -> str:
+    """The committed, reviewed prompt; or, when a configured ``showcase`` is given, the same prompt rendered with its address and phone."""
+    text = render_prompt(root, mode, showcase) if showcase is not None else (root / MODES[mode]["prompt"]).read_text(encoding="utf-8")
     if text.count("## Who you are") != 1:
         raise OperatorError("the reviewed prompt must contain the '## Who you are' section exactly once")
     return text[text.index("## Who you are"):] + CLOCK_SECTION
@@ -272,11 +298,14 @@ def plan(config: OperatorConfig, secrets: Any, out: Callable[[str], None]) -> in
         tunnel = validate_tunnel(config.tunnel_url)
     except OperatorError as exc:
         tunnel = f"(not set: {exc})"
-    prompt = expected_prompt(mode=config.mode)
+    prompt = expected_prompt(mode=config.mode, showcase=config.prompt_showcase())
     tools = expected_tools(tunnel if tunnel.startswith("https://") else "https://<your-tunnel-host>", "<tool token>", mode=config.mode)
     out("PLAN (nothing is created or contacted)")
     out(f"  mode              : {config.mode} ({MODES[config.mode]['label']})")
     out(f"  agent name        : {config.agent_name}  (a SEPARATE test agent; no existing agent is changed)")
+    shown = config.prompt_showcase()
+    out("  showcase          : " + ("default (no address and no phone number configured)" if shown is None else
+                                    f"from the configured file (address {'set' if shown.location else 'not set'}, phone {'set' if shown.contact_phone else 'not set'})"))
     out(f"  tunnel            : {tunnel}")
     out(f"  functions         : {', '.join(sorted(t['name'] for t in tools if t['type'] == 'custom'))} + end_call; "
         + ("no booking function" if config.mode == "availability" else "they change only the PROTOTYPE calendar; none reaches the live Booksy calendar"))
@@ -356,7 +385,7 @@ def _read_back(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callab
     agent_state, llm_id = state.read("agent.json"), state.read("llm.json")["llm_id"]
     tunnel = validate_tunnel(config.tunnel_url)
     token = secrets.get("tool_token")
-    prompt, tools = expected_prompt(mode=config.mode), expected_tools(tunnel, token, mode=config.mode)
+    prompt, tools = expected_prompt(mode=config.mode, showcase=config.prompt_showcase()), expected_tools(tunnel, token, mode=config.mode)
     agent, llm = api.request("get-agent/" + agent_state["agent_id"]), api.request("get-retell-llm/" + llm_id)
     problems: list[str] = []
     _check(problems, "the agent does not use the recorded LLM", llm_id, (agent.get("response_engine") or {}).get("llm_id"))
@@ -406,7 +435,7 @@ def create(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[
     token = secrets.ensure_token() if hasattr(secrets, "ensure_token") else secrets.get("tool_token")
     secrets.get("retell_api_key")  # fail early, before anything is written, if the key is missing
     state = State(config.state_dir)
-    prompt, tools = expected_prompt(mode=config.mode), expected_tools(tunnel, token, mode=config.mode)
+    prompt, tools = expected_prompt(mode=config.mode, showcase=config.prompt_showcase()), expected_tools(tunnel, token, mode=config.mode)
     llm = _create_once(
         state, "llm",
         lambda: api.request("create-retell-llm", {
@@ -448,7 +477,7 @@ def update(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callable[[
     tunnel = validate_tunnel(config.tunnel_url or agent_state.get("tunnel", ""))
     token = secrets.get("tool_token")
     secrets.get("retell_api_key")  # fail early if the key is missing
-    prompt, tools = expected_prompt(mode=config.mode), expected_tools(tunnel, token, mode=config.mode)
+    prompt, tools = expected_prompt(mode=config.mode, showcase=config.prompt_showcase()), expected_tools(tunnel, token, mode=config.mode)
     # Read first (nothing is changed yet): the agent must still point at the recorded LLM, and its other settings are noted so they can be shown unchanged.
     agent_before, llm_before = api.request("get-agent/" + agent_state["agent_id"]), api.request("get-retell-llm/" + llm_id)
     if (agent_before.get("response_engine") or {}).get("llm_id") != llm_id:
@@ -707,7 +736,6 @@ def preference_instructions() -> str:
 def prepare_web(config: OperatorConfig, secrets: Any, out: Callable[[str], None], *, clock: Callable[[], float] = time.time) -> int:
     """The isolated Serenity voice page: built from the showcase source (brand, fictional roster, independent menu) plus a PUBLIC-only config. The earlier salon's
     website files are not used and the repository's website template is never touched."""
-    from ..showcase import SHOWCASE
     from ..showcase.site import build_site
 
     state = State(config.state_dir)
@@ -720,7 +748,7 @@ def prepare_web(config: OperatorConfig, secrets: Any, out: Callable[[str], None]
     target = config.web_out
     tomorrow = (datetime.fromtimestamp(clock(), ZoneInfo(SPA_TIMEZONE)) + timedelta(days=1)).date().isoformat()
     settings = {"publicKey": public_key, "agentId": agent["agent_id"], "agentVersion": agent.get("version", 0)}
-    showcase = replace(SHOWCASE, booking_note=LIFECYCLE_BOOKING_NOTE) if config.mode in LIFECYCLE_MODES else SHOWCASE
+    showcase = config.resolved_showcase()
     backend = ""
     if config.backend_url:
         from ..hosting.config import HostingError, parse_origin

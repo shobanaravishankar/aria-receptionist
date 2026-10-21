@@ -179,6 +179,9 @@ def showcase_intro(showcase) -> list[str]:
     phone = (f"- Phone: {showcase.contact_phone}. Give it when a caller needs the salon directly, and never say a transfer, callback or message has happened."
              if showcase.contact_phone else
              "- Phone: no number is configured yet. Do not give, guess or invent one; say you do not have a number to give.")
+    location = (f"- Address and location: {showcase.location}. Give it exactly as written when a caller asks where the salon is; add no directions, town, landmark, map or travel time of your own."
+                if showcase.location else
+                "- Address and location: none is configured. Do not state, guess or look up an address, town or directions; say you do not have one to give.")
     return [
         "## What you may say about the salon (the prototype menu's information)",
         "",
@@ -186,7 +189,7 @@ def showcase_intro(showcase) -> list[str]:
         "Use them for questions about services, lengths and prices. If a caller asks about something that is not below, say you do not have that information.",
         "",
         f"- Salon: {showcase.name}.",
-        "- Address and location: none is configured. Do not state, guess or look up an address, town or directions; say you do not have one to give.",
+        location,
         phone,
         f"- Opening hours (example data): {showcase.example_hours}. These are information only. NEVER use them to say whether an appointment is or is not available; "
         "availability comes only from the calendar tools.",
@@ -436,7 +439,7 @@ def build_demo_prompt(template: str, catalog: Catalog | None = None, salon_name:
                 raise ValueError(f"the shared template's wording changed ({old!r}): update the demo prompt adaptation")
             body = body.replace(old, new)
         body = re.sub(rf"\b{TEMPLATE_EXAMPLE_TECHNICIAN}\b", name_of("910006"), body)
-    leaks = find_leaks(body, allowed=(showcase.contact_phone,) if showcase.contact_phone else ())
+    leaks = find_leaks(body, allowed=tuple(value for value in (showcase.contact_phone, showcase.location) if value))
     if leaks:
         raise ValueError("the demo prompt still contains the earlier salon's identifiers: " + ", ".join(leaks))
     return (PREFERENCES_HEADER if preferences else LIFECYCLE_HEADER if lifecycle else DEMO_HEADER).format(name=name) + marker + body

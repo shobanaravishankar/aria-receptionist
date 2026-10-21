@@ -20,6 +20,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Mapping, Optional
 
 from ..demo.secret_store import EnvSecrets, SecretMissing
+from ..showcase.config import resolve_showcase
 
 DEFAULT_PORT = 8080
 LOOPBACK_NAMES = {"localhost", "127.0.0.1", "::1"}
@@ -151,6 +152,11 @@ def load_public_config(env: Mapping[str, str], *, dev: bool = False, overrides: 
     if public_key and not public_key.startswith("public_key"):
         problems.append("ARIA_RETELL_PUBLIC_KEY must be a Retell PUBLIC key (it starts with public_key). Never put the private API key where a browser can read it.")
         public_key = ""
+    if setting("ARIA_SHOWCASE_CONFIG", "showcase"):
+        try:
+            resolve_showcase(path=setting("ARIA_SHOWCASE_CONFIG", "showcase"), lifecycle=True)
+        except ValueError as exc:
+            problems.append(f"ARIA_SHOWCASE_CONFIG: {exc}. Fix the file, or unset the variable to publish no address and no phone number.")
     if problems:
         raise HostingError("The public backend cannot start:\n  - " + "\n  - ".join(problems))
     return PublicConfig(

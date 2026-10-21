@@ -137,3 +137,17 @@ def test_the_preferred_technician_functions_are_off_unless_the_host_turns_them_o
         assert load_public_config({**GOOD, "ARIA_PREFERENCES": text}).preferences is True, text
     for text in ("0", "", "false", "no", "off", "maybe"):
         assert load_public_config({**GOOD, "ARIA_PREFERENCES": text}).preferences is False, text
+
+
+def test_a_showcase_file_is_checked_at_start_and_a_bad_one_stops_the_backend_naming_the_setting(tmp_path):
+    import json
+
+    good = tmp_path / "good.json"
+    good.write_text(json.dumps({"location": "17 Example Row, Testville", "contact_phone": "(212) 555-0111"}), encoding="utf-8")
+    assert load_public_config({**GOOD, "ARIA_SHOWCASE_CONFIG": str(good)}).showcase_file == str(good)
+    assert load_public_config(GOOD).showcase_file == ""
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({"contact_phone": "555-0111"}), encoding="utf-8")
+    message = refused({**GOOD, "ARIA_SHOWCASE_CONFIG": str(bad)})
+    assert "ARIA_SHOWCASE_CONFIG: the showcase contact_phone is not a complete phone number" in message and "unset the variable" in message and "555-0111" not in message
+    assert "ARIA_SHOWCASE_CONFIG" in refused({**GOOD, "ARIA_SHOWCASE_CONFIG": str(tmp_path / "missing.json")})

@@ -180,3 +180,33 @@ def test_the_agent_mode_flag_accepts_the_preferences_mode_and_still_refuses_anyt
     assert parser.parse_args(["demo-serve", "--lifecycle", "--preferences"]).preferences is True and parser.parse_args(["demo-serve", "--lifecycle"]).preferences is False
     with pytest.raises(SystemExit):
         parser.parse_args(["demo-agent", "plan", "--mode", "preferences"])
+
+
+# ---------------------------------------------------------------- the fictional address and phone
+
+def _spoken_fallback(endpoint) -> str:
+    replies = [endpoint._tools.find_appointments("fallback", {"phone": number}) for number in ("2125550101", "2125550102", "2125550103", "2125550104")]
+    assert replies[3]["status"] == "refused"
+    return replies[3]["speak"]
+
+
+def test_the_variable_names_the_file_the_spoken_fallback_uses_and_the_number_is_never_printed(isolated, tmp_path):
+    path = tmp_path / "showcase.json"
+    path.write_text(json.dumps({"location": "17 Example Row, Testville", "contact_phone": "(212) 555-0111"}), encoding="utf-8")
+    code, text = serve(tmp_path, env={"ARIA_SHOWCASE_CONFIG": str(path)})
+    assert code == cli.EXIT_OK and "contact fallback: the configured salon name and number" in text
+    assert "0111" not in text and "Testville" not in text and KEY not in text
+    assert _spoken_fallback(isolated["endpoint"]).endswith("Please contact Serenity Spa at 2 1 2, 5 5 5, 0 1 1 1.")
+
+
+def test_without_the_variable_the_fallback_gives_no_number(isolated, tmp_path):
+    code, text = serve(tmp_path)
+    assert code == cli.EXIT_OK and "contact fallback: no salon number is configured" in text
+    assert _spoken_fallback(isolated["endpoint"]).endswith("Please contact the salon directly.")
+
+
+def test_a_bad_showcase_file_is_refused_before_anything_starts(isolated, tmp_path):
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps({"contact_phone": "555-0111"}), encoding="utf-8")
+    code, text = serve(tmp_path, env={"ARIA_SHOWCASE_CONFIG": str(path)})
+    assert code == cli.EXIT_REFUSED and "not a complete phone number" in text and "endpoint" not in isolated and not FakeServer.served and "555-0111" not in text

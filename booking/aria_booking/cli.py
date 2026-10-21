@@ -508,7 +508,7 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
         out("refused: --preferences needs --lifecycle (the preferred technicians belong to the simulated appointment lifecycle).")
         return EXIT_REFUSED
     if args.lifecycle:
-        return _demo_serve_lifecycle(args, cfg, key, tool_token, today, out)
+        return _demo_serve_lifecycle(args, cfg, key, tool_token, today, out, env)
     tz = ZoneInfo(SPA_TIMEZONE)  # the demo's one timezone: the same zone the greeting and the session clock use
     clock = demo_clock(today, tz)
     dataset = DemoDataset(clock().date(), diagnostic_unknown_hours=DIAGNOSTIC_UNKNOWN if args.diagnostic_incomplete_calendar else ())
@@ -561,7 +561,7 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
     return EXIT_OK
 
 
-def _demo_serve_lifecycle(args, cfg: Config, key: str, tool_token: str, today, out) -> int:
+def _demo_serve_lifecycle(args, cfg: Config, key: str, tool_token: str, today, out, env=None) -> int:
     """The simulated appointment lifecycle: the same calendar page and signed voice endpoint, over ONE local appointment file, with find / book / move / cancel tools. There is no
     Booksy driver and no Booksy route. Owner alerts wait in the file's outbox until an owner number AND an SMS provider exist (neither does yet); nothing is ever sent to a client."""
     import threading
@@ -574,11 +574,11 @@ def _demo_serve_lifecycle(args, cfg: Config, key: str, tool_token: str, today, o
     from .appointments.store import StoreError
     from .demo import DEMO_BUSINESS_ID, DEMO_LABEL, SPA_TIMEZONE
     from .demo.server import calendar_url, make_site, page_origins
-    from .showcase import SHOWCASE
+    from .showcase.config import resolve_showcase
 
     try:
         destination = load_owner_destination(cfg.local_dir)
-        contact = contact_phrase(SHOWCASE)
+        contact = contact_phrase(resolve_showcase(env, lifecycle=True))  # the file named by ARIA_SHOWCASE_CONFIG, if any: the same one the page and the prompt use
         lifecycle = open_lifecycle(Path(args.store) if args.store else default_store_path(cfg.local_dir), today=today,
                                    diagnostic_unknown_hours=DIAGNOSTIC_UNKNOWN if args.diagnostic_incomplete_calendar else ())
     except (OwnerDestinationError, ValueError, StoreError) as exc:

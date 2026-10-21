@@ -30,7 +30,6 @@ from ..appointments.launch import build_lifecycle_demo
 from ..appointments.lifecycle import Lifecycle, open_lifecycle
 from ..demo import DEMO_LABEL, SPA_TIMEZONE
 from ..demo.server import CalendarSite, Reply
-from ..showcase import SHOWCASE
 from ..voice.retell_http import MAX_BODY_BYTES
 from .checks import as_json, readiness
 from .config import PublicConfig
@@ -201,15 +200,13 @@ def make_public_server(app: PublicApp, host: str, port: int) -> ThreadingHTTPSer
 def build_app(config: PublicConfig, *, log: Callable[[str], None] = print, clock: Optional[Callable[[], datetime]] = None, site_dir: Optional[Path] = None,
               version: str = "", showcase=None):
     """(app, worker, cleanup). Opens the appointment file (creating and seeding it if it is new), builds the website, and wires the signed tool endpoint. No network is touched."""
-    from dataclasses import replace
-
-    from ..demo.agent_ops import LIFECYCLE_BOOKING_NOTE
+    from ..showcase.config import resolve_showcase
     from ..showcase.site import build_site
 
     config.store_path.parent.mkdir(parents=True, exist_ok=True)
     real_now = clock
     lifecycle = open_lifecycle(config.store_path, today=None, real_now=real_now)
-    showcase = showcase or replace(SHOWCASE, booking_note=LIFECYCLE_BOOKING_NOTE)
+    showcase = showcase or resolve_showcase(path=config.showcase_file, lifecycle=True)
     contact = contact_phrase(showcase)
     dispatcher = OutboxDispatcher(lifecycle.store, None, None, log=lambda message: log("  " + message))  # no SMS provider and no owner number: alerts wait in the file, nothing is sent
     worker = AlertWorker(dispatcher, log=lambda message: log("  " + message))

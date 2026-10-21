@@ -128,8 +128,10 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
     people = _people(rows)
     cal = calendar_link(calendar_port, origin)  # the configured staff calendar address: used only as the frame's source, never hard-coded elsewhere
     bookable_script = script_tag(bookable if bookable is not None else bookable_data([(cid, label) for cid, label, *_r in present], calendar_origin(calendar_port, origin), catalog, refresh_seconds=refresh_seconds))
+    address = f"<p>Address: {_e(showcase.location)}</p>" if showcase.location else ""
     phone = (f'<p>Phone: <a href="tel:{_e("".join(ch for ch in showcase.contact_phone if ch.isdigit() or ch == "+"))}">{_e(showcase.contact_phone)}</a></p>'
-             if showcase.contact_phone else "<p>Contact details are not configured in this prototype.</p>")
+             if showcase.contact_phone else "" if address else "<p>Contact details are not configured in this prototype.</p>")
+    phone = address + phone
     credit_items = "".join(
         f'<li><a href="{_e(c["photo_url"])}" rel="noopener noreferrer" target="_blank">{_e(c["photographer"])}</a></li>' for c in credits.values()
     )

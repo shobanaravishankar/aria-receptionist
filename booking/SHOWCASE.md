@@ -16,6 +16,21 @@ and the photographs are stock images (credited, free to use) that do not show Se
 Names are display labels only. Schedules, eligibility and the scripted days are keyed by staff id. A roster validator refuses duplicate or multi-word display names
 (the voice tools let an exact name beat a longer one, so such a pair would hide a person).
 
+## A fictional address and phone number (optional, one file)
+
+Both are **unset** unless you give them, and then nothing is shown, said or invented. To set them, copy `showcase.example.json` to a folder outside Git (or the git-ignored `.local/`), fill in
+`location` (one line, up to 120 characters) and `contact_phone` (a complete number: an area code, or a `+` and the country code; use a reserved `555-01xx` number), and point
+`ARIA_SHOWCASE_CONFIG` at it. `resolve_showcase()` in `aria_booking/showcase/config.py` is the only place that reads it, so every place below takes the same two values:
+
+| Where | What changes |
+|---|---|
+| The website (`demo-agent prepare-web`, the hosted backend's site) | an "Address" line and a "Phone" link in the contact block; with neither set it still says contact details are not configured |
+| What Aria says when she cannot confirm something (`demo-serve --lifecycle`, the hosted backend) | "contact Serenity Spa at ..." with the number, or no number at all when none is set |
+| The voice prompt (`demo-agent plan`, `create`, `verify`, `update`) | the facts block gives the address and number exactly as written; the agent is held to the prompt rendered from the same file, so `verify` fails if the live agent still has the old one |
+
+A file that cannot be read, has an unknown key, a multi-line or over-long address, or an incomplete phone number stops the command (or the hosted backend at start) with the reason; it never falls
+back to a guess. Nothing in the file is a secret, but it is kept out of Git so a real number is never committed by accident.
+
 ## Building and previewing
 
 ```bash

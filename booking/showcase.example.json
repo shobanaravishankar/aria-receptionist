@@ -1,0 +1,5 @@
+{
+  "_about": "Copy to a folder OUTSIDE Git (or a git-ignored one such as .local/), fill in, and point ARIA_SHOWCASE_CONFIG at it. Both values stay unset (nothing is shown, said or invented) until you give them. Use a fictional address and a reserved 555-01xx number: this is a prototype, not a real business.",
+  "location": null,
+  "contact_phone": null
+}

@@ -420,3 +420,35 @@ def test_with_the_switch_on_they_answer_signed_calls_only_and_a_first_call_saves
         assert run.tool("book_slot", {})[0] == 404
     finally:
         run.stop()
+
+
+# ---------------------------------------------------------------- the fictional address and phone
+
+FALLBACK_NUMBERS = ("2125550101", "2125550102", "2125550103", "2125550104")
+
+
+def refusal_speech(run):
+    """The sentence Aria says when she must send the caller to the salon: the fourth different number on one call is refused."""
+    replies = [run.tool("find_appointments", {"phone": number}, call="fallback")[1] for number in FALLBACK_NUMBERS]
+    assert [r["status"] for r in replies[:3]] == ["not_found"] * 3 and replies[3]["status"] == "refused"
+    return replies[3]["speak"]
+
+
+def test_without_a_showcase_file_the_site_and_the_spoken_fallback_carry_no_address_and_no_number(running):
+    status, _headers, body = running.get("/")
+    text = body.decode("utf-8")
+    assert status == 200 and "Contact details are not configured in this prototype." in text and "Address:" not in text
+    assert refusal_speech(running).endswith("Please contact the salon directly.")
+
+
+def test_a_showcase_file_puts_the_same_address_and_number_on_the_site_and_in_the_spoken_fallback(tmp_path):
+    path = tmp_path / "cfg.json"
+    path.write_text(json.dumps({"location": "17 Example Row, Testville", "contact_phone": "(212) 555-0111"}), encoding="utf-8")
+    run = Running(tmp_path, datetime(2026, 10, 22, 10, 0, tzinfo=TZ), showcase=str(path))
+    try:
+        text = run.get("/")[2].decode("utf-8")
+        assert "<p>Address: 17 Example Row, Testville</p>" in text and 'tel:2125550111' in text and "Contact details are not configured" not in text
+        assert refusal_speech(run).endswith("Please contact Serenity Spa at 2 1 2, 5 5 5, 0 1 1 1.")
+        assert "Appointments made here exist only in this prototype calendar" in text, "the lifecycle label ending is kept"
+    finally:
+        run.stop()
