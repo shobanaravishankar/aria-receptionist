@@ -384,6 +384,93 @@ def test_a_microphone_refusal_that_surfaces_as_an_unhandled_rejection_ends_the_c
     assert shown["text"].startswith("Microphone blocked.") and shown["ended"] == 1 and shown["created"] == 1 and shown["call"] and not shown["hangup"]
 
 
+# ---------------------------------------------------------------- tearing a call down is asynchronous too: the end of an old call finishes whenever it finishes
+
+DEFERRED_END_SDK = """
+window.__created = 0; window.__ended = 0; window.__ends = [];
+export class RetellClient {
+  createWebCall(o) {
+    window.__created++; window.__hooks = o.hooks;
+    return {
+      end: () => { window.__ended++; return new Promise(resolve => window.__ends.push(resolve)); },
+      startAudioPlayback() {}
+    };
+  }
+}
+"""  # end() stays pending until the test settles it
+
+
+def successor_before_old_end_settles(page):
+    """Call A is live and hung up (its end() still pending); A reports it ended; call B starts and goes live."""
+    go_live(page)
+    page.evaluate("window.__old = window.__hooks")
+    page.click('[data-testid="aria-hangup"]')
+    page.wait_for_function("() => window.__ends.length === 1")
+    page.evaluate("window.__old.onEnd()")
+    page.click('[data-testid="aria-call"]')
+    page.wait_for_function("() => window.__created === 2")
+    page.evaluate("window.__hooks.onStatus('live')")
+
+
+def test_a_new_live_call_has_a_working_hang_up_while_the_previous_calls_end_is_still_pending(driver, sites):
+    def work(page):
+        successor_before_old_end_settles(page)
+        before = snapshot(page)
+        enabled = page.locator('[data-testid="aria-hangup"]').is_enabled()
+        page.click('[data-testid="aria-hangup"]')
+        page.wait_for_function("() => window.__ends.length === 2")
+        return before, enabled, snapshot(page)
+
+    before, enabled, after = run(driver, sites["configured"], work, sdk=DEFERRED_END_SDK)
+    assert before["state"] == "live" and before["hangup"] and enabled, "the old call's pending hang-up must not disable the new call's control"
+    assert after["text"] == "Ending the call…" and after["created"] == 2
+
+
+def test_the_previous_calls_end_finishing_late_cannot_cancel_the_new_calls_safety_net_or_install_its_own(driver, sites):
+    def work(page):
+        successor_before_old_end_settles(page)
+        page.click('[data-testid="aria-hide"]')
+        page.click("#call-end")  # the other Hang up control
+        page.wait_for_function("() => window.__ends.length === 2")
+        page.evaluate("window.__ends[1]()")   # the new call's end settles: its safety net is armed
+        page.wait_for_timeout(50)
+        page.evaluate("window.__ends[0]()")   # the OLD call's end settles last
+        page.wait_for_timeout(1800)
+        return snapshot(page)
+
+    shown = run(driver, sites["configured"], work, sdk=DEFERRED_END_SDK)
+    assert shown["ariaCall"] is None and shown["call"] and not shown["hangup"] and shown["text"] == "Call ended."
+
+
+def test_the_old_calls_end_settling_after_the_new_call_is_over_changes_nothing(driver, sites):
+    def work(page):
+        successor_before_old_end_settles(page)
+        page.click('[data-testid="aria-hangup"]')
+        page.wait_for_function("() => window.__ends.length === 2")
+        page.evaluate("window.__hooks.onEnd()")   # the new call ends normally
+        page.evaluate("window.__ends[1](); window.__ends[0]();")
+        page.wait_for_timeout(1800)
+        return snapshot(page)
+
+    shown = run(driver, sites["configured"], work, sdk=DEFERRED_END_SDK)
+    assert shown["state"] == "ended" and shown["text"] == "Call ended." and shown["call"] and not shown["hangup"]
+
+
+def test_a_second_hang_up_click_while_the_end_is_pending_does_nothing_more(driver, sites):
+    def work(page):
+        go_live(page)
+        page.click('[data-testid="aria-hangup"]')
+        page.wait_for_function("() => window.__ends.length === 1")
+        disabled = page.locator('[data-testid="aria-hangup"]').is_disabled()
+        page.click("#aria-hide")
+        page.click("#call-end")                      # the other control, same call
+        page.wait_for_timeout(300)
+        return disabled, page.evaluate("({ends: window.__ends.length, ended: window.__ended})")
+
+    disabled, counts = run(driver, sites["configured"], work, sdk=DEFERRED_END_SDK)
+    assert disabled is True and counts == {"ends": 1, "ended": 1}, "one call is ended once, however many times Hang up is pressed"
+
+
 # ---------------------------------------------------------------- hiding never ends a call
 
 

@@ -206,3 +206,12 @@ def test_the_script_holds_no_secret_and_loads_only_the_pinned_sdk():
     assert re.findall(r"https?://[^\s\"'`)]+", VOICE_JS) == ["https://cdn.jsdelivr.net/npm/retell-client-js-sdk@3.0.1/+esm"]
     for word in ("api_key", "apikey", "secret", "bearer", "authorization", "password"):
         assert word not in VOICE_JS.lower()
+
+
+def test_the_hang_up_control_is_held_only_by_the_attempt_that_is_hanging_up_and_a_late_end_touches_nothing():
+    assert VOICE_JS.count("hangBtn.disabled") == 1 and "hangBtn.disabled = Boolean(run && run.ending)" in VOICE_JS, "one place, derived from the current attempt"
+    body = re.search(r"async function endCall\(\) \{(.*?)\n\}", VOICE_JS, re.S).group(1)
+    assert "if (mine.ending) return;" in body, "a second Hang up on the same call does nothing more"
+    after_end = body[body.index("await ending.end()"):]
+    assert after_end.index("if (run !== mine || mine.over) return;") < after_end.index("clearTimeout(endTimer)") < after_end.index("setTimeout("), "ownership is checked before the continuation touches the timer"
+    assert "{ over: false, ending: false }" in VOICE_JS

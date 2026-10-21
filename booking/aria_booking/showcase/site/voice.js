@@ -29,7 +29,7 @@ let sdkPromise = null;   // memoized dynamic import
 let client = null;       // RetellClient (created once)
 let call = null;         // active WebCallSession, or null
 let starting = false;    // request in flight, not yet "live"
-let run = null;          // the call ATTEMPT in progress, {over}: every SDK event and every timer belongs to ONE attempt, and is ignored once that attempt is over or a newer one has begun
+let run = null;          // the call ATTEMPT in progress, {over, ending}: every SDK event, every pending hang-up and every timer belongs to ONE attempt, and is ignored once that attempt is over or a newer one has begun
 let endTimer = null;     // the safety net after a hang-up; it belongs to the attempt that set it
 let everLive = false;    // did this call reach "live" before ending?
 let failure = null;      // the specific message of a failed start or call: the "ended" event that follows an error must not replace it with the generic one
@@ -46,6 +46,7 @@ function syncControls() {
   const hadFocus = document.activeElement === callBtn || document.activeElement === hangBtn;
   callBtn.hidden = active;
   hangBtn.hidden = !active;
+  hangBtn.disabled = Boolean(run && run.ending);   // only while THIS attempt is hanging up: the next call's control is never held by the last call's teardown
   callBtn.setAttribute("aria-label", widget.dataset.state === "error" ? "Try calling Aria again" : "Call Aria");
   if (hadFocus && !widget.hidden) (active ? hangBtn : callBtn).focus({ preventScroll: true });
   if (bar) bar.hidden = !(active && widget.hidden);
@@ -131,7 +132,7 @@ async function startCall() {
     return;
   }
 
-  const mine = { over: false };
+  const mine = { over: false, ending: false };
   run = mine;
   clearTimeout(endTimer);
   starting = true;
@@ -237,13 +238,17 @@ async function endCall() {
     return;
   }
   const mine = run;
-  hangBtn.disabled = true;
+  const ending = call;
+  if (!mine) { onEnd(); return; }
+  if (mine.ending) return;   // already hanging up: a second click on either Hang up control does nothing more
+  mine.ending = true;
   setStatus("connecting", "Ending the call…");
-  try { await call.end(); } catch (_) { /* onEnd/onError will still fire */ }
-  hangBtn.disabled = false;
-  // Safety net if no event arrives: only for THIS call, and only if it is still the current one when the time is up
+  try { await ending.end(); } catch (_) { /* onEnd/onError will still fire */ }
+  // This continuation may resume long after the call it belongs to has finished and another has begun: from here it may touch shared state only while it is still current.
+  if (run !== mine || mine.over) return;
   clearTimeout(endTimer);
-  endTimer = setTimeout(() => { if (mine && run === mine && !mine.over && call) onEnd(); }, 1500);
+  // Safety net if no event arrives: only for THIS call, and only if it is still the current one when the time is up
+  endTimer = setTimeout(() => { if (run === mine && !mine.over && call) onEnd(); }, 1500);
 }
 
 /* ---------------- wire up ---------------- */
