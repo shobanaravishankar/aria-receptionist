@@ -27,7 +27,7 @@ def lifecycle_create(tmp_path):
 
 
 def test_the_default_mode_is_the_read_only_demo_and_an_unknown_mode_is_refused():
-    assert OperatorConfig().mode == "availability" and sorted(MODES) == ["availability", "lifecycle"]
+    assert OperatorConfig().mode == "availability" and sorted(MODES) == ["availability", "lifecycle", "lifecycle-preferences"]
     with pytest.raises(OperatorError, match="mode must be one of"):
         OperatorConfig(mode="booking")
     assert load_config({}, overrides={"mode": "lifecycle"}).mode == "lifecycle"

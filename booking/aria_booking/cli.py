@@ -113,6 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lifecycle", action="store_true", help="the SIMULATED appointment lifecycle: find, book, move and cancel appointments in the prototype calendar (a local file, invented clients; "
                                                             "never Booksy). Without it the demo stays read-only.")
     p.add_argument("--store", default=None, help="with --lifecycle: the appointment file (default: .local/demo-appointments/appointments.sqlite3, git-ignored)")
+    p.add_argument("--preferences", action="store_true", help="with --lifecycle: also answer the three preferred-technician functions (demo only; off by default, and kept per client in the same local file)")
     p = sub.add_parser("demo-agent", help="operate the demo's SEPARATE Retell test agent and voice page (plan, create once, verify, preflight, prepare-web); never places a call")
     p.add_argument("action", choices=("plan", "store-secret", "create", "update", "verify", "preflight", "prepare-web", "call-summary"))
     p.add_argument("--config", default=None, help="a JSON file of non-secret settings kept outside Git (see demo_agent.example.json); or set ARIA_DEMO_CONFIG")
@@ -121,8 +122,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--web-dir", default=None, help="where prepare-web writes the page (default: <state dir>/web)")
     p.add_argument("--calendar-port", type=int, default=None, help="the demo calendar page's port, for the link in the page banner (default 8790)")
     p.add_argument("--page-port", type=int, default=None, help="the port the prepared voice page is served on; it is opened at http://localhost:<port>/ (default 5174)")
-    p.add_argument("--mode", choices=("availability", "lifecycle"), default=None, help="which reviewed configuration the agent is held to: the read-only availability demo (default) or the "
-                                                                                       "simulated appointment lifecycle")
+    p.add_argument("--mode", choices=("availability", "lifecycle", "lifecycle-preferences"), default=None,
+                   help="which reviewed configuration the agent is held to: the read-only availability demo (default), the simulated appointment lifecycle, or that plus a "
+                        "preferred technician per service (demo only; used only once it has been reviewed and enabled)")
     p.add_argument("--confirm-create", action="store_true", help="required by `create`, which makes one Retell LLM and one agent")
     p.add_argument("--confirm-update", action="store_true", help="required by `update`, which sends the reviewed prompt, tools and opening line to the EXISTING LLM (no new agent)")
     p.add_argument("--secret-name", default="retell_api_key", help="for store-secret: retell_api_key, tool_token or retell_public_key")
@@ -502,6 +504,9 @@ def _demo_serve(args, cfg: Config, env, out) -> int:
     except ValueError:
         out("refused: --today must look like 2026-10-14.")
         return EXIT_REFUSED
+    if args.preferences and not args.lifecycle:
+        out("refused: --preferences needs --lifecycle (the preferred technicians belong to the simulated appointment lifecycle).")
+        return EXIT_REFUSED
     if args.lifecycle:
         return _demo_serve_lifecycle(args, cfg, key, tool_token, today, out)
     tz = ZoneInfo(SPA_TIMEZONE)  # the demo's one timezone: the same zone the greeting and the session clock use
@@ -600,6 +605,7 @@ def _demo_serve_lifecycle(args, cfg: Config, key: str, tool_token: str, today, o
             return EXIT_REFUSED
         endpoint, driver = build_lifecycle_demo(
             key, lifecycle, bearer_token=tool_token or None, log=lambda message: out("  " + message), driver=driver, contact=contact, on_committed=worker.trigger,
+            preferences=args.preferences,
         )
         server = retell_http.make_http_server(endpoint, args.port)
     except (DriverError, OSError) as exc:
@@ -615,6 +621,7 @@ def _demo_serve_lifecycle(args, cfg: Config, key: str, tool_token: str, today, o
     out(f"voice tools: 127.0.0.1:{args.port} (loopback only; expose it with a tunnel you control). Appointments are kept in {lifecycle.store.path}")
     out(f"appointments: {sum(counts['appointments'].values())} records (seeded: {len(lifecycle.seeded.upcoming_added)} upcoming and {lifecycle.seeded.history_added} past made now; "
         f"{len(lifecycle.seeded.upcoming_skipped)} could not be placed)")
+    out("preferred technicians: " + ("ON (demo only): three extra functions, kept per client in the same local file" if args.preferences else "off"))
     waiting = counts["outbox"].get("pending", 0)
     out("owner alerts: " + ("NOT sent: no SMS provider is set up yet" + (" (an owner number is configured)" if destination else " and no owner number is configured") + f"; {waiting} alert(s) waiting in the outbox"))
     out("contact fallback: " + ("the configured salon name and number" if contact else "no salon number is configured, so Aria says to contact the salon and gives none"))

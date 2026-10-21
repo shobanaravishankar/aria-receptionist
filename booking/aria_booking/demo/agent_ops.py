@@ -37,6 +37,7 @@ from typing import Any, Callable, Mapping, Optional
 from zoneinfo import ZoneInfo
 
 from . import SALON_NAME, SPA_TIMEZONE
+from ..appointments.tool_defs import PREFERENCE_TOOL_NAMES
 from ..showcase.roster import name_of
 from .secret_store import DpapiSecrets, SecretMissing, provider_from_environment
 
@@ -48,13 +49,17 @@ TOOL_NAMES = frozenset({"lookup_service", "check_slot", "find_alternatives"})
 LIFECYCLE_TOOL_NAMES = TOOL_NAMES | {"find_appointments", "last_completed_visit", "book_appointment", "cancel_appointment", "reschedule_appointment"}
 SOURCE_PROMPT = "voice_agent_draft/prompt_demo_calendar.md"
 SOURCE_TOOLS = "voice_agent_draft/tools_availability_only.json"
-# The two reviewed configurations the operator can hold. 'availability' (the default) is the read-only demo; 'lifecycle' is the SIMULATED appointment lifecycle (find, book, move,
-# cancel in the prototype calendar only). Neither has a function for the live Booksy calendar.
+# The reviewed configurations the operator can hold. 'availability' (the default) is the read-only demo; 'lifecycle' is the SIMULATED appointment lifecycle (find, book, move,
+# cancel in the prototype calendar only); 'lifecycle-preferences' is that plus a preferred technician per service (demo only, opt-in, enabled only after review). None has a
+# function for the live Booksy calendar.
 MODES = {
     "availability": {"prompt": SOURCE_PROMPT, "tools": SOURCE_TOOLS, "names": TOOL_NAMES, "label": "simulated availability only"},
     "lifecycle": {"prompt": "voice_agent_draft/prompt_demo_lifecycle.md", "tools": "voice_agent_draft/tools_demo_lifecycle.json", "names": LIFECYCLE_TOOL_NAMES,
                   "label": "simulated appointment lifecycle"},
+    "lifecycle-preferences": {"prompt": "voice_agent_draft/prompt_demo_lifecycle_preferences.md", "tools": "voice_agent_draft/tools_demo_lifecycle_preferences.json",
+                              "names": LIFECYCLE_TOOL_NAMES | PREFERENCE_TOOL_NAMES, "label": "simulated appointment lifecycle with preferred technicians"},
 }
+LIFECYCLE_MODES = frozenset({"lifecycle", "lifecycle-preferences"})  # the modes whose functions change the PROTOTYPE calendar
 LIFECYCLE_BOOKING_NOTE = "Appointments made here exist only in this prototype calendar"
 CLOCK_SECTION = (
     "\n\n## Session clock\nCurrent salon date and time: {{current_time_" + SPA_TIMEZONE + "}}. "
@@ -129,7 +134,7 @@ class OperatorConfig:
     calendar_port: int = 8790
     tools_port: int = 8787
     page_port: int = 5174
-    mode: str = "availability"  # or "lifecycle": which reviewed prompt and function set this agent is held to
+    mode: str = "availability"  # or "lifecycle" / "lifecycle-preferences": which reviewed prompt and function set this agent is held to
     backend_url: str = ""  # the https address of the PUBLIC backend (``demo-public-serve``): the page then reads its calendar from there and is built to upload to a static host (Netlify)
     avatar_image: str = ""  # path of a square transparent png/webp/svg for the floating Aria avatar; empty = the built-in illustration. Kept out of Git (it may be a real likeness).
 
@@ -223,7 +228,7 @@ def expected_prompt(root: Path = BOOKING, mode: str = "availability") -> str:
 def expected_tools(tunnel: str, token: str, root: Path = BOOKING, mode: str = "availability") -> list[dict]:
     custom = json.loads((root / MODES[mode]["tools"]).read_text(encoding="utf-8"))["tools"]
     if {t["name"] for t in custom} != MODES[mode]["names"]:
-        raise OperatorError("the reviewed tool file must hold exactly the " + ("three read-only" if mode == "availability" else "eight lifecycle") + " functions")
+        raise OperatorError("the reviewed tool file must hold exactly the " + {"availability": "three read-only", "lifecycle": "eight lifecycle", "lifecycle-preferences": "eleven lifecycle and preference"}[mode] + " functions")
     for tool in custom:
         tool.update(type="custom", url=f"{tunnel}/tools/{tool['name']}", headers={"Authorization": "Bearer " + token}, speak_after_execution=True, args_at_root=False)
     return custom + [{"type": "end_call", "name": "end_call", "description": "End when the caller says goodbye or is finished."}]
@@ -384,6 +389,8 @@ def _read_back(config: OperatorConfig, secrets: Any, api: RetellApi, out: Callab
         "agent_name": agent.get("agent_name"), "source_commit": source_commit(),
     })
     out("Separate simulated-calendar agent and all three read-only functions verified against the reviewed source; no call was started." if config.mode == "availability" else
+        "Separate simulated-calendar agent and all eleven lifecycle and preferred-technician functions verified against the reviewed source (they change only the prototype calendar); no call was started."
+        if config.mode == "lifecycle-preferences" else
         "Separate simulated-calendar agent and all eight lifecycle functions verified against the reviewed source (they change only the prototype calendar); no call was started.")
     engine = agent.get("response_engine") or {}
     out(f"Binding: the agent uses the recorded LLM (engine version {engine.get('version', 'not stated, so the latest')}); that LLM is version {llm.get('version')}, "
@@ -487,7 +494,9 @@ def preflight(config: OperatorConfig, secrets: Any, out: Callable[[str], None], 
         ("find_alternatives", {"service_id": "massage-deep-tissue-massage-60", "date": tomorrow, "time": "16:00", "staff": BOOKED}),
     ]
     records = []
-    extra = list(_lifecycle_cases(tomorrow)) if config.mode == "lifecycle" else []
+    extra = list(_lifecycle_cases(tomorrow)) if config.mode in LIFECYCLE_MODES else []
+    if config.mode == "lifecycle-preferences":
+        extra += list(_preference_cases())
     for index, (name, args) in enumerate([*cases, *extra]):
         if callable(args):  # a case that needs an earlier answer (the reference of an appointment the lookup returned)
             args = args(records)
@@ -500,6 +509,10 @@ def preflight(config: OperatorConfig, secrets: Any, out: Callable[[str], None], 
         try:
             with opener(request, timeout=20) as response:
                 result = json.load(response)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404 and name in PREFERENCE_TOOL_NAMES:
+                raise OperatorError(f"{name}: the tool server does not have the preferred-technician functions: start it with `demo-serve --lifecycle --preferences`") from None
+            raise OperatorError(f"{name}: the tool server did not answer ({type(exc).__name__})") from None
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
             raise OperatorError(f"{name}: the tool server did not answer ({type(exc).__name__})") from None
         records.append({"name": name, "args": args, "seconds": round(time.monotonic() - began, 3), "result": result})
@@ -515,8 +528,10 @@ def preflight(config: OperatorConfig, secrets: Any, out: Callable[[str], None], 
     lily, elva = records[1]["result"], records[2]["result"]
     if lily.get("status") != "available" or elva.get("unavailable_reason") != "occupied":
         problems.append(f"the scripted examples ({LEAD} free at 4, {BOOKED} booked at 4) did not hold: run the demo server WITHOUT --today so 'tomorrow' is the real tomorrow")
-    if config.mode == "lifecycle":
-        problems.extend(_lifecycle_problems(records[len(cases):]))
+    if config.mode in LIFECYCLE_MODES:
+        problems.extend(_lifecycle_problems(records[len(cases):len(cases) + 4]))
+    if config.mode == "lifecycle-preferences":
+        problems.extend(_preference_problems(records[len(cases) + 4:]))
     for suffix, expected in (("check_slot", 401), ("book_slot", 404)):
         try:
             with opener(urllib.request.Request(f"{base}/tools/{suffix}", data=b"{}"), timeout=15):
@@ -549,6 +564,31 @@ def _lifecycle_cases(tomorrow: str):
     }
 
 
+def _preference_cases():
+    """Extra preflight cases for the preference mode. Nothing is saved or removed: a save is only taken to its read-back, a removal to its read-back or to 'nothing to remove'."""
+    from ..appointments.seed import WILLA
+
+    name, phone = WILLA
+    yield "get_preferences", {"phone": phone, "name": name}
+    yield "save_preference", {"phone": phone, "name": name, "service": "Swedish Massage", "staff": name_of("910007")}
+    yield "remove_preference", {"phone": phone, "name": name, "service": "Signature Facial"}
+
+
+def _preference_problems(records: list) -> list[str]:
+    listed, save, remove = (r["result"] for r in records)
+    problems = []
+    if listed.get("status") not in ("preferences_listed", "no_preferences"):
+        problems.append("the preferred-technician lookup for the seeded fictional client did not answer as a lookup")
+    if save.get("status") not in ("confirmation_required", "preference_unchanged") or (save.get("status") == "confirmation_required" and not save.get("confirmation_token")):
+        problems.append("saving a preferred technician did not come back as a read-back")
+    if remove.get("status") not in ("confirmation_required", "nothing_to_remove"):
+        problems.append("removing a preferred technician did not come back as a read-back")
+    for reply in (listed, save, remove):
+        if reply.get("source") != "demo_calendar":
+            problems.append("a preference reply does not say it is the demo calendar")
+    return problems
+
+
 def _lifecycle_problems(records: list) -> list[str]:
     found, last, book, cancel = (r["result"] for r in records)
     problems = []
@@ -568,7 +608,7 @@ def _lifecycle_problems(records: list) -> list[str]:
 
 def test_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path) -> str:
     """The generated steps for one supervised voice test. They name the one address that works with the Retell public key and the scripted cases."""
-    if config.mode == "lifecycle":
+    if config.mode in LIFECYCLE_MODES:
         return lifecycle_instructions(config, tomorrow, web_dir)
     calendar = f"http://localhost:{config.calendar_port}/pro/en-us/9000001/calendar?date={tomorrow}&view=day&staffers=working"
     return "\n".join([
@@ -601,13 +641,15 @@ def lifecycle_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path)
 
     calendar = f"http://localhost:{config.calendar_port}/pro/en-us/9000001/calendar?date={tomorrow}&view=day&staffers=working"
     page_flag = f" --page-port {config.page_port}" if config.page_port != 5174 else ""  # only the page opened at this port may read the open times
-    return "\n".join([
+    preferences = config.mode == "lifecycle-preferences"
+    serve_flags = ("--lifecycle --preferences" if preferences else "--lifecycle") + page_flag
+    lines = "\n".join([
         "SUPERVISED VOICE TEST of the SIMULATED appointment lifecycle (invented clients and appointments; the call uses Retell minutes and is your decision).",
         "Appointments you book, move or cancel exist only in the prototype calendar's local file. NO real salon calendar is touched. No text goes to anyone unless you have set up",
         "an owner number AND an SMS provider (neither exists yet), and no text ever goes to a client.",
         "",
         "1. Start the demo server with the lifecycle mode (it seeds the fictional clients below once and keeps every appointment between restarts):",
-        f"     python -m aria_booking demo-serve --lifecycle{page_flag}",
+        f"     python -m aria_booking demo-serve {serve_flags}",
         "2. Serve the prepared page and leave it running:",
         f"     python -m http.server {config.page_port} --bind 127.0.0.1 --directory {web_dir}",
         "3. Open EXACTLY this address, then press the voice button and allow the microphone:",
@@ -639,6 +681,27 @@ def lifecycle_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path)
         "The demo date is fixed when the demo server starts: after midnight Eastern, restart the server (not the tunnel or the agent). At each start, an upcoming FICTIONAL seed visit whose time has passed is shown as completed; an appointment YOU book is never marked completed for you, so a past one stays unknown for the 'last visit' answers.",
         "",
     ])
+    return lines + (preference_instructions() if preferences else "")
+
+
+def preference_instructions() -> str:
+    """The extra steps of a supervised test of the PREFERRED TECHNICIAN functions (demo only). They are kept in the same local file, per client and per service."""
+    from ..appointments.seed import ANSEL, WILLA
+
+    sienna, rowan, marisol = name_of("910006"), name_of("910007"), name_of("910001")
+    return "\n".join([
+        "PREFERRED TECHNICIANS (demo only; this agent was prepared with the preference functions and the demo server was started with --preferences):",
+        "A preference is who a returning client would like for ONE service (for example Swedish Massage). It is kept in the same local file, per client: " + f"{WILLA[0]} and {ANSEL[0]} share a number,",
+        "so Aria asks for the full name first and their preferences never mix. A preference never changes an appointment and never guarantees a time. Nothing is saved unless you ask for it.",
+        "  P1. 'Do I have a usual technician?' (as Willa) -> none saved; she does not offer to save one.",
+        f"  P2. 'Please make {sienna} my usual for Swedish Massage.' -> she reads back what she will save and saves it only after your yes; ask again to hear it back. Say 'no' instead and nothing is saved.",
+        f"  P3. 'Make {marisol} my usual for facials.' -> she says {marisol} does not do facials, names who does, and saves nothing. 'Make it massage.' -> she asks which massage; she saves nothing for a whole group.",
+        f"  P4. Book a Swedish Massage tomorrow without naming anyone (once {sienna} is saved) -> after your number she offers {sienna} first and checks {sienna}'s time; she books another technician only if you ask.",
+        f"  P5. Ask for {rowan} for one appointment -> {rowan} is booked and the saved {sienna} is unchanged (ask again).",
+        f"  P6. 'Change my usual for Swedish Massage to {rowan}.' then 'Remove my usual for Swedish Massage.' -> each is read back and done only after your yes; your appointments are unchanged.",
+        f"  P7. As {ANSEL[0]} (same number, give the full name): nothing from {WILLA[0]} appears.",
+        "",
+    ])
 
 
 def prepare_web(config: OperatorConfig, secrets: Any, out: Callable[[str], None], *, clock: Callable[[], float] = time.time) -> int:
@@ -657,7 +720,7 @@ def prepare_web(config: OperatorConfig, secrets: Any, out: Callable[[str], None]
     target = config.web_out
     tomorrow = (datetime.fromtimestamp(clock(), ZoneInfo(SPA_TIMEZONE)) + timedelta(days=1)).date().isoformat()
     settings = {"publicKey": public_key, "agentId": agent["agent_id"], "agentVersion": agent.get("version", 0)}
-    showcase = replace(SHOWCASE, booking_note=LIFECYCLE_BOOKING_NOTE) if config.mode == "lifecycle" else SHOWCASE
+    showcase = replace(SHOWCASE, booking_note=LIFECYCLE_BOOKING_NOTE) if config.mode in LIFECYCLE_MODES else SHOWCASE
     backend = ""
     if config.backend_url:
         from ..hosting.config import HostingError, parse_origin

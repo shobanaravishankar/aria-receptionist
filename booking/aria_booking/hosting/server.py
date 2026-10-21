@@ -214,7 +214,7 @@ def build_app(config: PublicConfig, *, log: Callable[[str], None] = print, clock
     dispatcher = OutboxDispatcher(lifecycle.store, None, None, log=lambda message: log("  " + message))  # no SMS provider and no owner number: alerts wait in the file, nothing is sent
     worker = AlertWorker(dispatcher, log=lambda message: log("  " + message))
     endpoint, _driver = build_lifecycle_demo(config.api_key, lifecycle, bearer_token=config.tool_token or None, log=lambda message: log("  " + message), contact=contact,
-                                             on_committed=worker.trigger)
+                                             on_committed=worker.trigger, preferences=config.preferences)
     cleanup_dir = None
     if config.serve_site:
         if site_dir is None:

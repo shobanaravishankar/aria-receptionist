@@ -35,6 +35,8 @@ DEMO_PROMPT_FILE = "prompt_demo_calendar.md"  # the availability-only prompt for
 LIFECYCLE_TEMPLATE_FILE = "prompt_template_lifecycle.md"  # the conversation template of the SIMULATED-appointment demo (find, book, move, cancel)
 LIFECYCLE_PROMPT_FILE = "prompt_demo_lifecycle.md"
 LIFECYCLE_TOOLS_FILE = "tools_demo_lifecycle.json"
+PREFERENCES_PROMPT_FILE = "prompt_demo_lifecycle_preferences.md"  # the lifecycle prompt + a 'Preferred technicians' section (demo only, opt-in; the lifecycle files are unchanged)
+PREFERENCES_TOOLS_FILE = "tools_demo_lifecycle_preferences.json"
 DEMO_SECTION = """## You are connected to a DEMO calendar
 
 - The calendar behind your tools is a prototype calendar with invented appointments and invented clients, shown on a page that is labelled
@@ -81,6 +83,32 @@ LIFECYCLE_SECTION = """## You are connected to a prototype calendar
   for. Pass a `time` only when they give a new one, and `any_time: true` only when they say any time works. Never invent a preferred time.
 - If a check answers `unknown` and also returns `options`, say what the tool said (it names what could and could not be confirmed) and offer those times. Never say the
   calendar is down, not responding or fully booked unless the tool says so, and never guess about a schedule it says it could not read.
+
+"""
+
+PREFERENCES_SECTION = """## Preferred technicians
+
+You also have three functions for a returning client's PREFERRED TECHNICIAN, kept for one service at a time (for example Swedish Massage): `get_preferences`, `save_preference` and
+`remove_preference`. They keep a note of who the client would like. They change only that note, never an appointment.
+
+- **Only on request.** Save, change or remove a preference only when the caller asks for it in their own words ("always book me with {OTHER} for my Swedish Massage", "make {TECH} my
+  usual for Deep Tissue Massage", "forget my usual for Swedish Massage"). Never infer one from a booking or a past visit, never suggest saving one, and never save one because the
+  caller chose a technician for a single appointment.
+- **Saving or changing.** You need the **service** (one service, not a whole group such as "massage": ask which one), the **technician**, and the caller's complete phone number (and the
+  full name only when the tool asks for it). If the tool answers `needs_clarification` (a service that is unclear, or a technician who is unknown or does not do that service), ask
+  its question and give the technicians it names. Call `save_preference`: it **saves nothing yet** and returns `confirmation_required` with a sentence and a `confirmation_token`. Read that
+  sentence, and only after a clear yes call it again with exactly the same details, the token and `confirmed: true`. It is saved only on `preference_saved` or `preference_unchanged` with
+  `ok: true`. If the caller says no, say that nothing was saved.
+- **Removing.** Call `remove_preference` the same way: a read-back, a clear yes, then the same details with the token and `confirmed: true`. It is removed only on `preference_removed`
+  with `ok: true`; `nothing_to_remove` means there was nothing saved.
+- **What is saved.** When the caller asks who their usual technician is, or what is saved for them, call `get_preferences` (with `service` for one service) and say what it returned.
+  Never say another client's preferences.
+- **Using one when booking.** When a caller is booking a service and did not name a technician, and you have their complete phone number, call `get_preferences` with that service. If it
+  returns a preferred technician with `eligible: true`, offer that person first ("Your usual for Swedish Massage is {OTHER}: shall I check with {OTHER}?"), and pass `staff` to `check_slot`
+  only after the caller says yes. If you do not have their number yet, carry on as normal and do this once you have it, before you read the booking back.
+- **A preference is only who, never when.** It never guarantees a time. If the preferred technician is not free or does not fit, say why from the tool, offer the alternatives it
+  returned, and leave the saved preference as it is. If the caller asks for a different technician for this appointment, book that person: it does not change the saved preference.
+- Saving, changing or removing a preference never changes an appointment that is already booked.
 
 """
 
@@ -275,6 +303,22 @@ def build_lifecycle_tools(availability_tools: dict) -> dict:
     return out
 
 
+PREFERENCES_TOOLS_STATUS = (
+    "SIMULATED-LIFECYCLE demo tools with PREFERRED TECHNICIANS (demo only, opt-in): find, book, move and cancel appointments and keep a preferred technician per service in the PROTOTYPE "
+    "calendar only. There is no function for the live Booksy calendar. DRAFT FOR REVIEW. Not imported into Retell, not deployed."
+)
+
+
+def build_preference_tools(lifecycle_tools: dict) -> dict:
+    """The lifecycle tool file exactly as it is, plus the three preferred-technician functions. Nothing in the eight lifecycle definitions changes."""
+    from ..appointments.tool_defs import PREFERENCE_TOOLS
+
+    out = {k: v for k, v in lifecycle_tools.items() if k != "tools"}
+    out["_status"] = PREFERENCES_TOOLS_STATUS
+    out["tools"] = [json.loads(json.dumps(tool)) for tool in lifecycle_tools["tools"]] + [json.loads(json.dumps(tool)) for tool in PREFERENCE_TOOLS]
+    return out
+
+
 def opening_section(salon_name: str) -> str:
     """How Aria opens every call. The greeting word comes from the spa's local hour at the START OF THAT CALL: Retell fills ``{{current_hour_<zone>}}`` in per call, so
     nothing is frozen when the server starts or this file is generated. (An opening message cannot branch on a variable, so the agent's opening message is left unset
@@ -328,7 +372,16 @@ LIFECYCLE_HEADER = """# Aria on the {name} showcase, simulated appointment lifec
 """
 
 
-def build_demo_prompt(template: str, catalog: Catalog | None = None, salon_name: str | None = None, showcase=None, lifecycle: bool = False) -> str:
+PREFERENCES_HEADER = """# Aria on the {name} showcase, simulated appointment lifecycle with preferred technicians: agent prompt (GENERATED)
+
+> Generated by `python -m aria_booking.catalog.render --write` from the lifecycle conversation template, the {name} showcase menu (`aria_booking/showcase`) and the 'Preferred
+> technicians' section. Do not edit it by hand: a test fails if it differs. DEMO ONLY and opt-in: its functions find, book, move and cancel appointments and keep a preferred
+> technician per service in a PROTOTYPE calendar with invented data, and none touches any real salon calendar. Only the text from the first section heading below onward is sent to the agent.
+
+"""
+
+
+def build_demo_prompt(template: str, catalog: Catalog | None = None, salon_name: str | None = None, showcase=None, lifecycle: bool = False, preferences: bool = False) -> str:
     """The availability-only prompt for the Serenity showcase: the shared conversation rules, plus knowledge rendered from the SHOWCASE source.
 
     The salon facts (name, example hours, no address, phone only when configured) and the services (the independently written Serenity menu) come from the showcase,
@@ -347,6 +400,8 @@ def build_demo_prompt(template: str, catalog: Catalog | None = None, salon_name:
     if salon_name:
         showcase = replace(showcase, name=salon_name)  # the facts block and the opening both follow the one name
     name = showcase.name
+    if preferences and not lifecycle:
+        raise ValueError("preferred technicians belong to the lifecycle prompt only")
     text = build_prompt(template, catalog=catalog or SHOWCASE_CATALOG, registry=demo_registry(), mode="lifecycle" if lifecycle else "availability",
                         intro=showcase_intro(showcase))
     heading = "## While a tool is working" if lifecycle else "## While the calendar is being checked"
@@ -354,7 +409,8 @@ def build_demo_prompt(template: str, catalog: Catalog | None = None, salon_name:
         raise ValueError(f"the prompt template must contain the '{heading[3:]}' section exactly once")
     from ..showcase.discovery import discovery_section
 
-    text = text.replace(heading, (LIFECYCLE_SECTION if lifecycle else DEMO_SECTION) + discovery_section(catalog or SHOWCASE_CATALOG, CATEGORY_TITLES) + heading)
+    text = text.replace(heading, (LIFECYCLE_SECTION if lifecycle else DEMO_SECTION) + discovery_section(catalog or SHOWCASE_CATALOG, CATEGORY_TITLES)
+                        + (PREFERENCES_SECTION if preferences else "") + heading)
     early = "## Two sources, never mixed"
     if text.count(early) != 1:
         raise ValueError("the prompt template must contain the 'Two sources, never mixed' section exactly once")
@@ -365,7 +421,7 @@ def build_demo_prompt(template: str, catalog: Catalog | None = None, salon_name:
     head, body = text.split(marker)
     if lifecycle:
         # the lifecycle template is written for the showcase: it already says "menu", has no legacy example, and uses two placeholders
-        body = body.replace("{SALON}", name).replace("{TECH}", name_of("910006"))
+        body = body.replace("{SALON}", name).replace("{TECH}", name_of("910006")).replace("{OTHER}", name_of("910007"))
         if re.search(r"\{[A-Z]{2,}\}", body):
             raise ValueError("the lifecycle template has a placeholder that was not filled")
     else:
@@ -383,7 +439,7 @@ def build_demo_prompt(template: str, catalog: Catalog | None = None, salon_name:
     leaks = find_leaks(body, allowed=(showcase.contact_phone,) if showcase.contact_phone else ())
     if leaks:
         raise ValueError("the demo prompt still contains the earlier salon's identifiers: " + ", ".join(leaks))
-    return (LIFECYCLE_HEADER if lifecycle else DEMO_HEADER).format(name=name) + marker + body
+    return (PREFERENCES_HEADER if preferences else LIFECYCLE_HEADER if lifecycle else DEMO_HEADER).format(name=name) + marker + body
 
 
 def main(argv: list[str]) -> int:
@@ -400,12 +456,17 @@ def main(argv: list[str]) -> int:
         lifecycle_template = (DRAFT_DIR / LIFECYCLE_TEMPLATE_FILE).read_text(encoding="utf-8")
         (DRAFT_DIR / LIFECYCLE_PROMPT_FILE).write_text(build_demo_prompt(lifecycle_template, lifecycle=True), encoding="utf-8", newline="\n")
         print("wrote", DRAFT_DIR / LIFECYCLE_PROMPT_FILE)
+        (DRAFT_DIR / PREFERENCES_PROMPT_FILE).write_text(build_demo_prompt(lifecycle_template, lifecycle=True, preferences=True), encoding="utf-8", newline="\n")
+        print("wrote", DRAFT_DIR / PREFERENCES_PROMPT_FILE)
         tools = json.loads((DRAFT_DIR / "tools.json").read_text(encoding="utf-8"))
         availability = build_availability_tools(tools)
         (DRAFT_DIR / AVAILABILITY_TOOLS_FILE).write_text(json.dumps(availability, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         print("wrote", DRAFT_DIR / AVAILABILITY_TOOLS_FILE)
-        (DRAFT_DIR / LIFECYCLE_TOOLS_FILE).write_text(json.dumps(build_lifecycle_tools(availability), indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+        lifecycle_tools = build_lifecycle_tools(availability)
+        (DRAFT_DIR / LIFECYCLE_TOOLS_FILE).write_text(json.dumps(lifecycle_tools, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         print("wrote", DRAFT_DIR / LIFECYCLE_TOOLS_FILE)
+        (DRAFT_DIR / PREFERENCES_TOOLS_FILE).write_text(json.dumps(build_preference_tools(lifecycle_tools), indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+        print("wrote", DRAFT_DIR / PREFERENCES_TOOLS_FILE)
     else:
         print(render_knowledge(registry=registry))
     return 0

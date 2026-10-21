@@ -114,3 +114,47 @@ LIFECYCLE_DESCRIPTIONS = {
         "when the caller has no specific time, or asks for other times. This only CHECKS: nothing is booked, held or changed. Call only on appointment or availability intent."
     ),
 }
+
+
+# ---- preferred technicians (demo only; a separate, opt-in tool file: ``tools_demo_lifecycle_preferences.json`` = the lifecycle file + these three) ----
+PREFERENCE_SERVICE_TEXT = (
+    "ONE service, in the caller's own words (for example Swedish Massage, Signature Facial). A preference is kept per service, never for a whole group such as 'massage' or 'facial': "
+    "if the caller only named a group, ask which one."
+)
+PREFERENCE_STAFF_TEXT = "The technician's name, exactly as the caller said it. Never guess or substitute one."
+
+PREFERENCE_TOOLS = [
+    _tool(
+        "get_preferences",
+        "Look up a returning client's saved PREFERRED TECHNICIANS by their complete phone number (a prototype record match, not proof of identity). Use it when the caller asks who their "
+        "usual technician is or what is saved, and before offering a technician to a caller who is booking a service and did not name one. Pass `service` to ask about one service. "
+        "A preference is only who the client would like: it never guarantees a time. This only LOOKS: it changes nothing. If it asks for the full name, the number is on more than one "
+        "record: ask for the name.",
+        {"phone": {"type": "string", "description": PHONE_TEXT}, "name": {"type": "string", "description": NAME_TEXT},
+         "service": {"type": "string", "description": "Optional. One service, in the caller's own words, to ask about just that one. " + PREFERENCE_SERVICE_TEXT}},
+        ["phone"], timeout_ms=10000, execution_message=ONE_SENTENCE.format(what="look that up"),
+    ),
+    _tool(
+        "save_preference",
+        "Save, or change, the caller's preferred technician for ONE service in the prototype calendar, in TWO steps, and ONLY when the caller asks for it in their own words. Call it first "
+        "with their complete phone number, the service and the technician: it saves NOTHING and returns `confirmation_required` with one sentence and a `confirmation_token`. Read the "
+        "sentence to the caller; only after a clear yes call it again with exactly the same details, the token and confirmed true. It is saved only if the result is `preference_saved` "
+        "or `preference_unchanged` with ok true. If it asks which service or which technician, ask the caller. It never changes an existing appointment.",
+        {"phone": {"type": "string", "description": PHONE_TEXT}, "name": {"type": "string", "description": NAME_TEXT},
+         "service": {"type": "string", "description": PREFERENCE_SERVICE_TEXT}, "staff": {"type": "string", "description": PREFERENCE_STAFF_TEXT},
+         "confirmation_token": {"type": "string", "description": TOKEN_TEXT}, "confirmed": {"type": "boolean", "description": CONFIRMED_TEXT}},
+        ["phone", "service", "staff"], timeout_ms=20000, execution_message=ONE_SENTENCE.format(what="check that"),
+    ),
+    _tool(
+        "remove_preference",
+        "Remove the caller's saved preferred technician for ONE service, in TWO steps, and ONLY when the caller asks for it. Call it first with their complete phone number and the "
+        "service: it removes NOTHING and returns `confirmation_required` with one sentence and a `confirmation_token`. Read it; only after a clear yes call it again with the same details, "
+        "the token and confirmed true. It is removed only if the result is `preference_removed` with ok true. It never changes an existing appointment.",
+        {"phone": {"type": "string", "description": PHONE_TEXT}, "name": {"type": "string", "description": NAME_TEXT},
+         "service": {"type": "string", "description": PREFERENCE_SERVICE_TEXT},
+         "confirmation_token": {"type": "string", "description": TOKEN_TEXT}, "confirmed": {"type": "boolean", "description": CONFIRMED_TEXT}},
+        ["phone", "service"], timeout_ms=20000, execution_message=ONE_SENTENCE.format(what="check that"),
+    ),
+]
+
+PREFERENCE_TOOL_NAMES = frozenset(tool["name"] for tool in PREFERENCE_TOOLS)

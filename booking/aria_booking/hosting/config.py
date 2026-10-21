@@ -65,6 +65,7 @@ class PublicConfig:
     avatar_image: str = ""
     showcase_file: str = ""
     serve_site: bool = True
+    preferences: bool = False  # ARIA_PREFERENCES: answer the three preferred-technician functions (demo only; off unless the reviewed agent was enabled with them)
     dev: bool = False
 
     @property
@@ -157,4 +158,5 @@ def load_public_config(env: Mapping[str, str], *, dev: bool = False, overrides: 
         api_key=api_key, tool_token=tool_token, public_key=public_key, agent_id=setting("ARIA_RETELL_AGENT_ID"), agent_version=version,
         avatar_image=setting("ARIA_AVATAR_IMAGE", "avatar"), showcase_file=setting("ARIA_SHOWCASE_CONFIG", "showcase"),
         serve_site=str(given.get("serve_site", (env.get("ARIA_SERVE_SITE") or "1"))).strip().lower() not in ("0", "false", "no", "off"), dev=dev,
+        preferences=str(given.get("preferences", (env.get("ARIA_PREFERENCES") or "0"))).strip().lower() in ("1", "true", "yes", "on"),
     )

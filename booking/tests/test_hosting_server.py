@@ -388,3 +388,35 @@ def test_the_outside_check_reports_a_backend_that_is_up_but_not_ready(running, m
     monkeypatch.setattr(running.app.lifecycle.store, "can_write", lambda: False)
     ready = {c.name: c for c in check_public(running.base, SITE)}["ready"]
     assert ready.ok is False and "volume" in ready.fix
+
+
+# ---------------------------------------------------------------- the opt-in preferred technicians
+
+
+PREFERENCE_CALLS = (("get_preferences", {"phone": "2125550142", "name": "Willa Hartwell"}),
+                    ("save_preference", {"phone": "2125550142", "name": "Willa Hartwell", "service": "Swedish Massage", "staff": "Rowan"}),
+                    ("remove_preference", {"phone": "2125550142", "name": "Willa Hartwell", "service": "Swedish Massage"}))
+
+
+def test_the_preferred_technician_addresses_do_not_exist_unless_the_host_turned_them_on(running):
+    for name, args in PREFERENCE_CALLS:
+        assert running.tool(name, args)[0] == 404, name
+    assert running.tool("find_appointments", {"phone": "2125550142", "name": "Willa Hartwell"})[0] == 200, "the rest of the lifecycle is exactly as it was"
+
+
+def test_with_the_switch_on_they_answer_signed_calls_only_and_a_first_call_saves_nothing(tmp_path):
+    run = Running(tmp_path, datetime(2026, 10, 22, 10, 0, tzinfo=TZ), preferences=True)
+    try:
+        assert run.config.preferences is True
+        before = run.app.lifecycle.store.counts()
+        listed = run.tool("get_preferences", PREFERENCE_CALLS[0][1])
+        assert listed[0] == 200 and listed[1]["status"] == "no_preferences" and listed[1]["ok"] is True
+        read_back = run.tool("save_preference", PREFERENCE_CALLS[1][1])
+        assert read_back[0] == 200 and read_back[1]["status"] == "confirmation_required" and read_back[1]["confirmation_token"]
+        assert run.tool("get_preferences", PREFERENCE_CALLS[0][1])[1]["status"] == "no_preferences", "the read-back saved nothing"
+        for name, args in PREFERENCE_CALLS:
+            assert run.tool(name, args, sign=False)[0] == 401 and run.tool(name, args, bearer="not-the-token")[0] == 401, name
+        assert run.app.lifecycle.store.counts() == before
+        assert run.tool("book_slot", {})[0] == 404
+    finally:
+        run.stop()

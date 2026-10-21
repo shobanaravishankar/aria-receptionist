@@ -129,3 +129,11 @@ def test_no_secret_is_in_the_repr_the_text_or_any_refusal():
     for env in ({**GOOD, "PORT": "x"}, {**GOOD, "ARIA_STORE_PATH": "rel"}, {"ARIA_RETELL_API_KEY": KEY, "ARIA_RETELL_TOOL_TOKEN": TOKEN}):
         message = refused(env)
         assert KEY not in message and TOKEN not in message
+
+
+def test_the_preferred_technician_functions_are_off_unless_the_host_turns_them_on():
+    assert load_public_config(GOOD).preferences is False
+    for text in ("1", "true", "YES", " on "):
+        assert load_public_config({**GOOD, "ARIA_PREFERENCES": text}).preferences is True, text
+    for text in ("0", "", "false", "no", "off", "maybe"):
+        assert load_public_config({**GOOD, "ARIA_PREFERENCES": text}).preferences is False, text

@@ -145,3 +145,38 @@ def test_the_lifecycle_site_allows_only_the_prepared_website_and_uses_the_lifecy
     serve(tmp_path, "--page-port", "5888")
     kw = isolated["site_kwargs"]
     assert set(kw["allowed_origins"]) == {"http://localhost:5888", "http://127.0.0.1:5888"} and kw["clock"]().date().isoformat() == "2026-10-13"
+
+
+# ---------------------------------------------------------------- the opt-in preferred technicians
+
+
+def test_the_preferred_technician_functions_are_off_unless_asked_for(isolated, tmp_path):
+    from aria_booking.appointments.preference_tools import PreferenceTools
+
+    code, text = serve(tmp_path)
+    endpoint = isolated["endpoint"]
+    assert code == cli.EXIT_OK and "preferred technicians: off" in text
+    assert not isinstance(endpoint._tools, PreferenceTools) and not {"get_preferences", "save_preference", "remove_preference"} & set(endpoint._routes.values())
+
+
+def test_with_the_flag_the_three_extra_functions_are_served_and_nothing_else_changes(isolated, tmp_path):
+    from aria_booking.appointments.preference_tools import PREFERENCE_ROUTES, PreferenceTools
+
+    code, text = serve(tmp_path, "--preferences")
+    endpoint = isolated["endpoint"]
+    assert code == cli.EXIT_OK and "preferred technicians: ON (demo only)" in text and KEY not in text
+    assert isinstance(endpoint._tools, PreferenceTools) and endpoint._routes == PREFERENCE_ROUTES and len(endpoint._routes) == 11
+    assert set(LIFECYCLE_ROUTES.values()) < set(endpoint._routes.values()) and "book_slot" not in endpoint._routes.values()
+
+
+def test_the_flag_without_the_lifecycle_is_refused_before_anything_starts(isolated, tmp_path):
+    code, text = run(["demo-serve", "--preferences", "--today", "2026-10-13"])
+    assert code == cli.EXIT_REFUSED and "--preferences needs --lifecycle" in text and "endpoint" not in isolated and not FakeServer.served
+
+
+def test_the_agent_mode_flag_accepts_the_preferences_mode_and_still_refuses_anything_else():
+    parser = cli.build_parser()
+    assert parser.parse_args(["demo-agent", "plan", "--mode", "lifecycle-preferences"]).mode == "lifecycle-preferences"
+    assert parser.parse_args(["demo-serve", "--lifecycle", "--preferences"]).preferences is True and parser.parse_args(["demo-serve", "--lifecycle"]).preferences is False
+    with pytest.raises(SystemExit):
+        parser.parse_args(["demo-agent", "plan", "--mode", "preferences"])
