@@ -19,7 +19,6 @@ const statusText = statusBox.querySelector(".aria__text");
 const callBtn = document.getElementById("aria-call");
 const hangBtn = document.getElementById("aria-hangup");
 const hideBtn = document.getElementById("aria-hide");
-const toastEl = document.getElementById("toast");
 const bar = document.getElementById("call-bar");
 const barText = document.getElementById("call-bar-text");
 const barShow = document.getElementById("call-show");
@@ -80,13 +79,6 @@ function setSpeaking(on) {
   if (!call) return;
   if (on) { widget.dataset.speaking = "true"; setStatus("live", "Aria is speaking…"); }
   else { delete widget.dataset.speaking; setStatus("live", "Listening…"); }
-}
-
-function toast(message) {
-  toastEl.textContent = message;
-  toastEl.hidden = false;
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => { toastEl.hidden = true; }, 3600);
 }
 
 function isConfigured() {
@@ -168,7 +160,6 @@ async function startCall() {
     return;
   }
   if (inCall()) {   // a live call just comes back to the front; one that is still connecting says so. Never a second call.
-    if (!everLive) toast("A call is already connecting.");
     if (wasHidden) (hangBtn.hidden ? callBtn : hangBtn).focus({ preventScroll: true });
     return;
   }
@@ -218,7 +209,6 @@ function onStatus(status) {
     everLive = true;
     setStatus("live", "Listening…");
     try { call.startAudioPlayback && call.startAudioPlayback(); } catch (_) {}
-    toast("You’re connected to Aria.");
   }
   // "ended" is handled by onEnd
 }

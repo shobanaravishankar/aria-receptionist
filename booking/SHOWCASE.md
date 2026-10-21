@@ -2,7 +2,7 @@
 
 A generic spa used to demonstrate the voice assistant (Aria) to any prospective salon. **Nothing in it is a real business**: there is no address or location, the phone
 number is unset until the owner supplies one, the staff are fictional first names, the menu's descriptions are freshly written and its prices and lengths are example data,
-and the photographs are stock images (credited, free to use) that do not show Serenity staff or premises. The page carries a discreet "Prototype showcase" label.
+and the photographs are stock images (credited, free to use) that do not show Serenity staff or premises. The page reads like a finished site; ONE discreet note in the footer ("Demonstration site. Appointments and business details are sample data.") says what it is, and nothing else on it repeats that. The note is `demo_note` in the showcase file.
 
 ## One source, read by everything
 
@@ -106,5 +106,13 @@ tests fail if a picture other than the credited stock photographs is added to `s
 
 ## What it does not claim
 
-Prices and lengths are example data; hours are example hours; the team is fictional. The simulated calendar, appointments and clients are invented. Booking is not part of
-this prototype (the label says so, and `booking_note` in the config is the one place to change it when a simulated booking mode really exists).
+Prices and lengths are example data; hours are example hours; the team is fictional. The simulated calendar, appointments and clients are invented. The footer note is where the
+page says so, once; this document, the staff calendar's own label and the safeguards behind the page are unchanged. (`prototype_label` and `booking_note` still load from a showcase file but are no longer shown.)
+
+## Starting a call, and what a visitor is told when it cannot start
+
+Every "Speak to Aria" entry (the header, the hero, the assistant band, the Calendar view and the phone quick-action bar) shows the configured avatar with a small phone badge and goes
+through the page's single call controller: it starts nothing by being there, never a second call, and the browser still asks for the microphone. When the voice cannot start or
+connect the widget says, in the widget itself and never in a popup, "Aria is currently unavailable. Please try again in a little while, or contact the salon directly." With a salon
+number in the showcase file it says "Please call <salon> directly at <number>." with the number as a click-to-call link. A real microphone refusal keeps its own plain guidance. No
+status code, address, setting or account detail is ever shown; the operator sees one category word in the browser console.

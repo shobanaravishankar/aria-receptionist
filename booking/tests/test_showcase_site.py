@@ -94,7 +94,8 @@ def test_one_h1_a_lang_a_title_a_description_and_a_skip_link(built):
     h1 = [a["id"] for a in page.find("h1")]
     assert h1 == ["hero-title", "view-calendar-title", "view-staff-title"], "the home page's one visible heading, plus one for each of the two views (hidden until opened)"
     assert page.find("html")[0]["lang"] == "en"
-    assert "<title>Serenity Spa: prototype showcase</title>" in html and page.find("meta", name="description")
+    assert "<title>Serenity Spa</title>" in html and page.find("meta", name="description")
+    assert not re.search(r"prototype|simulat|demonstrat|demo\b|example|sample", page.find("meta", name="description")[0]["content"], re.I), "the description reads like a spa's"
     assert page.find("a", href="#main") and page.find("main", id="main") and page.find("meta", name="viewport")
 
 
@@ -120,11 +121,32 @@ def test_buttons_and_links_have_names_and_icons_are_decorative(built):
     assert 'role="tablist"' in html and html.count('role="tabpanel"') == len([c for c in CATEGORIES if any(i.category == c[0] for i in SHOWCASE_CATALOG.items)])
 
 
-def test_the_prototype_label_is_discreet_and_present_and_says_what_is_not_there(built):
-    _out, html, _page = built
-    assert 'data-testid="demo-page-banner"' in html and f"{SHOWCASE.prototype_label} · {SHOWCASE.booking_note}" in html
-    changed = render_index(load_showcase(overrides={"booking_note": "Simulated booking is available"}), SHOWCASE_CATALOG, ROSTER_ROWS, calendar_port=8790, retention_days=7)
-    assert "Simulated booking is available" in changed and "Booking is not part of this prototype" not in changed
+NOTE = "Demonstration site. Appointments and business details are sample data."
+WORDS = r"prototype|simulat|demonstrat|demo\b|fictional|example|sample|not a real business|test call|development"
+
+
+def test_the_page_says_it_is_a_demonstration_exactly_once_in_one_discreet_footer_note(built):
+    _out, html, page = built
+    assert "proto-bar" not in html and "demo-page-banner" not in html, "no bar across the top"
+    assert re.findall(r'<p class="footer-bottom" data-testid="demo-note">([^<]+)</p>', html) == [NOTE] and NOTE in html[html.index("<footer"):]
+    assert SHOWCASE.demo_note == NOTE
+    outside = " ".join(page.text).replace(NOTE, "")
+    assert not re.search(WORDS, outside, re.I), re.findall(WORDS, outside, re.I)   # the calendar views are in the page too (hidden until opened): they say nothing of it either
+
+
+def test_the_note_can_be_reworded_in_the_showcase_file_and_is_still_the_only_one(tmp_path):
+    changed = render_index(load_showcase(overrides={"demo_note": "Sample site, sample data."}), SHOWCASE_CATALOG, ROSTER_ROWS, calendar_port=8790, retention_days=7)
+    assert changed.count("Sample site, sample data.") == 1 and NOTE not in changed and "proto-bar" not in changed
+
+
+def test_nothing_in_the_scripts_or_the_markup_pops_up_or_asks_anything_of_the_visitor(built):
+    out, html, _page = built
+    for name in ("voice.js", "site.js", "views.js"):
+        code = (out / name).read_text(encoding="utf-8")
+        assert not re.search(r"\b(alert|confirm|prompt)\(|window\.open|showModal|\.focus\(\)\s*;?\s*//\s*autofocus", code), name
+    assert not re.search(r"<dialog|role=\"(alert)?dialog\"|aria-modal|autofocus|id=\"toast\"", html)
+    voice = re.sub(r"/\*.*?\*/", "", (out / "voice.js").read_text(encoding="utf-8"), flags=re.S)
+    assert not re.search(r"prototype|simulat|demonstrat|fictional", voice, re.I), "what the widget says to a visitor never calls the site a prototype"
 
 
 # ---------------------------------------------------------------- one source: the menu and the roster
@@ -156,7 +178,6 @@ def test_the_team_is_the_roster_with_roles_and_a_fictional_note(built):
     text = " ".join(page.text)
     for row in ROSTER_ROWS:
         assert row.name in text and role_of(row) in text
-    assert "Fictional names, used only for this prototype." in text
     assert all(a["src"] == "assets/aria-avatar.svg" for t, a in page.tags if t == "img" and len(a["alt"]) == 0), "only the decorative call-entry pictures have an empty alt"
 
 
@@ -168,7 +189,7 @@ def test_no_old_identifier_no_address_no_phone_in_any_generated_file(built):
     for name in ("index.html", "styles.css", "voice.js", "site.js", "demo-config.js", "assets/credits.json"):
         assert find_leaks((out / name).read_text(encoding="utf-8")) == [], name
     text = " ".join(Page_text(out))
-    assert "Contact details are not configured in this prototype." in text and "tel:" not in (out / "index.html").read_text(encoding="utf-8")
+    assert "not configured" not in text and "tel:" not in (out / "index.html").read_text(encoding="utf-8"), "an unset number says nothing and links nothing"
     assert not re.search(r"\b(street|st\.|avenue|ave\.|boulevard|blvd|road|suite|zip|new jersey|directions|map)\b", text, re.I)
 
 
@@ -227,7 +248,9 @@ def test_every_picture_and_font_has_provenance_and_the_footer_credits_the_photog
         assert entry["photographer"] and entry["photo_url"].startswith("https://unsplash.com/photos/") and entry["source_image"].startswith("https://images.unsplash.com/photo-")
         assert "unsplash.com/plus" not in entry["photo_url"] and entry["photographer"] in html
     assert {f["family"] for f in credits["fonts"]} == {"Cormorant Garamond", "Jost"} and all("Open Font License" in f["license"] for f in credits["fonts"])
-    assert "not Serenity Spa staff and no location is pictured" in html and "Stock photographs" in html
+    footer = html[html.index("<footer"):]
+    assert "Photo credits" in footer and "stock photographs from Unsplash" in footer and 'href="https://unsplash.com/license"' in footer and 'rel="noopener noreferrer"' in footer
+    assert footer.count('target="_blank"') == len(credits["images"]) + 1, "every photographer is a link, and so is the license"
 
 
 def test_jpeg_files_are_real_pictures_of_the_recorded_size():

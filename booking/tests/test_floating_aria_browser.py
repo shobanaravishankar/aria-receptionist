@@ -103,7 +103,6 @@ def snapshot(page) -> dict:
             call: !el('aria-call').hidden, hangup: !el('aria-hangup').hidden, bar: !el('call-bar').hidden,
             barText: el('call-bar-text').textContent, created: window.__created || 0, ended: window.__ended || 0,
             ariaCall: document.documentElement.dataset.ariaCall || null, callLabel: el('aria-call').getAttribute('aria-label'),
-            toast: el('toast').hidden ? null : el('toast').textContent,
         };
     }""")
 
@@ -175,7 +174,6 @@ def test_the_call_icon_starts_exactly_one_call_and_no_other_click_can_start_a_se
     assert first["created"] == 1 and first["state"] == "connecting" and first["text"] == "Connecting to Aria…"
     assert first["hangup"] and not first["call"] and first["ariaCall"] == "1"
     assert later["created"] == 1, "repeated clicks anywhere never start another call"
-    assert later["toast"] == "A call is already connecting."
 
 
 def test_every_state_and_the_speaking_glow_come_from_the_sdk_and_nowhere_else(driver, sites):
@@ -229,10 +227,10 @@ LEAKS = ("402", "403", "401", "https", "dashboard", "acct_", "public_key", "Type
 
 
 def visible(page) -> str:
-    """Everything a visitor can read or hover around the widget: its visible text, the call bar, the toast, and every title, label and alt text inside them."""
+    """Everything a visitor can read or hover around the widget: its visible text, the call bar, and every title, label and alt text inside them."""
     return page.evaluate("""() => {
-        const parts = [document.getElementById('aria').innerText, document.getElementById('call-bar').innerText, document.getElementById('toast').innerText];
-        for (const el of document.querySelectorAll('#aria *, #call-bar *, #toast')) for (const a of ['title', 'aria-label', 'alt']) if (el.getAttribute(a)) parts.push(el.getAttribute(a));
+        const parts = [document.getElementById('aria').innerText, document.getElementById('call-bar').innerText];
+        for (const el of document.querySelectorAll('#aria *, #call-bar *')) for (const a of ['title', 'aria-label', 'alt']) if (el.getAttribute(a)) parts.push(el.getAttribute(a));
         return parts.join(' | ');
     }""")
 
@@ -676,7 +674,6 @@ def test_the_speak_button_on_a_live_call_brings_the_same_call_back_and_starts_no
 
     shown = run(driver, sites["configured"], work)
     assert shown["widget"] and not shown["bar"] and shown["created"] == 1 and shown["ended"] == 0 and shown["hangup"]
-    assert shown["toast"] != "A call is already connecting."
 
 
 # ---------------------------------------------------------------- keyboard, labels, motion
@@ -946,3 +943,20 @@ def test_a_stray_request_to_end_the_call_after_a_failure_keeps_that_failures_own
     shown, links = run(driver, sites[site], work)
     assert shown["state"] == "error" and shown["text"] == expected and shown["call"] and shown["ariaCall"] is None
     assert [link["text"] for link in links] == ([CONTACT_PHONE] if expected == WITH_NUMBER else [])
+
+
+# ---------------------------------------------------------------- no popups: the call and its status are inline
+
+
+def test_the_page_makes_no_popups_and_a_call_in_progress_is_only_ever_told_inline(driver, sites):
+    def work(page):
+        absent = page.evaluate("""() => ({toast: document.getElementById('toast'), banner: document.querySelector('.proto-bar'),
+            dialogs: document.querySelectorAll('dialog, [role=dialog], [role=alertdialog], [aria-modal=true]').length})""")
+        start(page)
+        page.evaluate("window.__hooks.onStatus('live')")
+        page.click('.site-header [data-voice-start]')   # pressing an entry during a live call: the same call comes forward, nothing pops up
+        return absent, snapshot(page), page.evaluate("() => document.getElementById('voice-status').innerText")
+
+    absent, live, status = run(driver, sites["configured"], work)
+    assert absent == {"toast": None, "banner": None, "dialogs": 0}
+    assert live["state"] == "live" and live["created"] == 1 and status.startswith("Listening"), status

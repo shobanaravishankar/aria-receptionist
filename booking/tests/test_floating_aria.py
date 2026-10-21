@@ -59,7 +59,7 @@ def test_the_status_is_a_polite_live_region_with_the_ai_and_retention_notice(bui
     _out, html, page = built
     status = page.find("p", id="voice-status")[0]
     assert status["role"] == "status" and status["aria-live"] == "polite" and "hidden" in status
-    assert "Aria is an AI voice assistant. Retell may retain this test call for review for up to 7 days." in html
+    assert "Aria is an AI voice assistant. Retell may retain this call for review for up to 7 days." in html
 
 
 def test_no_modal_dialog_scrim_or_full_screen_card_is_left(built):

@@ -55,12 +55,13 @@ class Showcase:
     contact_phone: Optional[str] = None  # None until the owner supplies one: nothing is spoken or shown as a number, and none is invented
     contact_name: Optional[str] = None  # the name spoken with that number in a fallback ("contact <name> at ..."); None = the brand name
     location: Optional[str] = None  # deliberately none: the showcase belongs to no town
-    prototype_label: str = "Prototype showcase: example content and a simulated calendar"
-    booking_note: str = "Booking is not part of this prototype"  # appended to the label; change it only when a simulated booking mode really exists
+    demo_note: str = "Demonstration site. Appointments and business details are sample data."  # the ONE discreet note in the page footer; nothing else on the page says it
+    prototype_label: str = "Prototype showcase: example content and a simulated calendar"  # no longer shown on the page (kept so existing files and callers still load)
+    booking_note: str = "Booking is not part of this prototype"  # no longer shown on the page (kept for the same reason)
     theme: Theme = field(default_factory=Theme)
 
 
-_KEYS = frozenset({"name", "tagline", "timezone", "example_hours", "contact_phone", "contact_name", "location", "prototype_label", "booking_note"})
+_KEYS = frozenset({"name", "tagline", "timezone", "example_hours", "contact_phone", "contact_name", "location", "demo_note", "prototype_label", "booking_note"})
 
 
 def _line(value: object, field_name: str, limit: int, *, required: bool = False) -> Optional[str]:
@@ -77,7 +78,7 @@ def _line(value: object, field_name: str, limit: int, *, required: bool = False)
 
 def check_showcase(showcase: Showcase) -> Showcase:
     """The values the page, the prompt and the spoken fallback all print or say, checked once: text is one short line, a phone number is complete (area code, or a + and a country code)."""
-    for key in ("tagline", "timezone", "example_hours", "prototype_label", "booking_note"):
+    for key in ("tagline", "timezone", "example_hours", "demo_note", "prototype_label", "booking_note"):
         if not isinstance(getattr(showcase, key), str):
             raise ValueError(f"the showcase {key} must be text")
     phone = _line(showcase.contact_phone, "contact_phone", 40)

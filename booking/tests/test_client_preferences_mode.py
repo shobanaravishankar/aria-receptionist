@@ -350,7 +350,7 @@ def test_the_instructions_for_this_mode_start_the_server_with_the_flag_and_give_
     assert "never changes an appointment and never guarantees a time" in text and "Nothing is saved unless you ask for it" in text
     assert f"{WILLA[0]} and {ANSEL[0]} share a number" in text and "their preferences never mix" in text
     page = (cfg.web_out / "index.html").read_text(encoding="utf-8")
-    assert "Appointments made here exist only in this prototype calendar" in page
+    assert page.count("Demonstration site. Appointments and business details are sample data.") == 1
     assert KEY not in text and TOKEN not in text and PUBLIC not in text
 
 

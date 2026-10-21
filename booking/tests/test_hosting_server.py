@@ -437,7 +437,8 @@ def refusal_speech(run):
 def test_without_a_showcase_file_the_site_and_the_spoken_fallback_carry_no_address_and_no_number(running):
     status, _headers, body = running.get("/")
     text = body.decode("utf-8")
-    assert status == 200 and "Contact details are not configured in this prototype." in text and "Address:" not in text and "data-contact" not in text
+    assert status == 200 and "not configured" not in text and "Address:" not in text and "data-contact" not in text
+    assert text.count("Demonstration site. Appointments and business details are sample data.") == 1
     assert refusal_speech(running).endswith("Please contact the salon directly.")
 
 
@@ -447,10 +448,10 @@ def test_a_showcase_file_puts_the_same_address_and_number_on_the_site_and_in_the
     run = Running(tmp_path, datetime(2026, 10, 22, 10, 0, tzinfo=TZ), showcase=str(path))
     try:
         text = run.get("/")[2].decode("utf-8")
-        assert "<p>Address: 17 Example Row, Testville</p>" in text and 'tel:2125550111' in text and "Contact details are not configured" not in text
+        assert "<p>Address: 17 Example Row, Testville</p>" in text and 'tel:2125550111' in text and "not configured" not in text
         assert 'data-contact-tel="+12125550111"' in text and 'data-contact-phone="(212) 555-0111"' in text, "the widget's click-to-call notice carries the same number"
         assert refusal_speech(run).endswith("Please contact Serenity Spa at 2 1 2, 5 5 5, 0 1 1 1.")
-        assert "Appointments made here exist only in this prototype calendar" in text, "the lifecycle label ending is kept"
+        assert text.count("Demonstration site. Appointments and business details are sample data.") == 1, "the one footer note, with or without a showcase file"
     finally:
         run.stop()
 

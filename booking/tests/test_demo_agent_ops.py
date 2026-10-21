@@ -609,8 +609,8 @@ def test_the_page_is_the_serenity_showcase_with_the_prototype_label_and_a_public
     code, web, lines = _prepared(tmp_path)
     assert code == 0 and "Isolated Serenity Spa voice page prepared" in lines[0] and any("python -m http.server" in line for line in lines)
     page = (web / "index.html").read_text(encoding="utf-8")
-    assert "<title>Serenity Spa: prototype showcase</title>" in page and 'data-testid="demo-page-banner"' in page
-    assert "Prototype showcase: example content and a simulated calendar · Booking is not part of this prototype" in page
+    assert "<title>Serenity Spa</title>" in page and 'data-testid="demo-page-banner"' not in page and "proto-bar" not in page
+    assert page.count("Demonstration site. Appointments and business details are sample data.") == 1
     assert "http://localhost:8790/pro/en-us/9000001/calendar?date=today&amp;view=day" in page and "up to 7 days" in page
     assert find_leaks(page) == [] and "Glamour" not in page
     config_js = (web / "demo-config.js").read_text(encoding="utf-8")

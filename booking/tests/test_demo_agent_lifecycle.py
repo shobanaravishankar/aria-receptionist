@@ -188,7 +188,7 @@ def test_the_page_label_says_appointments_exist_only_in_the_prototype_and_the_in
     cfg = config(tmp_path, mode="lifecycle")
     assert agent_ops.prepare_web(cfg, FakeSecrets(), lambda m: None) == 0
     page = (cfg.web_out / "index.html").read_text(encoding="utf-8")
-    assert f"· {LIFECYCLE_BOOKING_NOTE}" in page and "Booking is not part of this prototype" not in page
+    assert LIFECYCLE_BOOKING_NOTE not in page and "Booking is not part of this prototype" not in page and page.count("Demonstration site.") == 1, "the page carries only the one footer note"
     text = (tmp_path / "state" / "test-instructions.txt").read_text(encoding="utf-8")
     assert "SIMULATED appointment lifecycle" in text and "python -m aria_booking demo-serve --lifecycle" in text
     assert "Willa Hartwell, number 212-555-0142" in text and "the SAME household number" in text and "Cedric Lowe, number 212-555-0177" in text
@@ -201,7 +201,7 @@ def test_the_read_only_pages_label_and_instructions_are_unchanged(tmp_path):
     state = State(tmp_path / "state")
     state.write("agent.json", {"agent_id": "agent_test", "version": 0})
     assert agent_ops.prepare_web(config(tmp_path), FakeSecrets(), lambda m: None) == 0
-    assert "Booking is not part of this prototype" in (tmp_path / "state" / "web" / "index.html").read_text(encoding="utf-8")
+    assert "Booking is not part of this prototype" not in (tmp_path / "state" / "web" / "index.html").read_text(encoding="utf-8")
     assert "booking is disabled" in (tmp_path / "state" / "test-instructions.txt").read_text(encoding="utf-8")
 
 

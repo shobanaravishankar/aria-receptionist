@@ -152,11 +152,11 @@ def test_a_new_attempt_forgets_the_last_failure(driver, site):
     assert text == UNAVAILABLE and "Microphone" not in text
 
 
-def test_the_page_is_configured_with_public_settings_only_and_the_simulation_banner(driver, site):
+def test_the_page_is_configured_with_public_settings_only_and_carries_the_one_footer_note(driver, site):
     def work(page):
         page.goto(site, wait_until="load")
-        return page.evaluate("() => ({cfg: window.RETELL_DEMO, banner: document.querySelector('[data-testid=\"demo-page-banner\"]')?.textContent})")
+        return page.evaluate("() => ({cfg: window.RETELL_DEMO, banner: document.querySelector('[data-testid=\"demo-page-banner\"]'), note: document.querySelector('[data-testid=\"demo-note\"]')?.textContent})")
 
     shown = driver._run(work, 30)
     assert sorted(shown["cfg"]) == ["agentId", "agentVersion", "publicKey"] and shown["cfg"]["agentId"] == "agent_test"
-    assert "Prototype showcase: example content and a simulated calendar" in shown["banner"] and "Booking is not part of this prototype" in shown["banner"]
+    assert shown["banner"] is None and shown["note"] == "Demonstration site. Appointments and business details are sample data."

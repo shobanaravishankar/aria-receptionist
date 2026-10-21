@@ -124,16 +124,15 @@ def test_load_showcase_keeps_its_old_behaviour_for_callers_that_pass_overrides_d
 def test_the_page_shows_the_address_and_a_phone_link_when_set_and_says_so_plainly_when_not(tmp_path, configured):
     html = page_of(resolve_showcase({ENV_VAR: configured}), tmp_path / "a")
     assert html.count(f"<p>Address: {LOCATION}</p>") == 1 and html.count(f'<p>Phone: <a href="tel:2125550111">{PHONE}</a></p>') == 1
-    assert "Contact details are not configured" not in html
     default = page_of(Showcase(), tmp_path / "b")
-    assert "Contact details are not configured in this prototype." in default and "Address:" not in default and "Phone:" not in default and LOCATION not in default
+    assert "not configured" not in default and "Address:" not in default and "Phone:" not in default and LOCATION not in default, "an unset address and number say nothing and link nothing"
 
 
 def test_only_an_address_or_only_a_phone_shows_just_that_and_not_the_not_configured_sentence(tmp_path):
     only_address = page_of(resolve_showcase({ENV_VAR: write_config(tmp_path / "x", location=LOCATION)}), tmp_path / "a")
-    assert f"<p>Address: {LOCATION}</p>" in only_address and "Phone:" not in only_address and "Contact details are not configured" not in only_address
+    assert f"<p>Address: {LOCATION}</p>" in only_address and "Phone:" not in only_address
     only_phone = page_of(resolve_showcase({ENV_VAR: write_config(tmp_path / "y", contact_phone=PHONE)}), tmp_path / "b")
-    assert "Phone:" in only_phone and "Address:" not in only_phone and "Contact details are not configured" not in only_phone
+    assert "Phone:" in only_phone and "Address:" not in only_phone
 
 
 def test_the_address_is_escaped_on_the_page(tmp_path):
@@ -261,6 +260,6 @@ def test_without_a_file_the_prepared_page_is_the_unconfigured_one_in_every_mode(
         cfg = config(directory, mode=mode)
         assert agent_ops.prepare_web(cfg, FakeSecrets(), lambda m: None) == 0
         page = (cfg.web_out / "index.html").read_text(encoding="utf-8")
-        assert "Contact details are not configured in this prototype." in page and "Address:" not in page and "data-contact" not in page
-        assert (LIFECYCLE_BOOKING_NOTE in page) == (mode != "availability")
+        assert "not configured" not in page and "Address:" not in page and "data-contact" not in page
+        assert page.count("Demonstration site. Appointments and business details are sample data.") == 1 and LIFECYCLE_BOOKING_NOTE not in page, "one note, whatever the mode"
     assert PUBLIC not in page

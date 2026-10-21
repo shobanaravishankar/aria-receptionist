@@ -1,8 +1,8 @@
 """Builds the Serenity Spa showcase page: a polished, responsive, teal-led website generated from the ONE showcase source (brand, fictional roster, independent menu).
 
 Nothing on it is a real business: there is no address, no phone number unless one is configured, no testimonial, award or credential, and the pictures are stock
-photographs (credited, free to use) that do not show Serenity staff or premises. A discreet bar labels it a prototype. It is written to a folder and served by any
-static server; the original published salon site is never touched.
+photographs (credited, free to use) that do not show Serenity staff or premises. ONE discreet note in the footer says it is a demonstration with sample data; the rest of the
+page reads like a finished site. It is written to a folder and served by any static server; the original published salon site is never touched.
 """
 
 from __future__ import annotations
@@ -149,7 +149,7 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
                      if tel else "")   # the widget's "call the salon" sentence: only when a number is configured, so an unset number adds nothing to the page
     address = f"<p>Address: {_e(showcase.location)}</p>" if showcase.location else ""
     phone = (f'<p>Phone: <a href="tel:{_e("".join(ch for ch in showcase.contact_phone if ch.isdigit() or ch == "+"))}">{_e(showcase.contact_phone)}</a></p>'
-             if showcase.contact_phone else "" if address else "<p>Contact details are not configured in this prototype.</p>")
+             if showcase.contact_phone else "")   # nothing is shown for a number that is not configured: no sentence, no empty link
     phone = address + phone
     credit_items = "".join(
         f'<li><a href="{_e(c["photo_url"])}" rel="noopener noreferrer" target="_blank">{_e(c["photographer"])}</a></li>' for c in credits.values()
@@ -162,8 +162,8 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{_e(showcase.name)}: prototype showcase</title>
-<meta name="description" content="{_e(showcase.name)} is a prototype spa website that demonstrates a voice assistant, Aria, answering questions about a menu and checking times on a simulated calendar. Example content only.">
+<title>{_e(showcase.name)}</title>
+<meta name="description" content="{_e(showcase.name)}: massage, facials, lashes and waxing. Ask Aria, our voice assistant, about the menu or see which times are open.">
 <meta name="theme-color" content="{theme.teal_900}">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%230f6b68'/%3E%3Cpath d='M16 6c2.500 3 3.800 6 3.800 9 0 2.300-1.200 4.400-3.800 6.300C13.400 19.400 12.200 17.300 12.200 15c0-3 1.300-6 3.800-9Z' fill='white'/%3E%3C/svg%3E">
 <link rel="preload" href="assets/fonts/cormorant-garamond-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -176,7 +176,6 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
 </head>
 <body class="has-mobile-cta">
 <a class="skip-link" href="#main">Skip to content</a>
-<div class="proto-bar" role="note" data-testid="demo-page-banner">{_e(showcase.prototype_label)} · {_e(showcase.booking_note)}</div>
 <header class="site-header">
   <div class="wrap header-row">
     <a class="brand" href="#top" aria-label="{_e(showcase.name)}, home">{ICON_LOTUS}<span class="brand-name">{_e(showcase.name)}</span></a>
@@ -198,7 +197,7 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
       {call_entry(avatar_file, "hero", "Speak to Aria", sub="Your AI voice assistant", testid="hero-call")}
       <a class="btn btn-outline" href="#calendar" data-testid="calendar-link">{ICON_CALENDAR}<span>See open times</span></a>
     </div>
-    <p class="hero-note">Aria can answer questions about the menu and check which times are open on the prototype calendar. Team members can open the <a href="#staff-calendar" style="color:var(--white)">staff calendar</a>.</p>
+    <p class="hero-note">Ask Aria about the menu or check which times are open. Team members can open the <a href="#staff-calendar" style="color:var(--white)">staff calendar</a>.</p>
   </div></div>
 </section>
 <section class="steps" aria-label="How it works"><div class="wrap steps-grid">
@@ -207,37 +206,35 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
   <div class="step"><span class="step-icon">{ICON_MENU}</span><div><h3>Browse the menu</h3><p>Massages, facials, lashes, waxing and more, below.</p></div></div>
 </div></section>
 <section class="section" id="menu" aria-labelledby="menu-title"><div class="wrap">
-  <div class="section-head"><p class="kicker">The menu</p><h2 id="menu-title">Find your treatment</h2><p>Example menu and prices for this prototype.</p></div>
+  <div class="section-head"><p class="kicker">The menu</p><h2 id="menu-title">Find your treatment</h2><p>Every treatment, with its length and price.</p></div>
   <div class="tabs" role="tablist" aria-label="Menu categories">{tabs}</div>
   {panels}
   <noscript><style>.panel[hidden]{{display:block}}</style></noscript>
-  <p class="menu-note">Prices and lengths are example data for this prototype.</p>
 </div></section>
 <section class="band" aria-labelledby="band-title"><div class="band-grid">
   <div class="band-photo"><img src="assets/diffuser-candles.jpg" alt="{_e(credits["diffuser-candles.jpg"]["alt"])}" width="900" height="1350" loading="lazy" decoding="async"></div>
   <div class="band-copy"><p class="kicker" style="color:var(--teal-100)">Aria, your assistant</p><h2 id="band-title">Questions, answered out loud</h2>
-    <p>Press the button and just talk. Aria can explain the menu, tell you who offers a treatment and check which times are open on the calendar.</p>
+    <p>Just talk. Aria can explain the menu, tell you who offers a treatment and check which times are open on the calendar.</p>
     {call_entry(avatar_file, "band", "Speak to Aria", sub="Your AI voice assistant", testid="band-call", lazy=True)}</div>
 </div></section>
 <section class="section" id="team" aria-labelledby="team-title"><div class="wrap">
   <div class="section-head"><p class="kicker">The team</p><h2 id="team-title">Meet the team</h2><p>The people on the calendar.</p></div>
   <div class="team-grid">{people}</div>
-  <p class="team-note">Fictional names, used only for this prototype.</p>
 </div></section>
 <section class="section" id="visit" style="padding-top:0" aria-labelledby="visit-title"><div class="wrap">
   <div class="section-head"><p class="kicker">Plan a visit</p><h2 id="visit-title">Hours and calendar</h2></div>
   <div class="visit-grid">
-    <div class="visit-card"><h3>Opening hours</h3><p>{_e(showcase.example_hours.capitalize())}.</p><p>Example hours for this prototype. Availability comes only from the calendar.</p>{phone}</div>
-    <div class="visit-card"><h3>The calendar</h3><p>See which times are open for a treatment, or the day as the team sees it. Everything on it is simulated for this demonstration.</p>
+    <div class="visit-card"><h3>Opening hours</h3><p>{_e(showcase.example_hours.capitalize())}.</p><p>Open times are shown on the calendar.</p>{phone}</div>
+    <div class="visit-card"><h3>The calendar</h3><p>See which times are open for a treatment, or the day as the team sees it.</p>
       <div class="visit-actions"><a class="btn btn-ghost" href="#calendar" data-testid="hours-calendar">{ICON_CALENDAR}<span>See open times</span></a><a class="btn btn-ghost" href="#staff-calendar" data-testid="hours-staff-calendar">{ICON_CALENDAR}<span>Staff calendar</span></a></div>
-      <noscript><p style="margin-top:12px"><a href="{_e(cal)}">Open the staff calendar</a> (needs the demo calendar running).</p></noscript></div>
+      <noscript><p style="margin-top:12px"><a href="{_e(cal)}">Open the staff calendar</a> (needs the calendar running).</p></noscript></div>
   </div>
 </div></section>
 </div>
 <section class="view" id="view-calendar" hidden aria-labelledby="view-calendar-title" data-testid="view-calendar"><div class="wrap">
   <div class="view-top"><a class="btn btn-ghost btn-small back-home" href="#top" data-home data-testid="back-home">{ICON_BACK}<span>Back to {_e(showcase.name)}</span></a></div>
   <div class="view-head"><p class="kicker">Calendar</p><h1 id="view-calendar-title">Open times</h1>
-    <p>Choose a treatment and a day to see when it is open. The times come from the same prototype calendar Aria reads, and cover the full length of the treatment.</p></div>
+    <p>Choose a treatment and a day to see when it is open. The times cover the full length of the treatment.</p></div>
   <form class="open-form" id="open-times-form" novalidate>
     <div class="field"><label for="ot-family">Treatment</label><select id="ot-family"></select></div>
     <div class="field"><label for="ot-length">Length</label><select id="ot-length"></select></div>
@@ -247,14 +244,14 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
   </form>
   <div class="open-results" id="ot-results" aria-live="polite" data-state=""><p>Pick a treatment and a day, then choose Show open times.</p></div>
   <p class="ot-refresh-note" id="ot-refresh-note" role="status" data-testid="ot-refresh-note"></p>
-  <p class="view-foot">This view only lists open times; it does not make a booking. The times refresh by themselves when the calendar changes.</p>
+  <p class="view-foot">This page only lists open times; it does not make a booking. It updates by itself when the calendar changes.</p>
   <div class="visit-actions">{call_entry(avatar_file, "chip", "Ask Aria about a time", testid="view-call", lazy=True)}<button type="button" class="btn btn-ghost btn-small" id="ot-refresh" data-refresh="calendar" data-testid="ot-refresh">Refresh times</button><a class="btn btn-ghost btn-small" href="#staff-calendar">Staff calendar</a></div>
 </div></section>
 <section class="view" id="view-staff" hidden aria-labelledby="view-staff-title" data-testid="view-staff"><div class="wrap">
   <div class="view-top"><a class="btn btn-ghost btn-small back-home" href="#top" data-home>{ICON_BACK}<span>Back to {_e(showcase.name)}</span></a></div>
   <div class="view-head"><p class="kicker">For the team</p><h1 id="view-staff-title">Staff calendar</h1>
-    <p>The detailed schedule the team sees, with every appointment on it. Everything on it is fictional and simulated for this demonstration. Use its own arrows and staff filter to move around.</p></div>
-  <iframe id="staff-frame" class="staff-frame" title="Staff calendar (fictional, simulated)" data-src="{_e(cal)}" data-testid="staff-frame"></iframe>
+    <p>The detailed schedule the team sees, with every appointment on it. Use its own arrows and staff filter to move around.</p></div>
+  <iframe id="staff-frame" class="staff-frame" title="Staff calendar" data-src="{_e(cal)}" data-testid="staff-frame"></iframe>
   <p class="view-foot">The schedule reloads when you open it and by itself when the calendar changes, on the day you were looking at.</p>
   <div class="visit-actions"><button type="button" class="btn btn-ghost btn-small" id="staff-refresh" data-refresh="staff" data-testid="staff-refresh">Refresh schedule</button><a class="btn btn-ghost btn-small" href="#calendar">See open times</a></div>
 </div></section>
@@ -262,11 +259,11 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
 <footer class="site-footer"><div class="wrap">
   <div class="footer-grid">
     <div><a class="brand" href="#top">{ICON_LOTUS}<span class="brand-name">{_e(showcase.name)}</span></a>
-      <p style="margin-top:12px;max-width:44ch">{_e(showcase.name)} is a prototype used to demonstrate a voice assistant for spas and salons. It is not a real business.</p></div>
-    <div class="credits"><strong style="color:#cfe8e5">Photo credits</strong> (Unsplash, free to use under the <a href="https://unsplash.com/license" rel="noopener noreferrer" target="_blank">Unsplash License</a>)
-      <ul>{credit_items}</ul><p style="margin-top:8px">Stock photographs. The people shown are not {_e(showcase.name)} staff and no location is pictured.</p></div>
+      <p style="margin-top:12px;max-width:44ch">{_e(showcase.tagline)}</p></div>
+    <div class="credits"><strong style="color:#cfe8e5">Photo credits</strong>: stock photographs from Unsplash, free to use under the <a href="https://unsplash.com/license" rel="noopener noreferrer" target="_blank">Unsplash License</a>.
+      <ul>{credit_items}</ul></div>
   </div>
-  <p class="footer-bottom">{_e(showcase.prototype_label)}.</p>
+  <p class="footer-bottom" data-testid="demo-note">{_e(showcase.demo_note)}</p>
 </div></footer>
 <div class="mobile-cta" aria-label="Quick actions">{call_entry(avatar_file, "chip bar", "Speak to Aria", testid="mobile-call", lazy=True)}
   <a class="btn btn-ghost" style="background:var(--white)" href="#calendar" data-testid="mobile-calendar">{ICON_CALENDAR}<span>Calendar</span></a></div>
@@ -276,7 +273,7 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
 
 <aside class="aria" id="aria" data-state="idle" role="region" aria-label="Aria, the voice assistant" data-testid="aria-widget"{contact_attrs}>
   <p class="aria__status" id="voice-status" role="status" aria-live="polite" hidden data-testid="aria-status"><span class="aria__dot" aria-hidden="true"></span>
-    <span class="aria__body"><span class="aria__text"></span><span class="aria__fine">Aria is an AI voice assistant. Retell may retain this test call for review for up to {retention_days} days.</span></span></p>
+    <span class="aria__body"><span class="aria__text"></span><span class="aria__fine">Aria is an AI voice assistant. Retell may retain this call for review for up to {retention_days} days.</span></span></p>
   <div class="aria__stage">
     <img class="aria__img" src="assets/{avatar_file}" alt="Aria, the {_e(showcase.name)} voice assistant" width="400" height="400" decoding="async" data-testid="aria-avatar">
     <div class="aria__controls">
@@ -286,7 +283,6 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
     <button type="button" class="aria__hide" id="aria-hide" data-testid="aria-hide" aria-label="Hide Aria" title="Hide Aria (a call in progress keeps going)"><span aria-hidden="true">&times;</span></button>
   </div>
 </aside>
-<div class="toast" id="toast" role="status" hidden></div>
 <script src="site.js" defer></script>
 <script src="views.js" defer></script>
 <script src="voice.js" type="module"></script>

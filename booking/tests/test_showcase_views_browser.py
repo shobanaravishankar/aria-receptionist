@@ -939,10 +939,10 @@ def test_asking_aria_from_the_calendar_view_during_a_call_brings_the_same_call_b
         page.wait_for_function("() => !document.getElementById('view-calendar').hidden")
         page.locator('#view-calendar [data-voice-start]').click()
         page.wait_for_timeout(300)
-        return page.evaluate("({created: window.__created, ended: window.__ended, avatar: !document.getElementById('aria').hidden, bar: !document.getElementById('call-bar').hidden, toast: document.getElementById('toast').textContent, view: !document.getElementById('view-calendar').hidden})")
+        return page.evaluate("({created: window.__created, ended: window.__ended, avatar: !document.getElementById('aria').hidden, bar: !document.getElementById('call-bar').hidden, view: !document.getElementById('view-calendar').hidden})")
 
     out = run(driver, stack, work)
-    assert out == {"created": 1, "ended": 0, "avatar": True, "bar": False, "toast": "You’re connected to Aria.", "view": True}, "no 'already connecting' message for a call that is live"
+    assert out == {"created": 1, "ended": 0, "avatar": True, "bar": False, "view": True}, "the same call comes back; nothing is announced and no second call starts"
 
 
 def test_the_preview_photographs_both_views_with_real_open_times_and_reaches_only_this_machine(tmp_path, channel):
