@@ -267,6 +267,123 @@ def test_hanging_up_while_the_sdk_is_still_loading_creates_no_call_at_all(driver
     assert late == {"created": 0, "state": "idle", "ariaCall": None}
 
 
+# ---------------------------------------------------------------- one attempt at a time: nothing from an older call can touch a newer one
+
+GATED_SDK = "await new Promise(resolve => { window.__releaseSdk = resolve; });" + SDK_STUB  # the SDK arrives only when the test lets it
+
+
+def test_cancelling_while_the_sdk_loads_and_calling_again_creates_one_call_not_two(driver, sites):
+    def work(page):
+        page.click('[data-testid="aria-call"]')
+        page.wait_for_function("() => typeof window.__releaseSdk === 'function'")
+        page.click('[data-testid="aria-hangup"]')
+        page.click('[data-testid="aria-call"]')
+        page.evaluate("window.__releaseSdk()")
+        page.wait_for_function("() => window.__created >= 1")
+        page.wait_for_timeout(200)
+        return snapshot(page)
+
+    shown = run(driver, sites["configured"], work, sdk=GATED_SDK)
+    assert shown["created"] == 1 and shown["ended"] == 0 and shown["state"] == "connecting" and shown["hangup"] and shown["ariaCall"] == "1"
+
+
+def test_several_call_and_hang_up_cycles_before_the_sdk_loads_still_create_exactly_one_call(driver, sites):
+    def work(page):
+        page.click('[data-testid="aria-call"]')
+        page.wait_for_function("() => typeof window.__releaseSdk === 'function'")
+        for _ in range(3):
+            page.click('[data-testid="aria-hangup"]')
+            page.click('[data-testid="aria-call"]')
+        page.evaluate("window.__releaseSdk()")
+        page.wait_for_function("() => window.__created >= 1")
+        page.wait_for_timeout(200)
+        return snapshot(page)
+
+    shown = run(driver, sites["configured"], work, sdk=GATED_SDK)
+    assert shown["created"] == 1 and shown["ended"] == 0 and shown["hangup"]
+
+
+FAILING_SDK = "await new Promise(resolve => { window.__releaseSdk = resolve; }); throw new Error('the SDK could not be loaded');"
+
+
+def test_an_sdk_that_fails_to_load_is_reported_for_the_current_attempt_and_for_nobody_else(driver, sites):
+    def work(page):
+        page.click('[data-testid="aria-call"]')
+        page.wait_for_function("() => typeof window.__releaseSdk === 'function'")
+        page.click('[data-testid="aria-hangup"]')   # this attempt is over before the failure arrives
+        page.evaluate("window.__releaseSdk()")
+        page.wait_for_timeout(400)
+        cancelled = snapshot(page)
+        page.click('[data-testid="aria-call"]')      # a new attempt: the SDK has already failed, so this one is told
+        page.wait_for_function("() => document.getElementById('aria').dataset.state === 'error'")
+        return cancelled, snapshot(page)
+
+    cancelled, current = run(driver, sites["configured"], work, sdk=FAILING_SDK)
+    assert cancelled["state"] == "idle" and cancelled["text"] is None and cancelled["call"], "nothing is said about an attempt that was already hung up"
+    assert current["state"] == "error" and current["text"].startswith("Network problem reaching Aria") and "SDK could not be loaded" in current["text"] and current["call"] and not current["hangup"]
+
+
+@pytest.mark.parametrize("late", ["hangup_timer", "repeated_end", "late_error", "late_status", "late_speech"])
+def test_nothing_late_from_the_previous_call_can_reset_or_change_the_new_one(driver, sites, late):
+    def work(page):
+        go_live(page)
+        page.evaluate("window.__old = window.__hooks")
+        if late == "hangup_timer":
+            page.click('[data-testid="aria-hangup"]')  # its safety-net timer is now running
+        page.evaluate("window.__old.onEnd()")
+        page.click('[data-testid="aria-call"]')
+        page.wait_for_function("() => window.__created === 2")
+        page.evaluate("window.__hooks.onStatus('live')")
+        if late == "hangup_timer":
+            page.wait_for_timeout(1900)
+        elif late == "repeated_end":
+            page.evaluate("window.__old.onEnd()")
+        elif late == "late_error":
+            page.evaluate("window.__old.onError(new Error('Failed to fetch'))")
+        elif late == "late_status":
+            page.evaluate("window.__old.onStatus('connecting')")
+        else:
+            page.evaluate("window.__old.onAgentStartTalking()")
+        return snapshot(page)
+
+    shown = run(driver, sites["configured"], work)
+    assert shown["ariaCall"] == "1" and shown["state"] == "live" and shown["hangup"] and not shown["call"] and shown["text"] == "Listening…" and shown["speaking"] is None, shown
+    assert shown["created"] == 2 and shown["ended"] == (1 if late == "hangup_timer" else 0)
+
+
+def test_a_repeated_end_after_the_call_ended_does_not_turn_call_ended_into_a_failure(driver, sites):
+    def work(page):
+        go_live(page)
+        page.evaluate("window.__hooks.onEnd(); window.__hooks.onEnd();")
+        return snapshot(page)
+
+    shown = run(driver, sites["configured"], work)
+    assert shown["state"] == "ended" and shown["text"] == "Call ended."
+
+
+def test_the_hang_up_safety_net_still_recovers_when_the_sdk_never_says_it_ended(driver, sites):
+    def work(page):
+        go_live(page)
+        page.click('[data-testid="aria-hangup"]')
+        page.wait_for_function("() => window.__ended === 1")
+        page.wait_for_timeout(1900)  # the SDK sends no end event at all
+        return snapshot(page)
+
+    shown = run(driver, sites["configured"], work)
+    assert shown["state"] == "ended" and shown["text"] == "Call ended." and shown["call"] and not shown["hangup"] and shown["ariaCall"] is None and shown["ended"] == 1
+
+
+def test_a_microphone_refusal_that_surfaces_as_an_unhandled_rejection_ends_the_call_it_belongs_to(driver, sites):
+    def work(page):
+        start(page)
+        page.evaluate("setTimeout(() => { Promise.reject(Object.assign(new Error('Permission denied'), {name: 'NotAllowedError'})); }, 0)")  # nobody handles it, as in a browser
+        page.wait_for_function("() => document.getElementById('aria').dataset.state === 'error'")
+        return snapshot(page)
+
+    shown = run(driver, sites["configured"], work)
+    assert shown["text"].startswith("Microphone blocked.") and shown["ended"] == 1 and shown["created"] == 1 and shown["call"] and not shown["hangup"]
+
+
 # ---------------------------------------------------------------- hiding never ends a call
 
 

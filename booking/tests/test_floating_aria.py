@@ -196,7 +196,7 @@ def test_a_call_is_only_ever_started_from_a_click_and_nothing_pretends_to_speak(
     assert 'addEventListener("click", startCall)' in VOICE_JS
     assert "Math.random" not in VOICE_JS and "setInterval" not in VOICE_JS and "autoplay" not in VOICE_JS.lower()
     speaking = re.findall(r'dataset\.speaking = "true"', VOICE_JS)
-    assert len(speaking) == 1 and "onAgentStartTalking: () => setSpeaking(true)" in VOICE_JS and "onAgentStopTalking: () => setSpeaking(false)" in VOICE_JS
+    assert len(speaking) == 1 and "onAgentStartTalking: own(() => setSpeaking(true))" in VOICE_JS and "onAgentStopTalking: own(() => setSpeaking(false))" in VOICE_JS
     assert "hideBtn.addEventListener" in VOICE_JS and "function hideWidget" in VOICE_JS
     hide_body = re.search(r"function hideWidget\(\) \{(.*?)\n\}", VOICE_JS, re.S).group(1)
     assert "endCall" not in hide_body and ".end(" not in hide_body, "hiding never ends a call"

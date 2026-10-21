@@ -29,7 +29,8 @@ let sdkPromise = null;   // memoized dynamic import
 let client = null;       // RetellClient (created once)
 let call = null;         // active WebCallSession, or null
 let starting = false;    // request in flight, not yet "live"
-let cancelled = false;   // hung up while the SDK was still loading: no call may be created for that click
+let run = null;          // the call ATTEMPT in progress, {over}: every SDK event and every timer belongs to ONE attempt, and is ignored once that attempt is over or a newer one has begun
+let endTimer = null;     // the safety net after a hang-up; it belongs to the attempt that set it
 let everLive = false;    // did this call reach "live" before ending?
 let failure = null;      // the specific message of a failed start or call: the "ended" event that follows an error must not replace it with the generic one
 let clearTimer = null;
@@ -130,27 +131,30 @@ async function startCall() {
     return;
   }
 
+  const mine = { over: false };
+  run = mine;
+  clearTimeout(endTimer);
   starting = true;
-  cancelled = false;
   failure = null;                  // a new attempt: forget the last failure
   document.documentElement.dataset.ariaCall = "1";
   setStatus("connecting", "Connecting to Aria…");
 
   try {
     const mod = await loadSdk();
-    if (cancelled) { cancelled = false; starting = false; delete document.documentElement.dataset.ariaCall; setStatus("idle", ""); return; }
+    if (run !== mine || mine.over) return;   // hung up while the SDK loaded (and perhaps called again since): only the newest attempt may create a call
     const RetellClient = mod.RetellClient || (mod.default && mod.default.RetellClient);
     if (!RetellClient) throw new Error("Retell SDK failed to load");
     if (!client) client = new RetellClient({ key: cfg.publicKey });
 
+    const own = (fn) => (...args) => { if (run === mine && !mine.over) fn(...args); };   // a late or repeated event from an older call cannot touch this one
     const options = {
       agent_id: cfg.agentId,
       hooks: {
-        onStatus: onStatus,
-        onEnd: onEnd,
-        onError: onError,
-        onAgentStartTalking: () => setSpeaking(true),
-        onAgentStopTalking: () => setSpeaking(false),
+        onStatus: own(onStatus),
+        onEnd: own(onEnd),
+        onError: own(onError),
+        onAgentStartTalking: own(() => setSpeaking(true)),
+        onAgentStopTalking: own(() => setSpeaking(false)),
       },
     };
     if (Number.isFinite(cfg.agentVersion)) options.agent_version = cfg.agentVersion;
@@ -159,7 +163,7 @@ async function startCall() {
     call = client.createWebCall(options);   // returns immediately; progress arrives through the hooks
     syncControls();
   } catch (err) {
-    fail(err);
+    if (run === mine && !mine.over) fail(err);
   }
 }
 
@@ -208,8 +212,10 @@ function fail(err) {
 }
 
 function reset() {
+  if (run) run.over = true;   // whatever this attempt says from now on (a repeated "ended", a late timer) is ignored
+  run = null;
+  clearTimeout(endTimer);
   starting = false;
-  cancelled = false;
   everLive = false;
   call = null;
   delete document.documentElement.dataset.ariaCall;
@@ -219,8 +225,9 @@ function reset() {
 
 async function endCall() {
   if (!call) {
-    if (starting) {   // still loading the SDK: nothing exists to end; make sure nothing is created for that click
-      cancelled = true;
+    if (starting) {   // still loading the SDK: nothing exists to end; that attempt is over, so nothing will be created for that click
+      if (run) run.over = true;
+      run = null;
       starting = false;
       delete document.documentElement.dataset.ariaCall;
       setStatus("idle", "");
@@ -229,12 +236,14 @@ async function endCall() {
     onEnd();
     return;
   }
+  const mine = run;
   hangBtn.disabled = true;
   setStatus("connecting", "Ending the call…");
   try { await call.end(); } catch (_) { /* onEnd/onError will still fire */ }
   hangBtn.disabled = false;
-  // Safety net if no event arrives:
-  setTimeout(() => { if (call) onEnd(); }, 1500);
+  // Safety net if no event arrives: only for THIS call, and only if it is still the current one when the time is up
+  clearTimeout(endTimer);
+  endTimer = setTimeout(() => { if (mine && run === mine && !mine.over && call) onEnd(); }, 1500);
 }
 
 /* ---------------- wire up ---------------- */
@@ -250,8 +259,9 @@ window.addEventListener("unhandledrejection", (e) => {
   const text = ((r && r.name) || "") + " " + ((r && r.message) || String(r || ""));
   if (inCall() && /notallowed|permission|denied/i.test(text)) {
     e.preventDefault();
+    const active = call;   // fail() lets go of the call: take hold of it first so it can be ended
     fail(r);
-    try { call && call.end(); } catch (_) {}
+    try { active && active.end(); } catch (_) {}
   }
 });
 
