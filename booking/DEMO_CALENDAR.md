@@ -131,6 +131,19 @@ data and rules the voice reads, so the page and Aria agree. The server answers r
 `http://127.0.0.1:<page-port>`) read it; start it with `--page-port N` if the page is served on a port other than 5174. `GET /demo/changes` answers a short stamp (changes with
 every stored booking, cancellation or move, and with the demo date) that the website asks while a view is open so it can refresh only when it must. See SHOWCASE.md for the behaviour.
 
+## The rehearsal sheet (examples that follow the real schedule)
+
+```bash
+python -m aria_booking demo-rehearsal --today 2026-10-22          # the day the walk-through is given (default: the real today in the spa's time zone)
+python -m aria_booking demo-rehearsal --today 2026-10-22 --format json
+```
+
+It prints the fictional identities (and which two share a number), who works the next two days, and four example asks, each with the answer the REAL voice tools give for that date:
+an open time for a named technician, a known blocked time with the actual reason and alternatives, a technician who does not do the chosen service, and the cleanup boundary
+(book an appointment; the next start the moment it ends is refused because the technician is still cleaning up, and the first quarter hour after the cleanup is not). Nothing is
+scripted or forced: the examples are chosen by rule from the catalog, roster and schedules, in a throw-away appointment file that is deleted afterwards (the demo's own file is never opened),
+so the same date always gives the same sheet and another date gives its own. The agent decides on the call; the sheet only says what the tools answered when asked the same thing.
+
 ## What to ask (the scripted days: the demo date + 1 and + 2)
 
 On the demo date + 1 (a massage at 4 PM unless stated). `python -m aria_booking demo-day [--date YYYY-MM-DD] [--today YYYY-MM-DD]` prints who works and what is booked on any covered day:

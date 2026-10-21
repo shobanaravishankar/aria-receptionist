@@ -130,6 +130,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("demo-day", help="print who works and what is booked on one demo day (invented data), so a demo can ask grounded questions")
     p.add_argument("--date", default=None, help="YYYY-MM-DD (default: the day after the demo date)")
     p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today)")
+    p = sub.add_parser("demo-rehearsal", help="print a rehearsal sheet for a supervised walk-through: fictional identities, who works, and example asks with the answers the real tools give "
+                                              "(invented data, computed in a throw-away file; the demo's own appointment file is never opened)")
+    p.add_argument("--today", default=None, help="the day the walk-through is given, YYYY-MM-DD (default: the real today in the spa's time zone)")
+    p.add_argument("--format", choices=("text", "json"), default="text", help="text (default) or json")
     p = sub.add_parser("demo-screenshots", help="photograph the demo calendar page at the reference viewports (PNG files); invented data, loopback only")
     p.add_argument("--out", required=True, help="the folder for the PNG files")
     p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today)")
@@ -192,6 +196,9 @@ def main(
             overrides={"tunnel_url": args.tunnel_url, "state_dir": args.state_dir, "web_dir": args.web_dir,
                        "calendar_port": args.calendar_port, "page_port": args.page_port, "mode": args.mode},
         )
+
+    if args.command == "demo-rehearsal":
+        return _demo_rehearsal(args, out)
 
     if args.command in ("demo-screenshots", "demo-compare", "demo-day"):
         return _demo_visual(args, cfg, out)
@@ -605,6 +612,23 @@ def _demo_serve_lifecycle(args, cfg: Config, key: str, tool_token: str, today, o
         site.shutdown()
         site.server_close()
         driver.close()
+    return EXIT_OK
+
+
+def _demo_rehearsal(args, out) -> int:
+    """The rehearsal sheet: standalone, read-only in spirit (a temporary appointment file that is deleted), no Retell key, no Booksy, no network."""
+    import json
+
+    from .demo import SPA_TIMEZONE
+    from .demo.rehearsal import rehearsal_plan, render_text
+
+    try:
+        day = date.fromisoformat(args.today) if args.today else datetime.now(ZoneInfo(SPA_TIMEZONE)).date()
+    except ValueError:
+        out("refused: --today must look like 2026-10-22.")
+        return EXIT_REFUSED
+    sheet = rehearsal_plan(day)
+    out(json.dumps(sheet, indent=2, ensure_ascii=False) if args.format == "json" else render_text(sheet))
     return EXIT_OK
 
 
