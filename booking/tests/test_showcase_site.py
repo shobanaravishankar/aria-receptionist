@@ -251,6 +251,7 @@ def test_every_picture_and_font_has_provenance_and_the_footer_credits_the_photog
     footer = html[html.index("<footer"):]
     assert "Photo credits" in footer and "stock photographs from Unsplash" in footer and 'href="https://unsplash.com/license"' in footer and 'rel="noopener noreferrer"' in footer
     assert footer.count('target="_blank"') == len(credits["images"]) + 1, "every photographer is a link, and so is the license"
+    assert footer.count('rel="noopener noreferrer"') == footer.count('target="_blank"'), "every link that opens a new tab is also cut off from this page"
 
 
 def test_jpeg_files_are_real_pictures_of_the_recorded_size():
@@ -290,3 +291,10 @@ def test_the_theme_tokens_are_in_the_page_and_the_page_is_teal_led(built):
 
 def test_durations_are_spoken_the_same_way_as_the_menu_shows_them():
     assert [duration_text(m) for m in (15, 30, 60, 75, 90, 120, None)] == ["15 min", "30 min", "1 hr", "1 hr 15 min", "1 hr 30 min", "2 hr", ""]
+
+
+def test_no_title_label_or_alt_text_a_visitor_can_hover_or_hear_calls_the_site_a_demonstration(built):
+    _out, _html, page = built
+    values = [v for _t, a in page.tags for k, v in a.items() if k in ("title", "aria-label", "alt", "content") and v]
+    assert values and [v for v in values if re.search(WORDS, v, re.I)] == [], [v for v in values if re.search(WORDS, v, re.I)]
+    assert page.find("iframe", id="staff-frame")[0]["title"] == "Staff calendar"
