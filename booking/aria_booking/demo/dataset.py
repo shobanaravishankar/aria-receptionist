@@ -162,6 +162,10 @@ class DemoDataset:
     def covers(self, day: date) -> bool:
         return self.first_day <= day <= self.last_day
 
+    def change_stamp(self) -> str:
+        """Differs when what a page would show differs: the demo date, or any stored appointment. A page that polls this refreshes only when it changes."""
+        return f"{self.today.isoformat()}|" + (self.overlay.stamp() if self.overlay is not None else "static")
+
     @property
     def registry(self) -> BookableRegistry:
         return self._registry

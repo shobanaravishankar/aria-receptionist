@@ -14,6 +14,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from aria_booking.appointments.lifecycle import open_lifecycle
+from aria_booking.appointments.models import NewBooking, to_epoch
 from aria_booking.config import Config
 from aria_booking.demo.dataset import DemoDataset
 from aria_booking.demo.open_times import open_times
@@ -41,7 +43,7 @@ class Quiet(SimpleHTTPRequestHandler):
         return
 
 
-def start_stack(site_dir, dataset):
+def start_stack(site_dir, dataset, *, refresh_seconds: int = 5):
     """The website on one local port and the calendar on another, wired the way the operator wires them; returns what the tests need and what closes them."""
     page_server = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(site_dir)))
     threading.Thread(target=page_server.serve_forever, daemon=True).start()
@@ -49,7 +51,7 @@ def start_stack(site_dir, dataset):
     calendar = make_site(dataset, 0, allowed_origins=page_origins(page_port), clock=lambda: NOW)
     threading.Thread(target=calendar.serve_forever, daemon=True).start()
     calendar_port = calendar.server_address[1]
-    build_site(site_dir, settings=SETTINGS, calendar_port=calendar_port)
+    build_site(site_dir, settings=SETTINGS, calendar_port=calendar_port, refresh_seconds=refresh_seconds)
     return {"page": f"http://127.0.0.1:{page_port}/", "calendar_port": calendar_port, "dataset": dataset}, (page_server, calendar)
 
 
@@ -88,7 +90,13 @@ def run(driver, stack, work, *, width=1440, height=900, url=None):
             page.route(SDK_URL, lambda route: route.fulfill(status=200, content_type="application/javascript", headers={"access-control-allow-origin": "*"}, body=SDK_STUB))
 
             def localhost(route):
-                route.fulfill(response=route.fetch(url=route.request.url.replace("//localhost:", "//127.0.0.1:")))
+                try:
+                    route.fulfill(response=route.fetch(url=route.request.url.replace("//localhost:", "//127.0.0.1:")))
+                except Exception:  # the calendar this page was talking to has been shut down (a test ended): the request simply fails
+                    try:
+                        route.abort()
+                    except Exception:
+                        pass
 
             page.route("http://localhost:*/**", localhost)
             page._ready = True
@@ -97,7 +105,10 @@ def run(driver, stack, work, *, width=1440, height=900, url=None):
         page.goto(url or stack["page"], wait_until="load")
         page.wait_for_selector("h1", state="attached")  # a deep link opens with the home page's heading hidden
         page.evaluate("window.__marker = 'same page'")
-        return work(page)
+        try:
+            return work(page)
+        finally:
+            page.goto("about:blank")  # leave nothing running (the page asks its calendar questions only while a view is open)
 
     return driver._run(go, 90)
 
@@ -111,6 +122,35 @@ def staff_frame(page, seconds: float = 15.0):
                 return frame
         page.wait_for_timeout(200)
     raise AssertionError(f"no frame shows the staff calendar; frames: {[f.url for f in page.frames]}")
+
+
+def frame_day(page) -> str:
+    """The day the staff frame is showing, asked afresh each time: the frame replaces itself when it changes day, which can end an evaluation in flight."""
+    for _ in range(3):
+        try:
+            return staff_frame(page, 5).evaluate("document.body.dataset.demoDate || ''")
+        except Exception:
+            page.wait_for_timeout(120)
+    return ""
+
+
+def wait_for_day(page, iso: str, seconds: float = 10.0) -> None:
+    deadline = datetime.now() + timedelta(seconds=seconds)
+    while datetime.now() < deadline:
+        if frame_day(page) == iso:
+            return
+        page.wait_for_timeout(120)
+    raise AssertionError(f"the staff frame never showed {iso}; it shows {frame_day(page)!r}")
+
+
+def click_next_day(page) -> None:
+    for _ in range(3):
+        try:
+            staff_frame(page, 5).locator('[data-testid="date-switcher-next"]').click(timeout=5000)
+            return
+        except Exception:
+            page.wait_for_timeout(150)
+    raise AssertionError("could not press the staff calendar's next-day arrow")
 
 
 def state(page) -> dict:
@@ -354,6 +394,408 @@ def test_an_unreadable_schedule_is_said_as_cannot_confirm_and_never_shown_as_fre
     mixed, alone = run(driver, unreadable_stack, work)
     assert mixed["state"] == "open" and whole["message"] in mixed["text"] and all(tech != "Delphine" for _t, tech in mixed["slots"])
     assert alone["state"] == "unknown" and alone["slots"] == [] and only["message"] in alone["text"] and "No openings" not in alone["text"]
+
+
+# ---------------------------------------------------------------- Home is explicit; the frame's own days never spend the Back button
+
+
+def test_back_to_serenity_goes_home_after_the_staff_frames_day_changes(driver, stack):
+    def work(page):
+        page.locator('[data-testid="nav-staff-calendar"]').click()
+        staff_frame(page).wait_for_selector('[data-testid="date-switcher-next"]')
+        click_next_day(page)
+        wait_for_day(page, "2026-10-15")
+        click_next_day(page)
+        wait_for_day(page, "2026-10-16")
+        page.locator('#view-staff [data-home]').click()
+        page.wait_for_timeout(300)
+        out = page.evaluate("({home: !document.getElementById('home').hidden, staff: !document.getElementById('view-staff').hidden, marker: window.__marker})")
+        page.locator('[data-testid="nav-staff-calendar"]').click()  # the view still opens again, on the day it was showing
+        page.wait_for_function("() => !document.getElementById('view-staff').hidden")
+        wait_for_day(page, "2026-10-16")
+        out["again"] = frame_day(page)
+        return out
+
+    out = run(driver, stack, work)
+    assert out["home"] is True and out["staff"] is False and out["marker"] == "same page", out
+    assert out["again"] == "2026-10-16", "reopening keeps the day that was showing"
+
+
+def test_the_browsers_back_button_is_not_spent_on_the_frames_days(driver, stack):
+    def work(page):
+        page.locator('[data-testid="nav-staff-calendar"]').click()
+        staff_frame(page).wait_for_selector('[data-testid="date-switcher-next"]')
+        for expected in ("2026-10-15", "2026-10-16"):
+            click_next_day(page)
+            wait_for_day(page, expected)
+        page.go_back()
+        page.wait_for_function("() => document.getElementById('home').hidden === false")
+        after_back = page.evaluate("({home: !document.getElementById('home').hidden, marker: window.__marker, pages: 1})")
+        page.go_forward()
+        page.wait_for_function("() => !document.getElementById('view-staff').hidden")
+        return after_back, frame_day(page)
+
+    after_back, day_after_forward = run(driver, stack, work)
+    assert after_back == {"home": True, "marker": "same page", "pages": 1}, "one Back from the staff calendar is home, however many days the frame moved through"
+    assert day_after_forward in ("2026-10-14", "2026-10-15", "2026-10-16")
+
+
+def test_going_home_by_the_control_then_back_does_not_reopen_the_view_or_leave_the_site_page(driver, stack):
+    def work(page):
+        page.locator('[data-testid="nav-staff-calendar"]').click()
+        page.wait_for_function("() => !document.getElementById('view-staff').hidden")
+        page.locator('#view-staff [data-home]').click()
+        page.wait_for_function("() => document.getElementById('home').hidden === false")
+        page.go_back()
+        page.wait_for_timeout(300)
+        return page.evaluate("({home: !document.getElementById('home').hidden, staff: !document.getElementById('view-staff').hidden, marker: window.__marker, hash: location.hash})")
+
+    out = run(driver, stack, work)
+    assert out["home"] is True and out["staff"] is False and out["marker"] == "same page"
+
+
+def test_the_calendar_page_on_its_own_still_navigates_normally_and_only_the_framed_one_replaces(driver, stack):
+    def work(page):
+        page.goto(calendar_link(stack["calendar_port"]).replace("//localhost:", "//127.0.0.1:"), wait_until="load")
+        page.wait_for_selector('[data-testid="date-switcher-next"]')
+        first = page.evaluate("document.body.dataset.demoDate")
+        page.locator('[data-testid="date-switcher-next"]').click()
+        page.wait_for_function("(day) => document.body.dataset.demoDate !== day", arg=first)
+        second = page.evaluate("document.body.dataset.demoDate")
+        page.go_back()  # on its own the page keeps ordinary browser history: Back is the day before
+        page.wait_for_function("(day) => document.body.dataset.demoDate === day", arg=first)
+        return first, second
+
+    first, second = run(driver, stack, work)
+    assert first == "2026-10-14" and second == "2026-10-15"
+
+
+# ---------------------------------------------------------------- fresh, not stale
+
+
+def book(lc, name: str, phone: str, hour: int, *, day=TOMORROW, staff: str = "910006", service: str = SWEDISH60):
+    """A confirmed synthetic booking made the way a successful voice booking is: through the store, judged by the same rules, into a temporary file."""
+    svc = lc.dataset.registry.get(service)
+    start = to_epoch(datetime(day.year, day.month, day.day, hour, 0, tzinfo=TZ))
+    outcome = lc.store.book(NewBooking(name, phone, service, svc.booksy_name, "massage", staff, start, svc.duration_minutes, svc.buffer_before_minutes, svc.buffer_after_minutes),
+                            validate=lc.judge.validator())
+    assert outcome.status == "booked", outcome
+    return outcome.appointment
+
+
+def lifecycle_stack(tmp_path, refresh_seconds):
+    lc = open_lifecycle(tmp_path / "fresh.sqlite3", today=TODAY, real_now=lambda: NOW, seed=False)
+    found, servers = start_stack(tmp_path / "site", lc.dataset, refresh_seconds=refresh_seconds)
+    found["lc"] = lc
+    return found, servers
+
+
+@pytest.fixture
+def fresh(tmp_path):
+    """A calendar with a stored-appointment file; the page asks 'has anything changed?' every second."""
+    found, servers = lifecycle_stack(tmp_path, 1)
+    yield found
+    for server in servers:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.fixture
+def slow(tmp_path):
+    """The same, but the page waits a minute between questions, so only opening a view or the Refresh button can show a change."""
+    found, servers = lifecycle_stack(tmp_path, 60)
+    yield found
+    for server in servers:
+        server.shutdown()
+        server.server_close()
+
+
+def frame_text_has(page, needle: str, seconds: float = 8.0) -> bool:
+    deadline = datetime.now() + timedelta(seconds=seconds)
+    while datetime.now() < deadline:
+        try:
+            if needle in staff_frame(page, 2).locator("body").inner_text():
+                return True
+        except Exception:
+            pass
+        page.wait_for_timeout(150)
+    return False
+
+
+def frame_text_lacks(page, needle: str, seconds: float = 8.0) -> bool:
+    deadline = datetime.now() + timedelta(seconds=seconds)
+    while datetime.now() < deadline:
+        try:
+            if needle not in staff_frame(page, 2).locator("body").inner_text():
+                return True
+        except Exception:
+            pass
+        page.wait_for_timeout(150)
+    return False
+
+
+def card_has(page, who: str, when: str, seconds: float = 8.0) -> bool:
+    """Is there a card for ``who`` whose own text carries ``when``? (Other technicians' visits at the same hours must not count.)"""
+    script = """([who, when]) => [...document.querySelectorAll('*')].some(e => e.children.length === 0 && e.textContent.trim() === who
+        && (e.closest('[class*=_card_]') || e.parentElement).innerText.includes(when))"""
+    deadline = datetime.now() + timedelta(seconds=seconds)
+    while datetime.now() < deadline:
+        try:
+            if staff_frame(page, 2).evaluate(script, [who, when]):
+                return True
+        except Exception:
+            pass
+        page.wait_for_timeout(150)
+    return False
+
+
+def go_to(page, selector: str, view: str):
+    page.locator(selector).click()
+    page.wait_for_function(f"() => !document.getElementById('{view}').hidden")
+
+
+def home(page):
+    page.locator("header a.brand").click()
+    page.wait_for_function("() => !document.getElementById('home').hidden")
+
+
+def test_reopening_the_staff_calendar_shows_a_booking_a_cancellation_and_a_move_made_while_it_was_away(driver, slow):
+    lc = slow["lc"]
+
+    def work(page):
+        go_to(page, '[data-testid="nav-staff-calendar"]', "view-staff")
+        staff_frame(page).wait_for_selector('[data-testid="date-switcher-next"]')
+        click_next_day(page)
+        wait_for_day(page, "2026-10-15")
+        seen = {}
+        home(page)
+        booked = book(lc, "Review Calendar Person", "+12125550188", 16)
+        go_to(page, '[data-testid="nav-staff-calendar"]', "view-staff")
+        seen["booked"] = frame_text_has(page, "Review P.")
+        seen["day"] = frame_day(page)
+        home(page)
+        lc.store.cancel(booked.reference)
+        go_to(page, '[data-testid="nav-staff-calendar"]', "view-staff")
+        seen["cancelled"] = frame_text_lacks(page, "Review P.")
+        home(page)
+        moved = book(lc, "Move Calendar Person", "+12125550189", 16)
+        lc.store.reschedule(moved.reference, start_utc=to_epoch(datetime(2026, 10, 15, 17, 0, tzinfo=TZ)), validate=lc.judge.validator())
+        go_to(page, '[data-testid="nav-staff-calendar"]', "view-staff")
+        seen["moved"] = card_has(page, "Move P.", "5:00 PM - 6:00 PM")
+        seen["marker"] = page.evaluate("window.__marker")
+        seen["pages"] = len(page.context.pages)
+        return seen
+
+    seen = run(driver, slow, work)
+    assert seen == {"booked": True, "day": "2026-10-15", "cancelled": True, "moved": True, "marker": "same page", "pages": 1}, seen
+
+
+def test_a_change_made_while_the_staff_calendar_is_open_appears_by_itself_on_the_same_day_without_reloading_the_page(driver, fresh):
+    lc = fresh["lc"]
+
+    def work(page):
+        go_to(page, '[data-testid="nav-staff-calendar"]', "view-staff")
+        staff_frame(page).wait_for_selector('[data-testid="date-switcher-next"]')
+        click_next_day(page)
+        wait_for_day(page, "2026-10-15")
+        staff_frame(page).evaluate("document.body.dataset.probe = 'still here'")
+        page.wait_for_timeout(3500)  # several polls with nothing changed: the frame must not be reloaded for nothing
+        untouched = staff_frame(page).evaluate("document.body.dataset.probe || null")
+        book(lc, "Auto Refresh Person", "+12125550190", 16)
+        seen = frame_text_has(page, "Auto P.", 9)
+        return untouched, seen, frame_day(page), page.evaluate("window.__marker")
+
+    untouched, seen, day, marker = run(driver, fresh, work)
+    assert untouched == "still here", "nothing changed, so nothing was reloaded"
+    assert seen is True and day == "2026-10-15" and marker == "same page"
+
+
+def test_the_refresh_buttons_show_a_change_at_once(driver, slow):
+    lc = slow["lc"]
+
+    def work(page):
+        go_to(page, '[data-testid="nav-staff-calendar"]', "view-staff")
+        staff_frame(page).wait_for_selector('[data-testid="date-switcher-next"]')
+        click_next_day(page)
+        wait_for_day(page, "2026-10-15")
+        book(lc, "Button Refresh Person", "+12125550191", 16)
+        assert frame_text_lacks(page, "Button P.", 1.0), "the page is not polling yet: nothing changed on screen"
+        page.locator('[data-testid="staff-refresh"]').click()
+        return frame_text_has(page, "Button P."), frame_day(page)
+
+    shown, day = run(driver, slow, work)
+    assert shown is True and day == "2026-10-15"
+
+
+def test_a_forged_message_cannot_redirect_what_a_refresh_loads(driver, slow):
+    def work(page):
+        go_to(page, '[data-testid="nav-staff-calendar"]', "view-staff")
+        staff_frame(page).wait_for_selector('[data-testid="date-switcher-next"]')
+        click_next_day(page)
+        wait_for_day(page, "2026-10-15")
+        # a message from the page itself (not from the frame), and one from the frame naming an address that is not the calendar's
+        page.evaluate("window.postMessage({type: 'serenity-calendar', url: 'https://example.com/elsewhere'}, '*')")
+        staff_frame(page).evaluate("parent.postMessage({type: 'serenity-calendar', url: 'https://example.com/elsewhere'}, '*')")
+        # a message from the page itself that names a real-looking calendar address (the calendar's own origin): only the check on WHO sent it can refuse this one
+        page.evaluate("window.postMessage({type: 'serenity-calendar', url: window.SERENITY_BOOKABLE.calendarOrigin + '/pro/en-us/9000001/calendar?date=2026-10-20'}, '*')")
+        page.wait_for_timeout(300)
+        page.locator('[data-testid="staff-refresh"]').click()
+        wait_for_day(page, "2026-10-15")
+        return staff_frame(page).url, page.evaluate("document.getElementById('staff-frame').contentWindow !== null")
+
+    url, alive = run(driver, slow, work)
+    assert url.startswith(f"http://localhost:{slow['calendar_port']}/pro/en-us/9000001/calendar") and "example.com" not in url and "2026-10-15" in url and alive
+
+
+def test_a_refresh_keeps_the_schedule_where_the_viewer_had_scrolled_it(driver, slow):
+    def work(page):
+        go_to(page, '[data-testid="nav-staff-calendar"]', "view-staff")
+        staff_frame(page).wait_for_selector("#ariaGrid")
+        staff_frame(page).evaluate("document.getElementById('ariaGrid').scrollTop = 320; document.body.dataset.probe = 'before'")
+        page.wait_for_timeout(200)
+        page.locator('[data-testid="staff-refresh"]').click()
+        deadline = datetime.now() + timedelta(seconds=8)
+        while datetime.now() < deadline:
+            try:
+                state_now = staff_frame(page, 2).evaluate("({probe: document.body.dataset.probe || null, top: document.getElementById('ariaGrid').scrollTop})")
+                if state_now["probe"] is None:  # the frame has been reloaded
+                    return state_now
+            except Exception:
+                pass
+            page.wait_for_timeout(120)
+        return None
+
+    reloaded = run(driver, slow, work)
+    assert reloaded is not None and reloaded["top"] >= 300, f"the reloaded schedule is scrolled back to where it was: {reloaded}"
+
+
+def open_slots(page) -> list:
+    return page.evaluate("[...document.querySelectorAll('#ot-results .slot')].map(li => [li.querySelector('.slot-time').textContent, li.querySelector('.slot-tech').textContent.replace(/^with /, '')])")
+
+
+def test_reopening_the_calendar_or_pressing_refresh_shows_the_times_as_they_are_now(driver, slow):
+    lc = slow["lc"]
+
+    def work(page):
+        open_calendar(page)
+        first = pick(page, "Swedish Massage", "1 hr · $85", TOMORROW.isoformat())
+        home(page)
+        book(lc, "Taken Time Person", "+12125550192", 16)
+        go_to(page, '[data-testid="nav-calendar"]', "view-calendar")
+        page.wait_for_function("() => document.querySelectorAll('#ot-results .slot').length > 0")
+        page.wait_for_timeout(500)
+        reopened = open_slots(page)
+        book(lc, "Second Taken Person", "+12125550193", 12, staff="910007")
+        page.locator('[data-testid="ot-refresh"]').click()
+        page.wait_for_timeout(600)
+        return first["slots"], reopened, open_slots(page), page.evaluate("window.__marker")
+
+    first, reopened, refreshed, marker = run(driver, slow, work)
+    expected_after_first = open_times(lc.dataset, SWEDISH60, TOMORROW, tz=TZ, now=NOW)
+    assert first != reopened and any("Sienna" in techs for _t, techs in first if _t == "4 PM") and not any("Sienna" in techs for _t, techs in reopened if _t == "4 PM")
+    assert marker == "same page"
+    assert refreshed == [[t["label"], ", ".join(t["technicians"])] for t in expected_after_first["times"]], "the page lists exactly what the calendar gives now"
+
+
+def test_open_times_on_screen_follow_a_change_by_themselves_while_the_view_is_open(driver, fresh):
+    lc = fresh["lc"]
+
+    def work(page):
+        open_calendar(page)
+        pick(page, "Swedish Massage", "1 hr · $85", TOMORROW.isoformat())
+        before = open_slots(page)
+        book(lc, "Live Change Person", "+12125550194", 16)
+        page.wait_for_function("() => { const t = [...document.querySelectorAll('#ot-results .slot')].find(li => li.querySelector('.slot-time').textContent === '4 PM'); return !t || !t.textContent.includes('Sienna'); }", timeout=9000)
+        return before, open_slots(page)
+
+    before, after = run(driver, fresh, work)
+    assert any(t == "4 PM" and "Sienna" in techs for t, techs in before) and not any(t == "4 PM" and "Sienna" in techs for t, techs in after)
+
+
+def test_the_page_only_asks_whether_anything_changed_while_a_view_is_open(driver, fresh):
+    def work(page):
+        counts = []
+        page.on("request", lambda request: counts.append(request.url) if "/demo/changes" in request.url else None)
+        page.wait_for_timeout(2500)
+        at_home = len(counts)
+        go_to(page, '[data-testid="nav-calendar"]', "view-calendar")
+        page.wait_for_timeout(3500)
+        open_count = len(counts)
+        home(page)
+        settled = len(counts)
+        page.wait_for_timeout(2500)
+        return at_home, open_count, settled, len(counts)
+
+    at_home, open_count, settled, later = run(driver, fresh, work)
+    assert at_home == 0, "no questions on the home page"
+    assert 2 <= open_count <= 8, f"about one a second while a view is open, not a flood: {open_count}"
+    assert later <= settled + 1, "and none after going home"
+
+
+@pytest.mark.parametrize("first_outcome,second_outcome", [("ok", "ok"), ("ok", "fail"), ("fail", "ok")])
+def test_a_late_answer_to_an_older_search_never_replaces_the_newest_one(driver, stack, first_outcome, second_outcome):
+    """Two searches (15th then 16th) are in flight; the 16th answers first, the 15th last. Whatever the 15th does, success or failure, the 16th stays on screen.
+    The reverse (the 15th answers first and the 16th fails) leaves the failure on screen."""
+
+    def work(page):
+        open_calendar(page)
+        page.evaluate("""() => {
+            const original = window.fetch;
+            window.__searches = [];
+            window.fetch = (url, ...rest) => {
+                if (!String(url).includes('/demo/open-times?')) return original(url, ...rest);
+                return new Promise((resolve, reject) => window.__searches.push({url, resolve, reject}));
+            };
+        }""")
+        for date_text in ("2026-10-15", "2026-10-16"):
+            page.locator("#ot-date").fill(date_text)
+            page.locator("#open-times-form").evaluate("f => f.requestSubmit()")
+        page.wait_for_function("() => window.__searches.length === 2")
+
+        def settle(index, outcome, label):
+            if outcome == "ok":
+                page.evaluate("([i, label]) => window.__searches[i].resolve({json: async () => ({status: 'open', day: label, service: label, times: [{label: '4:00 PM', technicians: ['Sienna']}]})})", [index, label])
+            else:
+                page.evaluate("(i) => window.__searches[i].reject(new Error('down'))", index)
+
+        if first_outcome == "ok" and second_outcome == "ok":
+            settle(1, "ok", "Newest")
+            page.wait_for_function("() => document.getElementById('ot-results').textContent.includes('Newest')")
+            settle(0, "ok", "Older")
+        elif first_outcome == "ok":  # the older one succeeds late, after the newest has failed
+            settle(1, "fail", "")
+            page.wait_for_function("() => document.getElementById('ot-results').dataset.state === 'error'")
+            settle(0, "ok", "Older")
+        else:  # the newest succeeded, then the older one fails late
+            settle(1, "ok", "Newest")
+            page.wait_for_function("() => document.getElementById('ot-results').textContent.includes('Newest')")
+            settle(0, "fail", "")
+        page.wait_for_timeout(200)
+        return page.locator("#ot-date").input_value(), page.evaluate("({text: document.getElementById('ot-results').textContent, state: document.getElementById('ot-results').dataset.state})")
+
+    selected, shown = run(driver, stack, work)
+    assert selected == "2026-10-16"
+    if second_outcome == "ok":
+        assert "Newest" in shown["text"] and "Older" not in shown["text"] and shown["state"] == "open"
+    else:
+        assert shown["state"] == "error" and "Older" not in shown["text"], "an older success after the newest failed does not hide the failure"
+
+
+def test_a_failed_refresh_keeps_the_times_on_screen_and_says_they_may_be_out_of_date(driver, slow):
+    def work(page):
+        open_calendar(page)
+        pick(page, "Swedish Massage", "1 hr · $85", TOMORROW.isoformat())
+        before = open_slots(page)
+        page.route("http://localhost:*/demo/open-times**", lambda route: route.abort())
+        try:
+            page.locator('[data-testid="ot-refresh"]').click()
+            page.wait_for_function("() => document.getElementById('ot-refresh-note').textContent !== ''")
+            return before, open_slots(page), page.locator("#ot-refresh-note").inner_text(), page.evaluate("document.getElementById('ot-results').dataset.state")
+        finally:
+            page.unroute("http://localhost:*/demo/open-times**")
+
+    before, during, note, state = run(driver, slow, work)
+    assert before and during == before and "out of date" in note and state == "open"
 
 
 # ---------------------------------------------------------------- the call survives

@@ -16,6 +16,7 @@ from .page import render_page
 
 CALENDAR_PATH = f"/pro/en-us/{DEMO_BUSINESS_ID}/calendar"
 OPEN_TIMES_PATH = "/demo/open-times"
+CHANGES_PATH = "/demo/changes"
 MAX_PARAM = 80
 
 
@@ -31,7 +32,7 @@ def page_origins(page_port: int) -> tuple[str, ...]:
 def make_site(
     dataset: DemoDataset, port: int, host: str = "127.0.0.1", *, allowed_origins: Iterable[str] = (), clock: Optional[Callable[[], datetime]] = None,
 ) -> ThreadingHTTPServer:
-    """The calendar page, and two small READ-ONLY JSON answers for the website: ``/demo/health`` and ``/demo/open-times``. A browser page on one of ``allowed_origins`` may read them
+    """The calendar page, and three small READ-ONLY JSON answers for the website: ``/demo/health``, ``/demo/open-times`` and ``/demo/changes``. A browser page on one of ``allowed_origins`` may read them
     (CORS); no other origin is told it may. Nothing here writes, and the open times are derived from the same calendar the voice reads (see open_times.py)."""
     if host not in ("127.0.0.1", "::1", "localhost"):
         raise ValueError("the demo calendar binds to the loopback interface only")
@@ -60,6 +61,8 @@ def make_site(
             query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
             if parsed.path == OPEN_TIMES_PATH:
                 return self._open_times(query)
+            if parsed.path == CHANGES_PATH:  # has anything changed? a few bytes; lets the website refresh a view only when it must
+                return self._send(200, json.dumps({"stamp": dataset.change_stamp(), "today": dataset.today.isoformat()}).encode("utf-8"), "application/json", self._cors())
             if parsed.path in ("/", ""):
                 return self._send(302, b"", extra={"Location": f"{CALENDAR_PATH}?date=today&view=day&staffers=working"})
             if parsed.path == "/demo/health":

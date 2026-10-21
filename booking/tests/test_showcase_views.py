@@ -171,9 +171,33 @@ def test_the_view_script_holds_no_credential_and_reaches_only_the_configured_cal
         assert word not in js.lower().replace(" ", ""), word
     assert "window.open" not in js and "_blank" not in js and not re.search(r"setAttribute\(\s*[\"']target[\"']", js) and not re.search(r"\.target\s*=[^=]", js)
     fetches = re.findall(r"fetch\(([^,)]*)", js)
-    assert len(fetches) == 2 and all(f.strip() == "url" or "data.calendarOrigin" in f for f in fetches), fetches
+    assert len(fetches) == 3 and all(f.strip() == "url" or "data.calendarOrigin" in f for f in fetches), fetches
+    assert sorted(re.findall(r"/demo/[a-z-]+", js)) == ["/demo/changes", "/demo/health", "/demo/open-times"], "the only calendar addresses it asks"
     assert [m for m in re.findall(r"var url = ([^;]*)", js) if "data.calendarOrigin" in m], "the request address is built from the configured calendar origin"
     assert not re.search(r"method\s*:\s*[\"'](POST|PUT|PATCH|DELETE)", js, re.I)
+
+
+def test_the_view_script_never_uses_browser_history_to_go_home_and_drops_late_answers():
+    js = (SITE_DIR / "views.js").read_text(encoding="utf-8")
+    code = "\n".join(line for line in js.splitlines() if not line.strip().startswith(("*", "/*", "//")))
+    assert "history.back" not in code and "history.go(" not in code and "history.forward" not in code, "Home must not depend on a history that the staff frame's days also fill"
+    assert "replaceState" in code
+    assert code.count("mine === latest") == 1 and code.count("mine !== latest") == 1, "both the answer and the failure of a search are checked against the newest search"
+    assert "++latest" in code and re.search(r"fetch\(url[^)]*\)\.then\(function \(r\) \{ return r\.json\(\); \}\)\.then\(function \(r\) \{\s*if \(mine === latest\) render\(r\);", code)
+    assert re.search(r"visibilityState", code), "the watcher pauses while the page is hidden"
+    assert "setInterval" not in code, "the watcher is a chain of single timeouts that backs off, never a fixed interval that piles up"
+
+
+def test_the_framed_calendar_page_replaces_its_own_history_and_reports_its_day_only_when_framed():
+    from aria_booking.demo.page import render_page
+
+    html = render_page(DemoDataset(TODAY), TODAY)
+    script = html[html.rindex("<script>"):]
+    assert "embedded=window.parent!==window" in script
+    assert "if(embedded){location.replace(url);}else{location.href=url;}" in script, "on its own the page navigates as before"
+    assert script.count("postMessage") == 1 and script.index("postMessage") > script.index("if(embedded){\n    var key"), "it reports only when framed"
+    assert "serenity-calendar" in script and "'*'" in script and "location.href" in script
+    assert "document.cookie" not in script and "localStorage" not in script, "nothing stored beyond its own scroll position for the session"
 
 
 def test_the_page_has_no_outside_address_in_the_new_views(built):
@@ -270,6 +294,63 @@ def test_nothing_can_be_written_through_the_open_times_address(calendar, method)
     status, _h, _body = fetch(f"{base}{OPEN_TIMES_PATH}?service_id={SWEDISH60}&date={TOMORROW}", method=method, origin="http://localhost:5174")
     assert status == 405
     assert open_times(dataset, SWEDISH60, date.fromisoformat(TOMORROW), tz=TZ, now=NOW) == before
+
+
+# ---------------------------------------------------------------- "has anything changed?"
+
+
+def test_the_change_stamp_over_http_is_static_for_the_plain_calendar_and_carries_no_personal_detail(calendar):
+    dataset, base = calendar
+    status, headers, body = fetch(f"{base}/demo/changes", origin="http://localhost:5174")
+    assert status == 200 and json.loads(body) == {"stamp": f"{TODAY.isoformat()}|static", "today": TODAY.isoformat()}
+    assert headers["Access-Control-Allow-Origin"] == "http://localhost:5174" and headers["Cache-Control"] == "no-store"
+    status, headers, _b = fetch(f"{base}/demo/changes", origin="https://example.com")
+    assert status == 200 and "Access-Control-Allow-Origin" not in headers
+    assert fetch(f"{base}/demo/changes", method="POST", origin="http://localhost:5174")[0] == 405
+
+
+def test_the_stamp_changes_with_every_booking_cancellation_and_move_and_only_then(tmp_path):
+    from aria_booking.appointments.lifecycle import open_lifecycle
+    from aria_booking.appointments.models import NewBooking, to_epoch
+
+    lc = open_lifecycle(tmp_path / "stamp.sqlite3", today=TODAY, real_now=lambda: NOW, seed=False)
+    seen = [lc.dataset.change_stamp()]
+    assert seen[0] == lc.dataset.change_stamp(), "asking twice changes nothing"
+    svc = lc.dataset.registry.get(SWEDISH60)
+    start = to_epoch(datetime(2026, 10, 15, 16, 0, tzinfo=TZ))
+    booked = lc.store.book(NewBooking("Stamp Person", "+12125550123", SWEDISH60, svc.booksy_name, "massage", "910006", start, svc.duration_minutes,
+                                      svc.buffer_before_minutes, svc.buffer_after_minutes), validate=lc.judge.validator())
+    assert booked.status == "booked"
+    seen.append(lc.dataset.change_stamp())
+    moved = lc.store.reschedule(booked.appointment.reference, start_utc=to_epoch(datetime(2026, 10, 15, 17, 0, tzinfo=TZ)), validate=lc.judge.validator())
+    assert moved.status == "rescheduled"
+    seen.append(lc.dataset.change_stamp())
+    assert lc.store.cancel(booked.appointment.reference).status == "cancelled"
+    seen.append(lc.dataset.change_stamp())
+    assert len(set(seen)) == 4, f"every change shows: {seen}"
+    assert lc.dataset.change_stamp() == seen[-1]
+    assert not any(word in "".join(seen) for word in ("Stamp", "2125550123", "910006")), "no names, numbers or ids"
+    assert all(stamp.startswith(f"{TODAY.isoformat()}|") for stamp in seen)
+
+
+def test_the_stamp_over_http_follows_the_stored_appointments(tmp_path):
+    from aria_booking.appointments.lifecycle import open_lifecycle
+    from aria_booking.appointments.models import NewBooking, to_epoch
+
+    lc = open_lifecycle(tmp_path / "http-stamp.sqlite3", today=TODAY, real_now=lambda: NOW, seed=False)
+    server = make_site(lc.dataset, 0, allowed_origins=page_origins(5174), clock=lambda: NOW)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        before = json.loads(fetch(f"{base}/demo/changes")[2])["stamp"]
+        svc = lc.dataset.registry.get(SWEDISH60)
+        lc.store.book(NewBooking("Http Person", "+12125550124", SWEDISH60, svc.booksy_name, "massage", "910006", to_epoch(datetime(2026, 10, 15, 16, 0, tzinfo=TZ)),
+                                 svc.duration_minutes, svc.buffer_before_minutes, svc.buffer_after_minutes), validate=lc.judge.validator())
+        after = json.loads(fetch(f"{base}/demo/changes")[2])["stamp"]
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert before != after
 
 
 def test_page_origins_names_exactly_the_two_addresses_the_prepared_page_is_opened_at():

@@ -39,6 +39,18 @@ The page has two in-page views, opened from the header, the hero, the Hours sect
 
 They are views of the one page, not new tabs or pages, so a call with Aria is never interrupted: the floating Aria avatar (below) stays on the page through both views.
 
+**Home, and what the staff frame does to history.** **Back to <name>** is explicit: it makes the home page the current entry itself and never goes "back" in browser history,
+because the staff calendar frame's own day navigation lives in the same session history. The framed calendar page also changes day by *replacing* its history entry (only
+when it is framed; on its own it navigates as before), so the browser's Back button from a view is one step home however many days the frame moved through.
+
+**Fresh, not stale.** Opening a view shows what the calendar holds now: the open times are asked again, and the staff frame is reloaded on the day it was showing (the frame
+tells the page which day it is on; the page accepts that message only from its own frame, from the calendar's own address). While a view is open the page asks
+`GET /demo/changes` (a few bytes: a stamp that changes with every stored booking, cancellation or move, and the demo date) every `refresh_seconds` (default 5; it backs off when
+the calendar cannot be reached, pauses while the tab is hidden, and asks nothing on the home page) and refreshes the open view only when the stamp has changed, so a booking a call
+has just made shows within a few seconds without a flash of reloading in between. Each view also has a Refresh button. A refresh of the open times keeps them on screen and
+says they may be out of date if the calendar cannot be reached; an answer to an older search never replaces the answer to a newer one, whether it succeeds or fails; a refresh
+of the schedule keeps its scroll position.
+
 The browser reads only synthetic open times from the calendar server, which allows only the prepared page's own address (`--page-port`, default 5174; `localhost` and
 `127.0.0.1`) to read them. No credential is in any of this: the page's script holds none, and the calendar answers are read-only.
 

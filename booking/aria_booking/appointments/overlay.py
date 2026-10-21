@@ -55,6 +55,10 @@ class StoreOverlay:
         start, end = day_bounds(day, self._tz)
         return self._store.between(start, end, statuses=(CONFIRMED,))
 
+    def stamp(self) -> str:
+        """Changes whenever the committed appointments change (see ``AppointmentStore.change_stamp``)."""
+        return self._store.change_stamp()
+
     def apply(self, plan, roster: Sequence, rows: Optional[Iterable[StoredAppointment]] = None):
         """``plan`` with the committed appointments (or the given ``rows``) drawn in."""
         return merge_rows(plan, self.rows_for_day(plan.day) if rows is None else rows, self._tz, roster)

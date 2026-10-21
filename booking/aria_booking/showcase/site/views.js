@@ -4,7 +4,11 @@
  * "Staff calendar" is the detailed, fictional staff schedule, shown in a frame.
  *
  * They are views of THIS page (a hash route, no navigation away, no new tab), so an active call with Aria, which lives in voice.js on this page, is never
- * unloaded or disturbed by opening, using or leaving them. Browser Back and the visible "Back to Serenity Spa" control both return home.
+ * unloaded or disturbed by opening, using or leaving them. "Back to ..." always lands on the home page and never depends on the frame's own history.
+ *
+ * Fresh, not stale: opening a view shows what the calendar holds NOW (open times are asked again, the schedule frame is reloaded on the day it was showing), and while
+ * a view is open the page asks the calendar server a tiny "has anything changed?" question every few seconds and refreshes only when it has (a booking, move or
+ * cancellation made by a call, say). Each view also has a Refresh button. A late answer to an older search never replaces a newer one.
  * Nothing here holds a credential: the browser only reads synthetic open times from the configured calendar address.
  */
 (function () {
@@ -16,7 +20,7 @@
   var titles = { "calendar": "Open times", "staff-calendar": "Staff calendar" };
   var homeTitle = document.title;
   var data = window.SERENITY_BOOKABLE || { groups: [] };
-  var cameFromHome = false;      // true when a view was opened by an in-page link, so Back/Home can use history instead of adding entries
+  var watchMs = Math.max(1, Number(data.refreshSeconds) || 5) * 1000;
   var current = null;
   var ready = false;
 
@@ -26,15 +30,19 @@
     return views[id] ? id : null;
   }
 
-  function route(event) {
+  function route() {
     var name = currentRoute();
-    if (name && !current) cameFromHome = !!event;  // opened by an in-page navigation (or Back/Forward), not by loading the page on the view
+    var previous = current;
     Object.keys(views).forEach(function (key) { views[key].hidden = key !== name; });
     home.hidden = !!name;
     document.body.classList.toggle("in-view", !!name);
+    current = name;   // set before anything below starts watching: the watcher only runs while a view is current
     if (name) {
       document.title = titles[name] + " · " + homeTitle;
-      if (name === "calendar") openCalendar(); else openStaff();
+      if (name !== previous) {   // hashchange and popstate both arrive for one navigation: act once
+        if (name === "calendar") openCalendar(); else openStaff();
+        startWatching();
+      }
       window.scrollTo(0, 0);
       var heading = views[name].querySelector("h1");
       if (heading) { heading.setAttribute("tabindex", "-1"); try { heading.focus({ preventScroll: true }); } catch (_) {} }
@@ -43,20 +51,20 @@
       var id = (location.hash || "").replace(/^#/, "");
       var target = id && document.getElementById(id);
       if (target && !target.hidden) { try { target.scrollIntoView(); } catch (_) {} }
-      else if (current) window.scrollTo(0, 0);
+      else if (previous) window.scrollTo(0, 0);
+      stopWatching();
     }
-    current = name;
   }
 
+  // "Back to ..." is explicit: it makes the home page the current entry itself. It never goes "back" in history, because the staff calendar frame's own day
+  // navigation lives in the same session history and would be what "back" undid.
   function goHome(event) {
     if (event) event.preventDefault();
-    if (cameFromHome && window.history.length > 1) { window.history.back(); return; }
     try { window.history.replaceState(null, "", location.pathname + location.search + "#top"); } catch (_) { location.hash = "#top"; }
     route();
   }
 
-  // Moving from one view to the other REPLACES the history entry rather than adding one, so there is only ever one view entry above the home page:
-  // "Back to ..." and the browser's Back button both land on the home page, never on the view you just left.
+  // Moving from one view to the other REPLACES the history entry rather than adding one, so there is only ever one view entry above the home page.
   document.addEventListener("click", function (event) {
     var link = event.target && event.target.closest ? event.target.closest("a[href^='#']") : null;
     var id = link ? (link.getAttribute("href") || "").replace(/^#/, "") : "";
@@ -68,20 +76,70 @@
   });
 
   Array.prototype.forEach.call(document.querySelectorAll("[data-home]"), function (el) { el.addEventListener("click", goHome); });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-refresh]"), function (el) {
+    el.addEventListener("click", function () { if (el.getAttribute("data-refresh") === "staff") refreshStaff(); else refreshTimes(true); });
+  });
   window.addEventListener("hashchange", route);
   window.addEventListener("popstate", route);
 
   // ---------------------------------------------------------------- staff calendar (a frame, loaded the first time it is opened and kept)
   var frame = document.getElementById("staff-frame");
+  var staffUrl = "";   // the day the frame is showing now, as the frame last told us (it cannot be read across origins)
+
+  window.addEventListener("message", function (event) {
+    var message = event.data;
+    if (!frame || event.source !== frame.contentWindow || event.origin !== data.calendarOrigin) return;
+    if (!message || message.type !== "serenity-calendar" || typeof message.url !== "string" || message.url.indexOf(data.calendarOrigin + "/") !== 0) return;
+    staffUrl = message.url;
+  });
+
   function openStaff() {
-    if (frame && !frame.getAttribute("src") && frame.getAttribute("data-src")) frame.setAttribute("src", frame.getAttribute("data-src"));
+    if (!frame) return;
+    if (!frame.getAttribute("src")) {
+      if (frame.getAttribute("data-src")) frame.setAttribute("src", frame.getAttribute("data-src"));
+      return;
+    }
+    refreshStaff();   // it was loaded before and may be stale: show the calendar as it is now, on the day it was showing
   }
+
+  function refreshStaff() {
+    if (!frame || !frame.getAttribute("src")) { openStaff(); return; }
+    var target = staffUrl || frame.getAttribute("data-src");
+    try { frame.contentWindow.location.replace(target); } catch (_) { frame.setAttribute("src", target); }   // replace: refreshing never adds a history entry
+  }
+
+  // ---------------------------------------------------------------- "has anything changed?" (only while a view is open and the page is visible)
+  var stamp = null, timer = null, failures = 0;
+
+  function schedule(ms) {
+    clearTimeout(timer);
+    timer = current && document.visibilityState !== "hidden" ? setTimeout(poll, ms) : null;
+  }
+
+  function poll() {
+    timer = null;
+    if (!current) return;
+    fetch(data.calendarOrigin + "/demo/changes", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (c) {
+      failures = 0;
+      if (c && typeof c.stamp === "string") {
+        if (stamp !== null && c.stamp !== stamp) refreshActive();
+        stamp = c.stamp;
+      }
+    }).catch(function () { failures += 1; }).then(function () { schedule(Math.min(watchMs * Math.pow(2, failures), 60000)); });
+  }
+
+  function startWatching() { stamp = null; failures = 0; schedule(0); }
+  function stopWatching() { clearTimeout(timer); timer = null; }
+  function refreshActive() { if (current === "calendar") refreshTimes(true); else if (current === "staff-calendar") refreshStaff(); }
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState !== "hidden" && current) { stamp = null; schedule(0); } else stopWatching(); });
 
   // ---------------------------------------------------------------- customer calendar: open times
   var form = document.getElementById("open-times-form");
   var fam = document.getElementById("ot-family"), len = document.getElementById("ot-length"), staff = document.getElementById("ot-staff"), day = document.getElementById("ot-date");
-  var out = document.getElementById("ot-results");
+  var out = document.getElementById("ot-results"), note = document.getElementById("ot-refresh-note");
   var families = [];
+  var latest = 0;        // the number of the newest request: an answer for any other request is dropped, success or failure
+  var lastQuery = null;  // what the visitor last asked for, so a refresh asks the same thing
 
   function option(value, text) { var o = document.createElement("option"); o.value = value; o.textContent = text; return o; }
 
@@ -126,20 +184,33 @@
     }).catch(function () { if (!day.value) day.value = new Date().toISOString().slice(0, 10); });
   }
 
-  function say(html, state) { out.innerHTML = html; out.setAttribute("data-state", state || ""); }
+  function say(html, state) { out.innerHTML = html; out.setAttribute("data-state", state || ""); if (note) note.textContent = ""; }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
 
   function search() {
     var family = families[parseInt(fam.value, 10)];
     var variant = family && family.variants[parseInt(len.value, 10) || 0];
-    if (!variant || !day.value) { say("<p>Choose a treatment, a length and a day.</p>", "needs"); return; }
-    var url = data.calendarOrigin + "/demo/open-times?service_id=" + encodeURIComponent(variant.service_id) + "&date=" + encodeURIComponent(day.value) +
-      (staff.value ? "&staff=" + encodeURIComponent(staff.value) : "");
-    say("<p>Looking at the calendar…</p>", "loading");
-    fetch(url, { cache: "no-store" }).then(function (r) { return r.json(); }).then(render).catch(function () {
+    if (!variant || !day.value) { latest += 1; lastQuery = null; say("<p>Choose a treatment, a length and a day.</p>", "needs"); return; }
+    lastQuery = { service_id: variant.service_id, date: day.value, staff: staff.value || "" };
+    ask(lastQuery, false);
+  }
+
+  // Ask the calendar. ``quiet`` is a refresh of what is already shown: no "Looking..." placeholder, and a failure keeps the times already on screen.
+  function ask(query, quiet) {
+    var mine = ++latest;
+    var url = data.calendarOrigin + "/demo/open-times?service_id=" + encodeURIComponent(query.service_id) + "&date=" + encodeURIComponent(query.date) +
+      (query.staff ? "&staff=" + encodeURIComponent(query.staff) : "");
+    if (!quiet) say("<p>Looking at the calendar…</p>", "loading");
+    fetch(url, { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (r) {
+      if (mine === latest) render(r);
+    }).catch(function () {
+      if (mine !== latest) return;
+      if (quiet && out.getAttribute("data-state")) { if (note) note.textContent = "The calendar couldn't be reached just now, so these times may be out of date."; return; }
       say("<p>The calendar couldn't be reached just now, so nothing can be shown. Please try again in a moment.</p>", "error");
     });
   }
+
+  function refreshTimes(quiet) { if (lastQuery) ask(lastQuery, quiet); }
 
   function render(r) {
     if (r.status === "open") {
@@ -157,7 +228,7 @@
     }
   }
 
-  function openCalendar() { fillForm(); }
+  function openCalendar() { fillForm(); refreshTimes(true); }   // opening it again shows the times as they are now
 
   route();
 })();

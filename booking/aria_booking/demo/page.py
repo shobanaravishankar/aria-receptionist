@@ -279,6 +279,17 @@ JS = """
   if(grid){grid.addEventListener('scroll',function(){head.scrollLeft=grid.scrollLeft;axis.style.transform='translateY('+(-grid.scrollTop)+'px)';});}
   var toggle=document.getElementById('ariaToggle'),drawer=document.getElementById('ariaDrawer');
   if(toggle&&drawer){toggle.addEventListener('click',function(){drawer.classList.toggle('closed');});}
-  document.querySelectorAll('[data-href]').forEach(function(b){b.addEventListener('click',function(){location.href=b.getAttribute('data-href');});});
+  // Inside the website's Staff calendar frame this page (a) moves between days by REPLACING its history entry, so the browser's Back button is never spent on
+  // days, (b) tells the website which day it is showing (so the website can refresh THIS day), and (c) keeps its scroll position across such a refresh.
+  var embedded=false;try{embedded=window.parent!==window;}catch(e){}
+  function go(url){if(embedded){location.replace(url);}else{location.href=url;}}
+  document.querySelectorAll('[data-href]').forEach(function(b){b.addEventListener('click',function(){go(b.getAttribute('data-href'));});});
+  if(embedded){
+    var key='aria-scroll:'+location.pathname+location.search;
+    try{var saved=JSON.parse(sessionStorage.getItem(key)||'null');
+      if(saved&&grid&&Date.now()-saved.at<120000){grid.scrollTop=saved.top;grid.scrollLeft=saved.left;grid.dispatchEvent(new Event('scroll'));}}catch(e){}
+    window.addEventListener('pagehide',function(){try{if(grid){sessionStorage.setItem(key,JSON.stringify({top:grid.scrollTop,left:grid.scrollLeft,at:Date.now()}));}}catch(e){}});
+    try{window.parent.postMessage({type:'serenity-calendar',url:location.href},'*');}catch(e){}
+  }
 })();
 """

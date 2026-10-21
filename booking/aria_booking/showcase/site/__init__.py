@@ -113,7 +113,8 @@ def _credits() -> list:
     return json.loads((ASSET_DIR / "credits.json").read_text(encoding="utf-8"))["images"]
 
 
-def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: int, retention_days: int, bookable: Optional[dict] = None, avatar_file: str = DEFAULT_AVATAR) -> str:
+def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: int, retention_days: int, bookable: Optional[dict] = None, avatar_file: str = DEFAULT_AVATAR,
+                 refresh_seconds: int = 5) -> str:
     credits = {c["file"]: c for c in _credits()}
     alts = {name: c["alt"] for name, c in credits.items()}
     alts["_size"] = {name: (c["width"], c["height"]) for name, c in credits.items()}
@@ -125,7 +126,7 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
     panels = "".join(_panel(catalog, cid, heading, line, photo, alts, n == 0) for n, (cid, _label, heading, line, photo) in enumerate(present))
     people = _people(rows)
     cal = calendar_link(calendar_port)  # the configured staff calendar address: used only as the frame's source, never hard-coded elsewhere
-    bookable_script = script_tag(bookable if bookable is not None else bookable_data([(cid, label) for cid, label, *_r in present], calendar_origin(calendar_port), catalog))
+    bookable_script = script_tag(bookable if bookable is not None else bookable_data([(cid, label) for cid, label, *_r in present], calendar_origin(calendar_port), catalog, refresh_seconds=refresh_seconds))
     phone = (f'<p>Phone: <a href="tel:{_e("".join(ch for ch in showcase.contact_phone if ch.isdigit() or ch == "+"))}">{_e(showcase.contact_phone)}</a></p>'
              if showcase.contact_phone else "<p>Contact details are not configured in this prototype.</p>")
     credit_items = "".join(
@@ -223,15 +224,17 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
     <button class="btn btn-primary" type="submit" data-testid="show-open-times">Show open times</button>
   </form>
   <div class="open-results" id="ot-results" aria-live="polite" data-state=""><p>Pick a treatment and a day, then choose Show open times.</p></div>
-  <p class="view-foot">This view only lists open times; it does not make a booking.</p>
-  <div class="visit-actions"><button type="button" class="btn btn-primary btn-small" data-voice-start>{ICON_MIC}<span>Ask Aria about a time</span></button><a class="btn btn-ghost btn-small" href="#staff-calendar">Staff calendar</a></div>
+  <p class="ot-refresh-note" id="ot-refresh-note" role="status" data-testid="ot-refresh-note"></p>
+  <p class="view-foot">This view only lists open times; it does not make a booking. The times refresh by themselves when the calendar changes.</p>
+  <div class="visit-actions"><button type="button" class="btn btn-primary btn-small" data-voice-start>{ICON_MIC}<span>Ask Aria about a time</span></button><button type="button" class="btn btn-ghost btn-small" id="ot-refresh" data-refresh="calendar" data-testid="ot-refresh">Refresh times</button><a class="btn btn-ghost btn-small" href="#staff-calendar">Staff calendar</a></div>
 </div></section>
 <section class="view" id="view-staff" hidden aria-labelledby="view-staff-title" data-testid="view-staff"><div class="wrap">
   <div class="view-top"><a class="btn btn-ghost btn-small back-home" href="#top" data-home>{ICON_BACK}<span>Back to {_e(showcase.name)}</span></a></div>
   <div class="view-head"><p class="kicker">For the team</p><h1 id="view-staff-title">Staff calendar</h1>
     <p>The detailed schedule the team sees, with every appointment on it. Everything on it is fictional and simulated for this demonstration. Use its own arrows and staff filter to move around.</p></div>
   <iframe id="staff-frame" class="staff-frame" title="Staff calendar (fictional, simulated)" data-src="{_e(cal)}" data-testid="staff-frame"></iframe>
-  <p class="view-foot">Looking for open times instead? <a href="#calendar">See open times</a>.</p>
+  <p class="view-foot">The schedule reloads when you open it and by itself when the calendar changes, on the day you were looking at.</p>
+  <div class="visit-actions"><button type="button" class="btn btn-ghost btn-small" id="staff-refresh" data-refresh="staff" data-testid="staff-refresh">Refresh schedule</button><a class="btn btn-ghost btn-small" href="#calendar">See open times</a></div>
 </div></section>
 </main>
 <footer class="site-footer"><div class="wrap">
@@ -290,7 +293,7 @@ def _use_avatar(out: Path, avatar) -> str:
 
 
 def build_site(out_dir, *, showcase: Showcase = SHOWCASE, catalog: Catalog = SHOWCASE_CATALOG, rows=ROSTER_ROWS, settings: Optional[dict] = None,
-               calendar_port: int = 8790, retention_days: int = 7, avatar=None) -> list:
+               calendar_port: int = 8790, retention_days: int = 7, avatar=None, refresh_seconds: int = 5) -> list:
     """Write the page into ``out_dir`` (created if needed) and return the files written. ``settings`` are the PUBLIC voice settings (public key, agent id, version):
     never a secret, and none at all is fine: the page then says voice is not configured instead of pretending. ``avatar`` is an optional image (png, webp or svg,
     square, transparent background) that replaces the built-in illustration; it is copied in, never referenced from outside the folder."""
@@ -300,7 +303,8 @@ def build_site(out_dir, *, showcase: Showcase = SHOWCASE, catalog: Catalog = SHO
     avatar_file = _use_avatar(out, avatar)
     written = []
     index = out / "index.html"
-    index.write_text(render_index(showcase, catalog, rows, calendar_port=calendar_port, retention_days=retention_days, avatar_file=avatar_file), encoding="utf-8", newline="\n")
+    index.write_text(render_index(showcase, catalog, rows, calendar_port=calendar_port, retention_days=retention_days, avatar_file=avatar_file,
+                                          refresh_seconds=refresh_seconds), encoding="utf-8", newline="\n")
     written.append(index)
     for name in ("styles.css", "voice.js", "site.js", "views.js"):
         shutil.copyfile(SITE_DIR / name, out / name)

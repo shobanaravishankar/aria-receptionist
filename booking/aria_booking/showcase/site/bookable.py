@@ -19,7 +19,7 @@ def _length(minutes: Optional[int]) -> str:
     return " ".join(p for p in (f"{hours} hr" if hours else "", f"{rest} min" if rest else "") if p)
 
 
-def bookable_data(groups: Sequence[tuple[str, str]], calendar_origin: str, catalog=SHOWCASE_CATALOG) -> dict:
+def bookable_data(groups: Sequence[tuple[str, str]], calendar_origin: str, catalog=SHOWCASE_CATALOG, *, refresh_seconds: int = 5) -> dict:
     """``groups`` is (category id, title) in the order the page shows them. Only treatments the demo registry can check appear."""
     pairs = demo_services(ROSTER)
     out = []
@@ -47,7 +47,7 @@ def bookable_data(groups: Sequence[tuple[str, str]], calendar_origin: str, catal
                 })
             built.append({"name": family, "variants": variants})
         out.append({"category": category, "title": title, "families": built})
-    return {"calendarOrigin": calendar_origin, "groups": out}
+    return {"calendarOrigin": calendar_origin, "refreshSeconds": refresh_seconds, "groups": out}
 
 
 def script_tag(data: dict) -> str:

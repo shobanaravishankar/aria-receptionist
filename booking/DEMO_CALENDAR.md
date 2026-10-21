@@ -128,7 +128,8 @@ changed page; the page server needs no restart.
 The prepared website has a **Calendar** view (open times for a chosen treatment, length, day and optional technician) and a **Staff calendar** view (this schedule, in a frame), both
 in the same tab with a **Back to ...** control. The open times come from `GET /demo/open-times?service_id=...&date=YYYY-MM-DD[&staff=Name]` on this server, derived from the same
 data and rules the voice reads, so the page and Aria agree. The server answers read-only JSON and lets only the prepared page's own origin (`http://localhost:<page-port>`,
-`http://127.0.0.1:<page-port>`) read it; start it with `--page-port N` if the page is served on a port other than 5174. See SHOWCASE.md for the behaviour.
+`http://127.0.0.1:<page-port>`) read it; start it with `--page-port N` if the page is served on a port other than 5174. `GET /demo/changes` answers a short stamp (changes with
+every stored booking, cancellation or move, and with the demo date) that the website asks while a view is open so it can refresh only when it must. See SHOWCASE.md for the behaviour.
 
 ## What to ask (the scripted days: the demo date + 1 and + 2)
 

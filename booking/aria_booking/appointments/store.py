@@ -281,6 +281,15 @@ class AppointmentStore:
             outbox = {r["status"]: r["n"] for r in conn.execute("SELECT status, COUNT(*) AS n FROM outbox GROUP BY status")}
             return {"appointments": by_status, "clients": conn.execute("SELECT COUNT(*) FROM clients").fetchone()[0], "outbox": outbox}
 
+    def change_stamp(self) -> str:
+        """A short token that differs whenever a booking, cancellation, move or seed has changed the file, so a page can ask 'has anything changed?' cheaply and refresh
+        only then. Counts and ids only: no names, no phone numbers."""
+        with self._read() as tx:
+            conn = tx._conn
+            appointments = conn.execute("SELECT COUNT(*), COALESCE(SUM(version), 0), COALESCE(MAX(updated_at), 0) FROM appointments").fetchone()
+            events = conn.execute("SELECT COALESCE(MAX(event_id), 0) FROM events").fetchone()
+            return f"{appointments[0]}.{appointments[1]}.{appointments[2]}.{events[0]}"
+
     def outbox_rows(self, status: Optional[str] = None) -> list[dict]:
         with self._read() as tx:
             sql, args = "SELECT * FROM outbox", ()
