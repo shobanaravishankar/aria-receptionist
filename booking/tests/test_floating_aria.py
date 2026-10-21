@@ -260,3 +260,55 @@ def test_the_name_and_number_on_the_widget_are_escaped_and_the_dialling_value_is
 
 def test_the_link_is_styled_to_be_read_and_reached_on_the_dark_status_box():
     assert re.search(r"\.aria__tel \{[^}]*text-decoration: underline", CSS) and re.search(r"\.aria__tel:focus-visible \{[^}]*outline: 3px solid", CSS)
+
+
+# ---------------------------------------------------------------- avatar-led call entries
+
+
+ENTRY_TESTIDS = ["speak-to-aria", "hero-call", "band-call", "view-call", "mobile-call"]
+
+
+def test_every_way_to_start_a_call_is_an_avatar_led_button_on_the_one_call_controller(built):
+    _out, html, page = built
+    starters = [a for t, a in page.tags if t == "button" and "data-voice-start" in a]
+    assert sorted(a.get("data-testid") for a in starters) == sorted([*ENTRY_TESTIDS, "aria-call"]), "five entries and the widget's own call icon: nothing else starts a call"
+    entries = [a for a in starters if "call-entry" in a.get("class", "")]
+    assert [a["data-testid"] for a in entries] == ENTRY_TESTIDS and all(a["type"] == "button" for a in entries)
+    captions = re.findall(r'<button class="call-entry [^"]*"[^>]*aria-label="([^"]+)">.*?<span class="call-entry__caption">([^<]+)</span>', html, re.S)
+    assert len(captions) == 5
+    for label, caption in captions:
+        assert label.startswith(caption) and label.endswith("our AI voice assistant. Starts a call."), (label, caption)   # the visible words are part of the spoken name
+    assert len(page.find("aside", id="aria")) == 1 and len(page.find("button", id="aria-call")) == 1 and len(page.find("button", id="aria-hangup")) == 1, "one widget, one call icon, one hang-up"
+    assert "autofocus" not in html and "onclick" not in html.lower() and "autoplay" not in html.lower(), "nothing starts, focuses or plays by itself"
+
+
+def test_the_entries_show_the_same_avatar_file_as_decoration_and_the_same_scripts_serve_them_all(built):
+    out, html, page = built
+    floating = page.find("img", **{"class": "aria__img"})[0]["src"]
+    pictures = re.findall(r'<span class="call-entry__face"><img ([^>]*)></span>', html)
+    assert len(pictures) == 5
+    for attrs in pictures:
+        assert f'src="{floating}"' in attrs and 'alt=""' in attrs and 'width="96"' in attrs and 'height="96"' in attrs and 'decoding="async"' in attrs, attrs
+    assert [("loading=\"lazy\"" in attrs) for attrs in pictures] == [False, False, True, True, True], "only the header and the hero load at once"
+    assert re.findall(r'<script src="([^"]+)"', html) == ["demo-config.js", "site.js", "views.js", "voice.js"], "no new script: the entries use the page's single call controller"
+
+
+@pytest.mark.parametrize("name,data,suffix", [("a.svg", TINY_SVG.encode(), ".svg"), ("b.webp", b"RIFF....WEBPVP8 ", ".webp")])
+def test_a_supplied_avatar_is_what_every_entry_shows_and_it_is_copied_once(tmp_path, name, data, suffix):
+    source = tmp_path / name
+    source.write_bytes(data)
+    site = tmp_path / "site"
+    build_site(site, settings=SETTINGS, avatar=source)
+    html = (site / "index.html").read_text(encoding="utf-8")
+    assert html.count(f'src="assets/aria-avatar{suffix}"') == 6, "the floating avatar and the five entries"
+    assert sorted(p.name for p in (site / "assets").glob("aria-avatar*")) == sorted({"aria-avatar.svg", f"aria-avatar{suffix}"}), "the built-in illustration and the one supplied file: never a copy per entry"
+
+
+def test_the_portrait_entries_have_no_box_and_the_compact_ones_are_the_sites_teal():
+    block = lambda selector: re.search(re.escape(selector) + r" \{([^}]*)\}", CSS).group(1)  # noqa: E731
+    assert "background: transparent" in block(".call-entry") and "background" not in block(".call-entry--hero").replace("background-", "")
+    assert "background" not in block(".call-entry--band").replace("background-", "")
+    assert "background: var(--teal-700)" in block(".call-entry--chip") and "var(--white)" not in block(".call-entry--chip").split("background:")[1].split(";")[0]
+    assert re.search(r"\.call-entry:focus-visible \{[^}]*outline: 3px solid", CSS)
+    reduced = CSS[CSS.index("prefers-reduced-motion: reduce"):]
+    assert ".call-entry__avatar { transition: none; }" in reduced and ".call-entry:hover .call-entry__avatar { transform: none; }" in reduced, "no movement when reduced motion is asked for"

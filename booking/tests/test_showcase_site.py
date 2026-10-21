@@ -103,7 +103,9 @@ def test_every_image_has_alt_text_and_its_size_and_exists(built):
     everything = [a for t, a in page.tags if t == "img"]
     avatar = [a for a in everything if a.get("class") == "aria__img"]
     assert len(avatar) == 1 and avatar[0]["src"] == "assets/aria-avatar.svg" and (out / avatar[0]["src"]).is_file() and avatar[0]["alt"].startswith("Aria"), "the floating avatar"
-    images = [a for a in everything if a.get("class") != "aria__img"]
+    entries = [a for a in everything if a.get("alt") == "" and a.get("src") == avatar[0]["src"]]
+    assert len(entries) == 5 and all(a["width"].isdigit() and a["height"].isdigit() for a in entries), "the avatar-led call entries: decorative copies of the one avatar file (their buttons carry the label)"
+    images = [a for a in everything if a.get("class") != "aria__img" and a not in entries]
     assert len(images) == 4, "the hero, the massage and facial photos and the band picture: a few relevant pictures, no clutter"
     for attrs in images:
         assert 20 <= len(attrs["alt"]) <= 200 and attrs["width"].isdigit() and attrs["height"].isdigit() and (out / attrs["src"]).is_file(), attrs
@@ -155,7 +157,7 @@ def test_the_team_is_the_roster_with_roles_and_a_fictional_note(built):
     for row in ROSTER_ROWS:
         assert row.name in text and role_of(row) in text
     assert "Fictional names, used only for this prototype." in text
-    assert not any(len(a["alt"]) == 0 for t, a in page.tags if t == "img")
+    assert all(a["src"] == "assets/aria-avatar.svg" for t, a in page.tags if t == "img" and len(a["alt"]) == 0), "only the decorative call-entry pictures have an empty alt"
 
 
 # ---------------------------------------------------------------- nothing invented, nothing of the earlier salon, nothing outside

@@ -96,7 +96,7 @@ def test_nothing_overflows_sideways_at_any_width(driver, sites, width, height):
 def test_the_main_actions_are_visible_without_scrolling(driver, sites, width, height):
     result = look(driver, sites["configured"], width, height, """() => {
         const box = s => { const r = document.querySelector(s).getBoundingClientRect(); return {top: r.top, bottom: r.bottom, left: r.left, right: r.right, h: r.height}; };
-        return {header: box('.site-header [data-voice-start]'), hero: box('.hero .btn-light'), calendar: box('.hero [data-testid=calendar-link]'), title: box('h1'), inner: [innerWidth, innerHeight]};
+        return {header: box('.site-header [data-voice-start]'), hero: box('.hero [data-testid=hero-call]'), calendar: box('.hero [data-testid=calendar-link]'), title: box('h1'), inner: [innerWidth, innerHeight]};
     }""", scroll=False)
     w, h = result["inner"]
     for name in ("header", "hero", "title"):
@@ -132,14 +132,16 @@ def test_pictures_load_and_the_fonts_are_the_self_hosted_ones(driver, sites):
         window.scrollTo(0, document.querySelector('#menu').offsetTop);
         await new Promise(r => setTimeout(r, 600));
         await document.fonts.ready;
-        const images = [...document.images].filter(i => !i.classList.contains('aria__img')).map(i => [i.getAttribute('src'), i.complete && i.naturalWidth > 0]);
+        const images = [...document.images].filter(i => !i.classList.contains('aria__img') && !i.closest('.call-entry')).map(i => [i.getAttribute('src'), i.complete && i.naturalWidth > 0]);
+        const entries = [...document.querySelectorAll('.call-entry img')].filter(i => i.getAttribute('loading') !== 'lazy').map(i => i.complete && i.naturalWidth > 0);
         const avatar = document.querySelector('.aria__img');
-        return {images, avatar: avatar.complete && avatar.naturalWidth > 0, serif: document.fonts.check('600 20px "Cormorant Garamond"'), sans: document.fonts.check('16px Jost'),
+        return {images, entries, avatar: avatar.complete && avatar.naturalWidth > 0, serif: document.fonts.check('600 20px "Cormorant Garamond"'), sans: document.fonts.check('16px Jost'),
                 faces: [...document.fonts].filter(f => f.status === 'loaded').map(f => f.family.replace(/"/g, '')),
                 h1: getComputedStyle(document.querySelector('h1')).fontFamily};
     }""")
     assert all(ok for _src, ok in result["images"]) and len(result["images"]) == 4, result["images"]
     assert result["avatar"] is True, "the floating avatar picture loads"
+    assert result["entries"] and all(result["entries"]), "the call entries above the fold show the avatar"
     assert result["serif"] and result["sans"] and {"Cormorant Garamond", "Jost"} <= set(result["faces"]) and result["h1"].startswith('"Cormorant Garamond"')
 
 

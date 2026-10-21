@@ -51,6 +51,29 @@ p { margin: 0; }
 .btn-ghost:hover { background: var(--teal-50); color: var(--teal-900); }
 .btn-small { min-height: 44px; padding: 0 18px; font-size: 15px; }
 
+/* Avatar-led call entries: the same avatar the floating widget shows, a small phone badge and a caption. A plain button on the page's single call controller (data-voice-start). */
+.call-entry { --ce: 40px; display: inline-flex; align-items: center; gap: 12px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: 999px; }
+.call-entry__avatar { position: relative; flex: none; display: block; width: var(--ce); height: var(--ce); transition: transform .2s ease; }
+.call-entry__face { position: absolute; inset: 0; display: block; border-radius: 50%; overflow: hidden; background: radial-gradient(circle at 50% 38%, var(--teal-100) 0%, var(--teal-500) 100%); box-shadow: 0 0 0 2px var(--white), 0 8px 18px rgba(11, 61, 59, .28); }
+.call-entry__face img { position: absolute; left: -25%; top: -7%; width: 150%; height: 150%; max-width: none; object-fit: contain; pointer-events: none; user-select: none; }
+.call-entry__badge { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: max(20px, calc(var(--ce) * .36)); height: max(20px, calc(var(--ce) * .36)); border-radius: 50%; background: var(--green); color: var(--white); box-shadow: 0 0 0 2px var(--white); }
+.call-entry__badge svg { width: 62%; height: 62%; }
+.call-entry__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.call-entry__caption { font-weight: 600; font-size: 16px; line-height: 1.2; }
+.call-entry__sub { font-size: 13.5px; line-height: 1.25; opacity: .9; }
+.call-entry:hover .call-entry__avatar { transform: translateY(-2px); }
+.call-entry:focus-visible { outline: 3px solid var(--white); outline-offset: 4px; box-shadow: 0 0 0 7px var(--teal-900); }
+.call-entry--chip { --ce: 38px; padding: 4px 18px 4px 4px; background: var(--teal-700); color: var(--white); box-shadow: 0 8px 22px rgba(15, 107, 104, .28); }
+.call-entry--chip:hover { background: var(--teal-900); }
+.call-entry--chip .call-entry__face { box-shadow: 0 0 0 2px rgba(255, 255, 255, .9); }
+.call-entry--chip .call-entry__caption { font-size: 15px; white-space: nowrap; }
+.call-entry--bar { flex: 1; justify-content: center; min-height: 48px; box-shadow: 0 10px 28px rgba(11, 61, 59, .28); }
+.call-entry--hero { --ce: 104px; gap: 16px; padding: 6px 6px 6px 4px; color: var(--white); }
+.call-entry--hero .call-entry__caption { font-size: 20px; }
+.call-entry--band { --ce: 108px; gap: 16px; margin-top: 22px; padding: 6px 6px 6px 4px; color: var(--white); }
+.call-entry--band .call-entry__caption { font-size: 20px; }
+.call-entry--hero .call-entry__sub, .call-entry--band .call-entry__sub { color: var(--mist); }
+
 /* Hero */
 .hero { position: relative; isolation: isolate; color: var(--white); background: var(--teal-900); min-height: min(76vh, 700px); display: grid; align-items: center; overflow: hidden; }
 .hero > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 55% 45%; z-index: -2; }
@@ -180,7 +203,7 @@ noscript .panel[hidden] { display: block; }
 .toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 120; background: var(--teal-900); color: var(--white); padding: 12px 20px; border-radius: 999px; font-size: 15px; max-width: calc(100% - 32px); }
 .toast[hidden] { display: none; }
 @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.35); opacity: .6; } }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .aria__dot, .aria__img, .call-bar__dot { animation: none !important; } .aria__img, .aria-btn { transition: none; } .btn { transition: none; } }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .aria__dot, .aria__img, .call-bar__dot { animation: none !important; } .aria__img, .aria-btn { transition: none; } .btn, .call-entry__avatar { transition: none; } .call-entry:hover .call-entry__avatar { transform: none; } }
 
 /* In-page views: open times and the staff calendar (same tab, same page, so a call with Aria is never interrupted) */
 #home[hidden], .view[hidden] { display: none; }
@@ -263,6 +286,8 @@ noscript .panel[hidden] { display: block; }
   .hero::before { background: linear-gradient(180deg, rgba(11, 61, 59, .10) 0%, rgba(11, 61, 59, .58) 38%, rgba(11, 61, 59, .94) 78%); }
   .hero-inner { padding: 96px 0 34px; }
   .hero-actions .btn { flex: 1 1 100%; }
+  .call-entry--hero { --ce: 80px; flex: 1 1 100%; }
+  .call-entry--band { --ce: 84px; }
   .section { padding: 52px 0; }
   .band-photo img { max-height: 340px; }
 }

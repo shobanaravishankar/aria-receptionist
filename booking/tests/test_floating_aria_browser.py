@@ -166,7 +166,7 @@ def test_the_call_icon_starts_exactly_one_call_and_no_other_click_can_start_a_se
     def work(page):
         start(page)
         first = snapshot(page)
-        for selector in ('.site-header [data-voice-start]', '.hero .btn-light', '.hero .btn-light'):
+        for selector in ('.site-header [data-voice-start]', '[data-testid="hero-call"]', '[data-testid="hero-call"]'):
             page.click(selector)
         page.wait_for_timeout(200)
         return first, snapshot(page)
@@ -670,7 +670,7 @@ def test_the_speak_button_on_a_live_call_brings_the_same_call_back_and_starts_no
     def work(page):
         go_live(page)
         page.click('[data-testid="aria-hide"]')
-        page.click('.hero .btn-light')
+        page.click('[data-testid="hero-call"]')
         page.wait_for_timeout(200)
         return snapshot(page)
 
@@ -797,3 +797,152 @@ def test_a_bad_resize_request_is_refused_before_any_browser_starts(tmp_path, nam
 
 def test_no_script_or_page_error_was_raised_in_any_of_this():
     assert ERRORS == [], ERRORS
+
+
+# ---------------------------------------------------------------- avatar-led call entries: the same one controller, nothing automatic
+
+
+ENTRIES = [("speak-to-aria", 1440), ("hero-call", 1440), ("band-call", 1440), ("mobile-call", 390)]
+
+
+def entry_state(page, testid):
+    return page.evaluate("""(id) => {
+        const el = document.querySelector(`[data-testid="${id}"]`);
+        const img = el.querySelector('img'), face = el.querySelector('.call-entry__face'), r = el.getBoundingClientRect(), f = face.getBoundingClientRect();
+        const bg = getComputedStyle(el).backgroundColor;
+        return {loaded: img.complete && img.naturalWidth > 0, shown: r.width > 0 && r.height > 0, face: Math.round(f.width), height: Math.round(r.height), width: Math.round(r.width), bg,
+                label: el.getAttribute('aria-label'), caption: el.querySelector('.call-entry__caption').textContent, src: img.getAttribute('src'), alt: img.getAttribute('alt'),
+                floating: document.querySelector('.aria__img').getAttribute('src'), widgets: document.querySelectorAll('[data-testid="aria-widget"]').length,
+                overflow: document.documentElement.scrollWidth - innerWidth, inView: r.left >= 0 && r.right <= innerWidth};
+    }""", testid)
+
+
+@pytest.mark.parametrize("testid,width", ENTRIES)
+def test_each_avatar_led_entry_shows_the_same_avatar_and_starts_exactly_one_call_through_the_one_controller(driver, sites, testid, width):
+    def work(page):
+        if testid == "mobile-call":   # the quick-action bar only appears once the visitor has scrolled past the top
+            page.evaluate("window.scrollTo(0, 700)")
+            page.wait_for_selector('.mobile-cta.show')
+        page.locator(f'[data-testid="{testid}"]').scroll_into_view_if_needed()
+        page.wait_for_function("(id) => { const i = document.querySelector(`[data-testid=\"${id}\"] img`); return i.complete && i.naturalWidth > 0; }", arg=testid)
+        before = entry_state(page, testid)
+        snap_before = snapshot(page)
+        page.click(f'[data-testid="{testid}"]')
+        page.wait_for_function("() => window.__created === 1")
+        first = snapshot(page)
+        page.click(f'[data-testid="{testid}"]')   # a second press on the entry, or on any other entry, never makes a second call
+        page.click('.site-header [data-voice-start]')
+        page.wait_for_timeout(250)
+        return before, snap_before, first, snapshot(page), entry_state(page, testid)
+
+    before, snap_before, first, later, after = run(driver, sites["configured"], work, width=width, height=900 if width > 600 else 844)
+    assert before["loaded"] and before["shown"] and before["alt"] == "" and before["src"] == before["floating"], "decorative picture, the same file the floating widget shows"
+    assert before["label"].startswith(before["caption"]) and "AI voice assistant" in before["label"] and "Starts a call" in before["label"], before
+    assert before["widgets"] == 1 and after["widgets"] == 1, "no second widget is ever made"
+    assert snap_before["created"] == 0 and snap_before["state"] == "idle", "the entry starts nothing by being there"
+    assert first["created"] == 1 and first["state"] == "connecting" and first["hangup"] and not first["call"] and first["ariaCall"] == "1"
+    assert later["created"] == 1 and later["hangup"], "pressing entries again changes nothing but bringing the same call forward"
+    assert before["overflow"] <= 0 and before["inView"], before
+
+
+@pytest.mark.parametrize("key", ["Enter", "Space"])
+def test_an_entry_works_from_the_keyboard_and_shows_a_focus_ring(driver, sites, key):
+    def work(page):
+        page.focus('[data-testid="hero-call"]')
+        ring = page.evaluate("() => { const s = getComputedStyle(document.querySelector('[data-testid=\"hero-call\"]')); return [s.outlineStyle, s.outlineWidth]; }")
+        page.keyboard.press(key)
+        page.wait_for_function("() => window.__created === 1")
+        return ring, snapshot(page)
+
+    ring, shown = run(driver, sites["configured"], work)
+    assert ring[0] != "none" and ring[1] == "3px", ring
+    assert shown["created"] == 1 and shown["state"] == "connecting"
+
+
+def test_after_a_failure_any_entry_tries_again_with_a_new_call_and_the_old_one_is_gone(driver, sites):
+    def work(page):
+        page.click('[data-testid="hero-call"]')
+        page.wait_for_function("() => window.__created === 1")
+        page.evaluate("window.__hooks.onError(new Error('boom'))")
+        failed = snapshot(page)
+        page.click('.site-header [data-voice-start]')
+        page.wait_for_function("() => window.__created === 2")
+        return failed, snapshot(page)
+
+    failed, retried = run(driver, sites["configured"], work)
+    assert failed["state"] == "error" and retried["created"] == 2 and retried["state"] == "connecting" and retried["hangup"] and retried["ariaCall"] == "1"
+
+
+def test_the_hang_up_control_still_ends_a_call_that_began_at_an_entry_and_the_entries_come_back(driver, sites):
+    def work(page):
+        page.click('[data-testid="band-call"]')
+        page.wait_for_function("() => window.__created === 1")
+        page.evaluate("window.__hooks.onStatus('live')")
+        live = snapshot(page)
+        page.click('[data-testid="aria-hangup"]')
+        page.wait_for_function("() => window.__ended === 1")
+        page.evaluate("window.__hooks.onEnd()")
+        return live, snapshot(page), entry_state(page, "band-call")
+
+    live, ended, entry = run(driver, sites["configured"], work)
+    assert live["state"] == "live" and live["hangup"] and ended["state"] == "ended" and ended["ended"] == 1 and ended["call"] and entry["shown"]
+
+
+def test_the_entries_are_sized_for_the_place_they_sit_in_and_none_is_a_white_box(driver, sites):
+    def loaded(page, ids):
+        for testid in ids:   # the pictures below the first screen load lazily, as they should: bring each into view before looking at it
+            page.locator(f'[data-testid="{testid}"]').scroll_into_view_if_needed()
+            page.wait_for_function("(id) => { const i = document.querySelector(`[data-testid=\"${id}\"] img`); return i.complete && i.naturalWidth > 0; }", arg=testid)
+
+    def desktop(page):
+        loaded(page, ("band-call", "hero-call", "speak-to-aria"))
+        return {t: entry_state(page, t) for t in ("speak-to-aria", "hero-call", "band-call")}
+
+    def phone(page):
+        page.evaluate("window.scrollTo(0, 700)")
+        page.wait_for_selector(".mobile-cta.show")
+        loaded(page, ("mobile-call", "hero-call", "speak-to-aria"))
+        return {t: entry_state(page, t) for t in ("speak-to-aria", "hero-call", "mobile-call")}
+
+    wide = run(driver, sites["configured"], desktop)
+    small = run(driver, sites["configured"], phone, width=390, height=844)
+    assert wide["speak-to-aria"]["height"] <= 52 and wide["speak-to-aria"]["face"] <= 40, "the header entry is compact"
+    assert 90 <= wide["hero-call"]["face"] <= 112 and 90 <= wide["band-call"]["face"] <= 116, "a portrait where it leads, not a huge one"
+    assert small["hero-call"]["face"] <= 84 and small["speak-to-aria"]["face"] <= 40 and small["mobile-call"]["height"] >= 44, "smaller on a phone, and still a full-size touch target"
+    for state in (wide["hero-call"], wide["band-call"], small["hero-call"]):
+        assert state["bg"] in ("rgba(0, 0, 0, 0)", "transparent"), ("the portrait entries sit on the page, not in a box", state["bg"])
+    for state in (wide["speak-to-aria"], small["mobile-call"]):
+        assert state["bg"] == "rgb(15, 107, 104)", "the compact entries are the site's teal, never white"
+    for state in (*wide.values(), *small.values()):
+        assert state["overflow"] <= 0 and state["inView"] and state["loaded"], state
+
+
+def test_the_default_illustration_still_fills_every_entry_when_no_personal_avatar_is_configured(driver, sites):
+    def work(page):
+        return page.evaluate("""() => [...document.querySelectorAll('.call-entry img')].map(i => i.getAttribute('src'))""")
+
+    sources = run(driver, sites["configured"], work)
+    assert len(sources) == 5 and set(sources) == {"assets/aria-avatar.svg"}
+
+
+# ---------------------------------------------------------------- gaps found by the mutation checks
+
+
+@pytest.mark.parametrize("raw", ["Access denied", "Call not allowed on this plan", "Insufficient permission for this agent", "Not allowed"])
+def test_only_an_explicit_microphone_refusal_is_called_one_a_vague_denial_is_not(driver, sites, raw):
+    failed, kept, _retried = run(driver, sites["configured"], fail_with(raw))
+    assert failed["snap"]["text"] == TRY_LATER and kept["snap"]["text"] == TRY_LATER and "Microphone" not in failed["seen"]
+
+
+@pytest.mark.parametrize("site,raw,expected", [("configured", "Permission denied", MICROPHONE), ("configured", "boom", TRY_LATER), ("numbered", "boom", WITH_NUMBER)])
+def test_a_stray_request_to_end_the_call_after_a_failure_keeps_that_failures_own_message(driver, sites, site, raw, expected):
+    def work(page):
+        start(page)
+        page.evaluate(f"window.__hooks.onError(new Error({raw!r}))")
+        page.evaluate("document.getElementById('call-end').click()")   # the call bar's End control while nothing is running: it must not turn the failure into something else
+        page.wait_for_timeout(150)
+        return snapshot(page), status_links(page)
+
+    shown, links = run(driver, sites[site], work)
+    assert shown["state"] == "error" and shown["text"] == expected and shown["call"] and shown["ariaCall"] is None
+    assert [link["text"] for link in links] == ([CONTACT_PHONE] if expected == WITH_NUMBER else [])

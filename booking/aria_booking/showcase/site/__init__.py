@@ -111,6 +111,21 @@ def _people(rows) -> str:
     )
 
 
+def call_entry(avatar_file: str, variant: str, caption: str, *, sub: str = "", testid: str = "", lazy: bool = False) -> str:
+    """One avatar-led way to start the ONE call: the configured avatar (the same file the floating widget shows), a small phone badge and a caption. It is a plain button marked
+    ``data-voice-start``, so it goes through the page's single call controller (voice.js): it starts no call by itself, never a second one, and the browser still asks for the
+    microphone. The picture is decoration (the button's own label says what it does), so it has no alt text of its own."""
+    label = f"{caption}, our AI voice assistant. Starts a call."
+    classes = " ".join(f"call-entry--{part}" for part in variant.split())
+    attrs = f' data-testid="{_e(testid)}"' if testid else ""
+    detail = f'<span class="call-entry__sub">{_e(sub)}</span>' if sub else ""
+    loading = ' loading="lazy"' if lazy else ""
+    return (f'<button class="call-entry {classes}" type="button" data-voice-start{attrs} aria-label="{_e(label)}">'
+            f'<span class="call-entry__avatar" aria-hidden="true"><span class="call-entry__face"><img src="assets/{avatar_file}" alt="" width="96" height="96" decoding="async"{loading}></span>'
+            f'<span class="call-entry__badge">{ICON_PHONE}</span></span>'
+            f'<span class="call-entry__text"><span class="call-entry__caption">{_e(caption)}</span>{detail}</span></button>')
+
+
 def _credits() -> list:
     return json.loads((ASSET_DIR / "credits.json").read_text(encoding="utf-8"))["images"]
 
@@ -168,7 +183,7 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
     <nav class="nav" aria-label="Main">
       <a href="#menu">Menu</a><a href="#team">Team</a><a href="#visit">Hours</a><a href="#calendar" data-testid="nav-calendar">Calendar</a><a href="#staff-calendar" data-testid="nav-staff-calendar">Staff calendar</a>
     </nav>
-    <div class="header-actions"><button class="btn btn-primary btn-small" type="button" data-voice-start data-testid="speak-to-aria">{ICON_MIC}<span>Speak to Aria</span></button></div>
+    <div class="header-actions">{call_entry(avatar_file, "chip", "Speak to Aria", testid="speak-to-aria")}</div>
   </div>
 </header>
 <main id="main">
@@ -180,7 +195,7 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
     <h1 id="hero-title">{_e(showcase.tagline)}</h1>
     <p class="lede">A calm place to book your next treatment. Ask Aria, our voice assistant, about the menu or open times.</p>
     <div class="hero-actions">
-      <button class="btn btn-light" type="button" data-voice-start>{ICON_MIC}<span>Speak to Aria</span></button>
+      {call_entry(avatar_file, "hero", "Speak to Aria", sub="Your AI voice assistant", testid="hero-call")}
       <a class="btn btn-outline" href="#calendar" data-testid="calendar-link">{ICON_CALENDAR}<span>See open times</span></a>
     </div>
     <p class="hero-note">Aria can answer questions about the menu and check which times are open on the prototype calendar. Team members can open the <a href="#staff-calendar" style="color:var(--white)">staff calendar</a>.</p>
@@ -202,7 +217,7 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
   <div class="band-photo"><img src="assets/diffuser-candles.jpg" alt="{_e(credits["diffuser-candles.jpg"]["alt"])}" width="900" height="1350" loading="lazy" decoding="async"></div>
   <div class="band-copy"><p class="kicker" style="color:var(--teal-100)">Aria, your assistant</p><h2 id="band-title">Questions, answered out loud</h2>
     <p>Press the button and just talk. Aria can explain the menu, tell you who offers a treatment and check which times are open on the calendar.</p>
-    <button class="btn btn-light" type="button" data-voice-start>{ICON_MIC}<span>Speak to Aria</span></button></div>
+    {call_entry(avatar_file, "band", "Speak to Aria", sub="Your AI voice assistant", testid="band-call", lazy=True)}</div>
 </div></section>
 <section class="section" id="team" aria-labelledby="team-title"><div class="wrap">
   <div class="section-head"><p class="kicker">The team</p><h2 id="team-title">Meet the team</h2><p>The people on the calendar.</p></div>
@@ -233,7 +248,7 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
   <div class="open-results" id="ot-results" aria-live="polite" data-state=""><p>Pick a treatment and a day, then choose Show open times.</p></div>
   <p class="ot-refresh-note" id="ot-refresh-note" role="status" data-testid="ot-refresh-note"></p>
   <p class="view-foot">This view only lists open times; it does not make a booking. The times refresh by themselves when the calendar changes.</p>
-  <div class="visit-actions"><button type="button" class="btn btn-primary btn-small" data-voice-start>{ICON_MIC}<span>Ask Aria about a time</span></button><button type="button" class="btn btn-ghost btn-small" id="ot-refresh" data-refresh="calendar" data-testid="ot-refresh">Refresh times</button><a class="btn btn-ghost btn-small" href="#staff-calendar">Staff calendar</a></div>
+  <div class="visit-actions">{call_entry(avatar_file, "chip", "Ask Aria about a time", testid="view-call", lazy=True)}<button type="button" class="btn btn-ghost btn-small" id="ot-refresh" data-refresh="calendar" data-testid="ot-refresh">Refresh times</button><a class="btn btn-ghost btn-small" href="#staff-calendar">Staff calendar</a></div>
 </div></section>
 <section class="view" id="view-staff" hidden aria-labelledby="view-staff-title" data-testid="view-staff"><div class="wrap">
   <div class="view-top"><a class="btn btn-ghost btn-small back-home" href="#top" data-home>{ICON_BACK}<span>Back to {_e(showcase.name)}</span></a></div>
@@ -253,7 +268,7 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
   </div>
   <p class="footer-bottom">{_e(showcase.prototype_label)}.</p>
 </div></footer>
-<div class="mobile-cta" aria-label="Quick actions"><button class="btn btn-primary" type="button" data-voice-start>{ICON_MIC}<span>Speak to Aria</span></button>
+<div class="mobile-cta" aria-label="Quick actions">{call_entry(avatar_file, "chip bar", "Speak to Aria", testid="mobile-call", lazy=True)}
   <a class="btn btn-ghost" style="background:var(--white)" href="#calendar" data-testid="mobile-calendar">{ICON_CALENDAR}<span>Calendar</span></a></div>
 
 <div class="call-bar" id="call-bar" hidden role="region" aria-label="Call with Aria" data-testid="call-bar"><span class="call-bar__dot" aria-hidden="true"></span><span class="call-bar__text" id="call-bar-text">On a call with Aria</span>

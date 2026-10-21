@@ -979,3 +979,20 @@ def test_the_views_are_readable_on_a_phone_and_nothing_overflows(driver, stack, 
     assert small == [], f"touch targets under 44px: {small}"
     assert state_ == "open" and overflow["scroll"] <= overflow["inner"]
     assert frame["w"] <= frame["inner"] and frame["h"] >= 480
+
+
+def test_the_avatar_led_entry_in_the_calendar_view_starts_the_one_call_and_it_survives_moving_between_the_views(driver, stack):
+    def work(page):
+        page.evaluate("location.hash = '#calendar'")
+        page.wait_for_selector("#view-calendar:not([hidden])")
+        page.click('[data-testid="view-call"]')
+        page.wait_for_function("() => window.__created === 1")
+        page.evaluate("window.__hooks.onStatus('live')")
+        page.evaluate("location.hash = '#staff-calendar'")
+        page.wait_for_selector("#view-staff:not([hidden])")
+        page.click("#view-staff [data-home]")
+        page.wait_for_selector("#view-staff", state="hidden")
+        return page.evaluate("() => ({created: window.__created, ended: window.__ended, same: window.__marker, call: document.documentElement.dataset.ariaCall || null, state: document.getElementById('aria').dataset.state, widgets: document.querySelectorAll('[data-testid=aria-widget]').length})")
+
+    shown = run(driver, stack, work)
+    assert shown == {"created": 1, "ended": 0, "same": "same page", "call": "1", "state": "live", "widgets": 1}
