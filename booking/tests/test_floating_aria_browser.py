@@ -13,6 +13,7 @@ import pytest
 
 from aria_booking.config import Config
 from aria_booking.playwright_driver import PlaywrightBooksyDriver
+from aria_booking.showcase.config import load_showcase
 from aria_booking.showcase.site import build_site
 
 from test_playwright_smoke import LoopbackOnlySession, channel, never_left_this_machine  # noqa: F401  (fixtures)
@@ -25,6 +26,10 @@ SDK_STUB = (
 )
 SLOW_SDK_STUB = "await new Promise(r => setTimeout(r, 1500));" + SDK_STUB.replace("window.__created = 0; window.__ended = 0;", "window.__created = window.__created || 0; window.__ended = window.__ended || 0;")
 SETTINGS = {"publicKey": "public_key_test", "agentId": "agent_test", "agentVersion": 0}
+CONTACT_PHONE, CONTACT_TEL = "(212) 555-0111", "+12125550111"   # fictional: a reserved 555-01xx number
+TRY_LATER = "Aria is currently unavailable. Please try again in a little while, or contact the salon directly."
+WITH_NUMBER = f"Aria is currently unavailable. Please call Serenity Spa directly at {CONTACT_PHONE}."
+MICROPHONE = "Microphone blocked. Allow it for this site in your browser, then press Call again."
 ERRORS: list = []
 
 
@@ -41,11 +46,13 @@ def serve(folder):
 
 @pytest.fixture(scope="module")
 def sites(tmp_path_factory):
-    configured, bare = tmp_path_factory.mktemp("aria-configured"), tmp_path_factory.mktemp("aria-bare")
+    configured, bare, numbered = tmp_path_factory.mktemp("aria-configured"), tmp_path_factory.mktemp("aria-bare"), tmp_path_factory.mktemp("aria-numbered")
     build_site(configured, settings=SETTINGS)
     build_site(bare)
-    servers = [serve(configured), serve(bare)]
-    yield {"configured": f"http://127.0.0.1:{servers[0].server_address[1]}/", "bare": f"http://127.0.0.1:{servers[1].server_address[1]}/"}
+    build_site(numbered, showcase=load_showcase(overrides={"contact_phone": CONTACT_PHONE}), settings=SETTINGS)   # the same page, with a salon number in the shared showcase configuration
+    servers = [serve(configured), serve(bare), serve(numbered)]
+    yield {"configured": f"http://127.0.0.1:{servers[0].server_address[1]}/", "bare": f"http://127.0.0.1:{servers[1].server_address[1]}/",
+           "numbered": f"http://127.0.0.1:{servers[2].server_address[1]}/"}
     for server in servers:
         server.shutdown()
         server.server_close()
@@ -208,49 +215,182 @@ def test_hanging_up_ends_the_call_once_and_the_call_icon_returns_when_the_sdk_sa
     assert after["state"] == "ended" and after["text"] == "Call ended." and after["call"] and not after["hangup"] and after["ariaCall"] is None and after["created"] == 1
 
 
-@pytest.mark.parametrize("failure,expect", [
-    ("Failed to fetch", "Network problem reaching Aria"),
-    ("Origin not allowed (403)", "allowed domains"),
-    ("Permission denied", "Microphone blocked"),
-    ("boom", "Couldn’t start the call: boom"),
-])
-def test_an_error_says_what_is_wrong_and_the_call_icon_offers_another_try(driver, sites, failure, expect):
+RAW_FAILURES = [   # what an SDK or the network may say: none of it may reach a visitor
+    "Insufficient credits (402): add funds at https://dashboard.retellai.com/billing for account acct_8f3a12",
+    "402 Payment Required",
+    "Origin not allowed (403)",
+    "401 Unauthorized: invalid public key public_key_live_abc123",
+    "Failed to fetch",
+    "NetworkError when attempting to fetch resource.",
+    "boom",
+    "TypeError: Cannot read properties of undefined (reading 'x') at https://cdn.example/sdk.js:1:2",
+]
+LEAKS = ("402", "403", "401", "https", "dashboard", "acct_", "public_key", "TypeError", "boom", "fetch", "Insufficient", "Payment", "Origin", "Unauthorized", "undefined", "NetworkError", "retellai")
+
+
+def visible(page) -> str:
+    """Everything a visitor can read or hover around the widget: its visible text, the call bar, the toast, and every title, label and alt text inside them."""
+    return page.evaluate("""() => {
+        const parts = [document.getElementById('aria').innerText, document.getElementById('call-bar').innerText, document.getElementById('toast').innerText];
+        for (const el of document.querySelectorAll('#aria *, #call-bar *, #toast')) for (const a of ['title', 'aria-label', 'alt']) if (el.getAttribute(a)) parts.push(el.getAttribute(a));
+        return parts.join(' | ');
+    }""")
+
+
+def status_links(page) -> list:
+    return page.evaluate("() => Array.from(document.querySelectorAll('#aria a')).map(a => ({href: a.getAttribute('href'), text: a.textContent, inStatus: !!a.closest('#voice-status')}))")
+
+
+def fail_with(raw):
     def work(page):
         start(page)
-        page.evaluate(f"window.__hooks.onError(new Error({failure!r}))")
-        failed = snapshot(page)
+        page.evaluate(f"window.__hooks.onError(new Error({raw!r}))")
+        failed = {"snap": snapshot(page), "seen": visible(page), "links": status_links(page)}
         page.evaluate("window.__hooks.onEnd()")  # the 'ended' that follows an error must not replace its message
-        kept = snapshot(page)
+        kept = {"snap": snapshot(page), "links": status_links(page)}
         page.click('[data-testid="aria-call"]')
         page.wait_for_function("() => window.__created === 2")
-        return failed, kept, snapshot(page)
+        return failed, kept, {"snap": snapshot(page), "links": status_links(page)}
 
-    failed, kept, retried = run(driver, sites["configured"], work)
-    assert failed["state"] == "error" and expect in failed["text"] and failed["call"] and not failed["hangup"] and failed["callLabel"] == "Try calling Aria again"
-    assert kept["text"] == failed["text"]
-    assert retried["created"] == 2 and retried["state"] == "connecting"
+    return work
 
 
-def test_a_call_that_never_connected_says_so(driver, sites):
+@pytest.mark.parametrize("raw", RAW_FAILURES)
+def test_every_failure_that_is_not_the_microphone_says_the_same_calm_thing_and_offers_another_try_with_no_number_to_call(driver, sites, raw):
+    failed, kept, retried = run(driver, sites["configured"], fail_with(raw))
+    shown = failed["snap"]
+    assert shown["state"] == "error" and shown["text"] == TRY_LATER and shown["call"] and not shown["hangup"] and shown["callLabel"] == "Try calling Aria again"
+    assert failed["links"] == [] and kept["links"] == [], "no number is configured: no telephone link, not even an empty one"
+    assert kept["snap"]["text"] == TRY_LATER and kept["snap"]["state"] == "error"
+    for leak in LEAKS:
+        assert leak.lower() not in failed["seen"].lower(), (leak, failed["seen"])
+    assert retried["snap"]["created"] == 2 and retried["snap"]["state"] == "connecting" and retried["links"] == [], "another try starts a new call and clears the notice"
+
+
+@pytest.mark.parametrize("raw", RAW_FAILURES)
+def test_with_a_salon_number_configured_the_same_failures_offer_it_as_a_click_to_call_link(driver, sites, raw):
+    failed, kept, retried = run(driver, sites["numbered"], fail_with(raw))
+    shown = failed["snap"]
+    assert shown["state"] == "error" and shown["text"] == WITH_NUMBER and shown["callLabel"] == "Try calling Aria again"
+    assert failed["links"] == [{"href": f"tel:{CONTACT_TEL}", "text": CONTACT_PHONE, "inStatus": True}]
+    assert kept["snap"]["text"] == WITH_NUMBER and kept["links"] == failed["links"], "the 'ended' that follows keeps the notice and its link"
+    for leak in LEAKS:
+        assert leak.lower() not in failed["seen"].lower(), (leak, failed["seen"])
+    assert retried["links"] == [] and retried["snap"]["state"] == "connecting"
+
+
+@pytest.mark.parametrize("raw", [
+    "Permission denied",
+    "NotAllowedError: Permission denied by system",
+    "Permission dismissed",
+    "NotAllowedError: The request is not allowed by the user agent or the platform in the current context.",
+])
+@pytest.mark.parametrize("site", ["configured", "numbered"])
+def test_an_actual_microphone_refusal_keeps_its_own_plain_guidance_and_never_mentions_a_number(driver, sites, raw, site):
+    failed, kept, _retried = run(driver, sites[site], fail_with(raw))
+    assert failed["snap"]["text"] == MICROPHONE and kept["snap"]["text"] == MICROPHONE
+    assert failed["links"] == [] and "unavailable" not in failed["seen"]
+
+
+@pytest.mark.parametrize("raw", [
+    "Domain not allowed",
+    "Forbidden: origin not allowed (403)",
+    "403 Forbidden: permission denied for this origin",
+    "401 Unauthorized: permission denied",
+    "Request failed with status 402: permission denied, insufficient balance",
+    "Payment required: permission denied until credits are added",
+])
+def test_an_address_sign_in_or_payment_problem_is_never_taken_for_a_blocked_microphone(driver, sites, raw):
+    failed, kept, _retried = run(driver, sites["configured"], fail_with(raw))
+    assert failed["snap"]["text"] == TRY_LATER and kept["snap"]["text"] == TRY_LATER and "Microphone" not in failed["seen"]
+
+
+@pytest.mark.parametrize("site,expected", [("configured", TRY_LATER), ("numbered", WITH_NUMBER)])
+def test_a_call_that_ended_without_ever_connecting_gets_the_same_notice_and_nothing_technical(driver, sites, site, expected):
     def work(page):
         start(page)
         page.evaluate("window.__hooks.onEnd()")
-        return snapshot(page)
+        return snapshot(page), visible(page), status_links(page)
 
-    shown = run(driver, sites["configured"], work)
-    assert shown["state"] == "error" and shown["text"].startswith("The call didn’t connect") and shown["call"] and shown["ariaCall"] is None
+    shown, seen, links = run(driver, sites[site], work)
+    assert shown["state"] == "error" and shown["text"] == expected and shown["call"] and shown["ariaCall"] is None
+    assert "Microphone blocked" not in seen and "allowed domains" not in seen and "Retell" not in seen
+    assert [link["text"] for link in links] == ([CONTACT_PHONE] if site == "numbered" else [])
 
 
-def test_without_voice_settings_the_widget_says_so_and_never_loads_the_sdk(driver, sites):
+def test_a_call_that_connected_and_then_failed_still_says_so_calmly_and_the_ended_event_cannot_replace_it(driver, sites):
+    def work(page):
+        go_live(page)
+        page.evaluate("window.__hooks.onError(new Error('Failed to fetch'))")
+        page.evaluate("window.__hooks.onEnd(); window.__hooks.onEnd();")
+        return snapshot(page), status_links(page)
+
+    shown, links = run(driver, sites["numbered"], work)
+    assert shown["state"] == "error" and shown["text"] == WITH_NUMBER and len(links) == 1 and shown["ariaCall"] is None
+
+
+def test_without_voice_settings_the_widget_is_calm_too_never_loads_the_sdk_and_names_no_setting(driver, sites):
     hits: list = []
 
     def work(page):
         page.click('[data-testid="aria-call"]')
         page.wait_for_timeout(500)
-        return snapshot(page)
+        titles = page.evaluate("() => Array.from(document.querySelectorAll('[data-voice-start]')).map(b => b.title)")
+        return snapshot(page), titles
 
-    shown = run(driver, sites["bare"], work, sdk_hits=hits)
-    assert shown["state"] == "error" and shown["text"] == "Voice isn’t set up on this page yet." and shown["created"] == 0 and hits == []
+    shown, titles = run(driver, sites["bare"], work, sdk_hits=hits)
+    assert shown["state"] == "error" and shown["text"] == TRY_LATER and shown["created"] == 0 and hits == []
+    assert titles and all("public key" not in title.lower() and "demo-config" not in title and "agent id" not in title.lower() for title in titles)
+
+
+@pytest.mark.parametrize("bad", ["javascript:alert(1)", "tel:+12125550111", "12", "+1 212 555 0111", "", "+123456789012345678"])
+def test_a_malformed_dialling_value_on_the_page_is_never_turned_into_a_link(driver, sites, bad):
+    def work(page):
+        page.evaluate(f"document.getElementById('aria').dataset.contactTel = {bad!r}")   # as if the page had been edited: the script trusts nothing it did not check
+        start(page)
+        page.evaluate("window.__hooks.onError(new Error('boom'))")
+        return snapshot(page), status_links(page)
+
+    shown, links = run(driver, sites["numbered"], work)
+    assert shown["text"] == TRY_LATER and links == []
+
+
+def test_the_number_is_a_real_link_a_keyboard_reaches_and_it_is_the_only_new_thing_on_screen(driver, sites):
+    def work(page):
+        start(page)
+        page.evaluate("window.__hooks.onError(new Error('boom'))")
+        page.focus("#voice-status a.aria__tel")
+        focused = page.evaluate("() => document.activeElement.className + '|' + document.activeElement.getAttribute('href')")
+        box = page.evaluate("() => { const r = document.querySelector('#voice-status a.aria__tel').getBoundingClientRect(); return {w: r.width, h: r.height}; }")
+        return focused, box, snapshot(page)
+
+    focused, box, shown = run(driver, sites["numbered"], work, width=390, height=800)
+    assert focused == f"aria__tel|tel:{CONTACT_TEL}" and box["h"] >= 30 and box["w"] > 60, box
+    assert shown["state"] == "error" and shown["call"] and not shown["hangup"] and shown["created"] == 1
+
+
+def test_the_operator_can_tell_which_kind_of_failure_it_was_from_the_console_and_a_visitor_never_can(driver, sites):
+    def work(page):
+        seen: list = []
+
+        def listener(message):
+            seen.append((message.type, message.text))
+
+        page.on("console", listener)
+        try:
+            for number, raw in enumerate(("402 Payment Required for account acct_8f3a12", "Origin not allowed (403)", "Failed to fetch", "boom", "Permission denied"), start=1):
+                page.click('[data-testid="aria-call"]')   # a new attempt (after an error the Call icon is the retry control)
+                page.wait_for_function(f"() => window.__created === {number}")
+                page.evaluate(f"window.__hooks.onError(new Error({raw!r}))")
+        finally:
+            page.remove_listener("console", listener)
+        return [text for kind, text in seen if text.startswith("[aria-voice]")], [text for kind, text in seen]
+
+    diagnostics, everything = run(driver, sites["configured"], work)
+    assert diagnostics[:5] == ["[aria-voice] billing", "[aria-voice] domain-or-key", "[aria-voice] network", "[aria-voice] unknown", "[aria-voice] microphone"], diagnostics
+    for text in everything:
+        for leak in ("acct_", "402", "403", "boom", "Payment", "Origin"):
+            assert leak not in text, (leak, text)
 
 
 def test_hanging_up_while_the_sdk_is_still_loading_creates_no_call_at_all(driver, sites):
@@ -320,7 +460,7 @@ def test_an_sdk_that_fails_to_load_is_reported_for_the_current_attempt_and_for_n
 
     cancelled, current = run(driver, sites["configured"], work, sdk=FAILING_SDK)
     assert cancelled["state"] == "idle" and cancelled["text"] is None and cancelled["call"], "nothing is said about an attempt that was already hung up"
-    assert current["state"] == "error" and current["text"].startswith("Network problem reaching Aria") and "SDK could not be loaded" in current["text"] and current["call"] and not current["hangup"]
+    assert current["state"] == "error" and current["text"] == TRY_LATER and "SDK" not in current["text"] and current["call"] and not current["hangup"]
 
 
 @pytest.mark.parametrize("late", ["hangup_timer", "repeated_end", "late_error", "late_status", "late_speech"])
@@ -381,7 +521,7 @@ def test_a_microphone_refusal_that_surfaces_as_an_unhandled_rejection_ends_the_c
         return snapshot(page)
 
     shown = run(driver, sites["configured"], work)
-    assert shown["text"].startswith("Microphone blocked.") and shown["ended"] == 1 and shown["created"] == 1 and shown["call"] and not shown["hangup"]
+    assert shown["text"] == MICROPHONE and shown["ended"] == 1 and shown["created"] == 1 and shown["call"] and not shown["hangup"]
 
 
 # ---------------------------------------------------------------- tearing a call down is asynchronous too: the end of an old call finishes whenever it finishes

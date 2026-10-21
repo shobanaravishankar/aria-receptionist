@@ -30,9 +30,8 @@ export class RetellClient {
   }
 }
 """
-GENERIC = "The call didn’t connect."
-DOMAIN = "This web address isn’t on the Retell key’s allowed domains yet"
-MICROPHONE = "Microphone blocked."
+UNAVAILABLE = "Aria is currently unavailable. Please try again in a little while, or contact the salon directly."   # the page here has no salon number configured
+MICROPHONE = "Microphone blocked. Allow it for this site in your browser, then press Call again."
 
 
 class Quiet(SimpleHTTPRequestHandler):
@@ -93,44 +92,45 @@ def run_scenario(driver, site, steps: str) -> dict:
 
 def test_a_domain_error_stays_on_screen_when_the_ended_event_follows(driver, site):
     shown = run_scenario(driver, site, "window.__hooks.onError(new Error('Forbidden: origin not allowed (403)')); window.__hooks.onEnd();")
-    assert shown["state"] == "error" and shown["text"].startswith(DOMAIN) and "403" in shown["text"] and GENERIC not in shown["text"]
+    assert shown["state"] == "error" and shown["text"] == UNAVAILABLE and "403" not in shown["text"] and "allowed domains" not in shown["text"]
     assert shown["retryHidden"] is False and shown["retryLabel"] == "Try calling Aria again" and shown["closeHidden"] is False and shown["endHidden"] is True and shown["inCall"] is None
 
 
 def test_a_microphone_error_stays_on_screen_when_the_ended_event_follows(driver, site):
     shown = run_scenario(driver, site, "window.__hooks.onError(new Error('NotAllowedError: Permission denied')); window.__hooks.onEnd();")
-    assert shown["text"].startswith(MICROPHONE) and GENERIC not in shown["text"]
+    assert shown["text"] == MICROPHONE and "unavailable" not in shown["text"]
 
 
 def test_an_error_after_the_call_went_live_also_survives_the_ended_event(driver, site):
     shown = run_scenario(driver, site, "window.__hooks.onStatus('live'); window.__hooks.onError(new Error('Failed to fetch')); window.__hooks.onEnd();")
-    assert shown["state"] == "error" and shown["text"].startswith("Network problem reaching Aria") and "Failed to fetch" in shown["text"]
+    assert shown["state"] == "error" and shown["text"] == UNAVAILABLE and "Failed to fetch" not in shown["text"]
 
 
 def test_a_repeated_ended_event_does_not_change_the_message_either(driver, site):
     shown = run_scenario(driver, site, "window.__hooks.onError(new Error('401 unauthorized')); window.__hooks.onEnd(); window.__hooks.onEnd();")
-    assert shown["text"].startswith(DOMAIN)
+    assert shown["text"] == UNAVAILABLE
 
 
 @pytest.mark.parametrize("raw,expected", [
-    ("Domain not allowed", DOMAIN),                     # contains 'not allowed': it is the key's domain list, not the microphone
-    ("Forbidden: origin not allowed (403)", DOMAIN),
-    ("Request failed with status 401", DOMAIN),
-    ("NotAllowedError: Permission denied", MICROPHONE),  # the real microphone refusal still says so
+    ("Domain not allowed", UNAVAILABLE),                     # contains 'not allowed': it is the key's domain list, not the microphone
+    ("Forbidden: origin not allowed (403)", UNAVAILABLE),
+    ("Request failed with status 401", UNAVAILABLE),
+    ("Request failed with status 402: insufficient credits", UNAVAILABLE),
+    ("NotAllowedError: Permission denied", MICROPHONE),      # the real microphone refusal still says so
     ("Permission dismissed", MICROPHONE),
-    ("Failed to fetch", "Network problem reaching Aria"),
+    ("Failed to fetch", UNAVAILABLE),
 ])
-def test_each_kind_of_failure_gets_its_own_message(driver, site, raw, expected):
+def test_a_microphone_refusal_has_its_own_guidance_and_every_other_failure_the_same_calm_notice(driver, site, raw, expected):
     shown = run_scenario(driver, site, f"window.__hooks.onError(new Error({raw!r})); window.__hooks.onEnd();")
-    assert shown["text"].startswith(expected) and GENERIC not in shown["text"]
+    assert shown["text"] == expected
 
 
 # ---------------------------------------------------------------- what must NOT change
 
 
-def test_an_end_with_no_error_before_the_call_connected_still_gets_the_generic_message(driver, site):
+def test_an_end_with_no_error_before_the_call_connected_gets_the_calm_notice_not_a_guess_about_the_microphone(driver, site):
     shown = run_scenario(driver, site, "window.__hooks.onEnd();")
-    assert shown["state"] == "error" and shown["text"].startswith(GENERIC) and shown["retryHidden"] is False
+    assert shown["state"] == "error" and shown["text"] == UNAVAILABLE and shown["retryHidden"] is False
 
 
 def test_a_call_that_went_live_and_then_ended_normally_says_so(driver, site):
@@ -139,8 +139,8 @@ def test_a_call_that_went_live_and_then_ended_normally_says_so(driver, site):
 
 
 def test_a_new_attempt_forgets_the_last_failure(driver, site):
-    # fail once, press retry, then end WITHOUT an error: the generic message must come back, not the stale one
-    run_scenario(driver, site,"window.__hooks.onError(new Error('Forbidden: origin not allowed (403)')); window.__hooks.onEnd();")
+    # fail once (the microphone), press retry, then end WITHOUT an error: the calm notice must come back, not the stale microphone guidance
+    run_scenario(driver, site,"window.__hooks.onError(new Error('NotAllowedError: Permission denied')); window.__hooks.onEnd();")
 
     def retry(page):
         page.click("#aria-call")
@@ -149,7 +149,7 @@ def test_a_new_attempt_forgets_the_last_failure(driver, site):
         return page.evaluate("() => document.querySelector('.aria__text').textContent")
 
     text = driver._run(retry, 30)
-    assert text.startswith(GENERIC) and DOMAIN not in text
+    assert text == UNAVAILABLE and "Microphone" not in text
 
 
 def test_the_page_is_configured_with_public_settings_only_and_the_simulation_banner(driver, site):

@@ -247,6 +247,7 @@ def test_the_page_the_prompt_and_the_spoken_fallback_all_come_from_the_same_two_
     prompt = expected_prompt(mode=mode, showcase=cfg.prompt_showcase())
     phrase = contact_phrase(cfg.resolved_showcase())
     assert LOCATION in page and PHONE in page and LOCATION in prompt and PHONE in prompt and phrase == f"contact Serenity Spa at {SPOKEN}"
+    assert 'data-contact-tel="+12125550111"' in page and f'data-contact-phone="{PHONE}"' in page, "the widget's click-to-call notice carries the same number"
     assert (cfg.web_out / "index.html").read_text(encoding="utf-8").count(LOCATION) == 1
     text = (tmp_path / "state" / "test-instructions.txt").read_text(encoding="utf-8")
     assert LOCATION not in text and PHONE not in text and "555-0111" not in text, "the operator's step sheet carries neither"
@@ -260,6 +261,6 @@ def test_without_a_file_the_prepared_page_is_the_unconfigured_one_in_every_mode(
         cfg = config(directory, mode=mode)
         assert agent_ops.prepare_web(cfg, FakeSecrets(), lambda m: None) == 0
         page = (cfg.web_out / "index.html").read_text(encoding="utf-8")
-        assert "Contact details are not configured in this prototype." in page and "Address:" not in page
+        assert "Contact details are not configured in this prototype." in page and "Address:" not in page and "data-contact" not in page
         assert (LIFECYCLE_BOOKING_NOTE in page) == (mode != "availability")
     assert PUBLIC not in page

@@ -156,6 +156,8 @@ noscript .panel[hidden] { display: block; }
 .aria[data-state="error"] .aria__dot { background: var(--red); }
 .aria__body { display: block; min-width: 0; }
 .aria__text { display: block; overflow-wrap: anywhere; }
+.aria__tel { display: inline-block; padding: 6px 2px; color: var(--white); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.aria__tel:focus-visible { outline: 3px solid var(--white); outline-offset: 2px; border-radius: 4px; }
 .aria__fine { display: none; margin-top: 6px; font-size: 12.5px; line-height: 1.35; color: var(--mist-dim); }
 .aria[data-state="connecting"] .aria__fine, .aria[data-state="live"] .aria__fine { display: block; }
 .aria__stage { position: relative; width: clamp(132px, 12vw, 176px); padding-bottom: 28px; background: transparent; }

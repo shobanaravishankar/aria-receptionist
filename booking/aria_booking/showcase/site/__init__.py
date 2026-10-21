@@ -15,6 +15,7 @@ from typing import Optional
 
 from ...catalog.lookup import Catalog
 from ...demo import DEMO_BUSINESS_ID
+from ...history.phone import normalize_phone
 from ..catalog import SHOWCASE_CATALOG
 from ..config import SHOWCASE, Showcase
 from ..roster import ROSTER_ROWS, StaffRow, role_of
@@ -128,6 +129,9 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
     people = _people(rows)
     cal = calendar_link(calendar_port, origin)  # the configured staff calendar address: used only as the frame's source, never hard-coded elsewhere
     bookable_script = script_tag(bookable if bookable is not None else bookable_data([(cid, label) for cid, label, *_r in present], calendar_origin(calendar_port, origin), catalog, refresh_seconds=refresh_seconds))
+    tel = normalize_phone(showcase.contact_phone) if showcase.contact_phone else None
+    contact_attrs = (f' data-contact-name="{_e(showcase.contact_name or showcase.name)}" data-contact-phone="{_e(showcase.contact_phone)}" data-contact-tel="{_e(tel)}"'
+                     if tel else "")   # the widget's "call the salon" sentence: only when a number is configured, so an unset number adds nothing to the page
     address = f"<p>Address: {_e(showcase.location)}</p>" if showcase.location else ""
     phone = (f'<p>Phone: <a href="tel:{_e("".join(ch for ch in showcase.contact_phone if ch.isdigit() or ch == "+"))}">{_e(showcase.contact_phone)}</a></p>'
              if showcase.contact_phone else "" if address else "<p>Contact details are not configured in this prototype.</p>")
@@ -255,7 +259,7 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
 <div class="call-bar" id="call-bar" hidden role="region" aria-label="Call with Aria" data-testid="call-bar"><span class="call-bar__dot" aria-hidden="true"></span><span class="call-bar__text" id="call-bar-text">On a call with Aria</span>
   <button type="button" class="btn btn-small btn-ghost" id="call-show">Show</button><button type="button" class="btn btn-small btn-primary" id="call-end">End call</button></div>
 
-<aside class="aria" id="aria" data-state="idle" role="region" aria-label="Aria, the voice assistant" data-testid="aria-widget">
+<aside class="aria" id="aria" data-state="idle" role="region" aria-label="Aria, the voice assistant" data-testid="aria-widget"{contact_attrs}>
   <p class="aria__status" id="voice-status" role="status" aria-live="polite" hidden data-testid="aria-status"><span class="aria__dot" aria-hidden="true"></span>
     <span class="aria__body"><span class="aria__text"></span><span class="aria__fine">Aria is an AI voice assistant. Retell may retain this test call for review for up to {retention_days} days.</span></span></p>
   <div class="aria__stage">

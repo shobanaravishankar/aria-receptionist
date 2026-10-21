@@ -32,7 +32,7 @@ let starting = false;    // request in flight, not yet "live"
 let run = null;          // the call ATTEMPT in progress, {over, ending}: every SDK event, every pending hang-up and every timer belongs to ONE attempt, and is ignored once that attempt is over or a newer one has begun
 let endTimer = null;     // the safety net after a hang-up; it belongs to the attempt that set it
 let everLive = false;    // did this call reach "live" before ending?
-let failure = null;      // the specific message of a failed start or call: the "ended" event that follows an error must not replace it with the generic one
+let failure = null;      // which kind of failure a start or call had ("microphone" or "unavailable"): the "ended" event that follows an error must not replace it with the generic one
 let clearTimer = null;
 
 /* ---------------- helpers ---------------- */
@@ -52,10 +52,18 @@ function syncControls() {
   if (bar) bar.hidden = !(active && widget.hidden);
 }
 
-function setStatus(state, message) {
+function setStatus(state, message, notice) {
   clearTimeout(clearTimer);
   widget.dataset.state = state;
   statusText.textContent = message;
+  if (notice && notice.link) {   // the same sentence, with the salon's number as a click-to-call link (built from text nodes, never from markup)
+    const a = document.createElement("a");
+    a.className = "aria__tel";
+    a.href = notice.link.href;
+    a.textContent = notice.link.label;
+    statusText.textContent = "";
+    statusText.append(notice.before, a, notice.after);
+  }
   statusBox.hidden = !message;
   if (barText) barText.textContent = "Aria · " + message;
   if (state !== "live") delete widget.dataset.speaking;
@@ -90,16 +98,48 @@ function loadSdk() {
   return sdkPromise;
 }
 
-function friendlyError(err) {
-  const raw = (err && (err.message || String(err))) || "Unknown error";
-  // Domain and key problems first: "origin not allowed (403)" contains "not allowed" and must not be reported as a blocked microphone.
-  if (/origin|domain|forbidden|unauthori[sz]ed|\b40[13]\b/i.test(raw))
-    return "This web address isn’t on the Retell key’s allowed domains yet — add it in Retell → API Keys → Public Keys, then try again. (" + raw + ")";
-  if (/denied|permission|notallowed|not allowed/i.test(raw))
-    return "Microphone blocked. Allow it for this site in your browser, then press Call again.";
-  if (/network|failed to fetch|load|timeout/i.test(raw))
-    return "Network problem reaching Aria. Check the connection and try again. (" + raw + ")";
-  return "Couldn’t start the call: " + raw;
+/* ---------------- what a visitor is told ---------------- */
+const MICROPHONE_BLOCKED = "Microphone blocked. Allow it for this site in your browser, then press Call again.";
+const TRY_LATER = "Aria is currently unavailable. Please try again in a little while, or contact the salon directly.";
+
+/* How to reach the salon: the page carries the shared showcase configuration's number on the widget, and ONLY when one is configured. Nothing is invented or borrowed here. */
+function contactInfo() {
+  const d = widget.dataset;
+  const label = (d.contactPhone || "").trim();
+  const tel = (d.contactTel || "").trim();
+  if (!label || !/^\+?\d{8,15}$/.test(tel)) return null;
+  return { name: (d.contactName || "").trim() || "the salon", label, href: "tel:" + tel };
+}
+
+/* What every failure that is NOT the visitor's own microphone says: calm and complete, never a status code, an address, a setting, an account or a payment detail.
+ * With a salon number configured it offers that number as a click-to-call link; without one it says to try again or contact the salon, and shows no number and no link. */
+function unavailableNotice() {
+  const contact = contactInfo();
+  if (!contact) return { message: TRY_LATER };
+  const before = "Aria is currently unavailable. Please call " + contact.name + " directly at ";
+  return { message: before + contact.label + ".", before, link: contact, after: "." };
+}
+
+function showFailure(kind) {
+  if (kind === "microphone") { setStatus("error", MICROPHONE_BLOCKED); return; }
+  const notice = unavailableNotice();
+  setStatus("error", notice.message, notice);
+}
+
+/* What went wrong, as ONE WORD. It is used to choose the sentence above and to tell the operator (in the browser console only) which kind of failure it was. The error's own
+ * text is never shown and never logged: it can carry addresses, ids or account detail. */
+function classify(err) {
+  const text = ((err && err.name) || "") + " " + ((err && (err.message || String(err))) || "");
+  // Address, key and sign-in problems first: "origin not allowed (403)" contains "not allowed" and must never be taken for a blocked microphone.
+  if (/origin|domain|forbidden|unauthori[sz]ed|\b40[13]\b|api[ _-]?key|public[ _-]?key/i.test(text)) return "domain-or-key";
+  if (/\b402\b|payment|billing|credit|quota|insufficient|balance|subscription/i.test(text)) return "billing";
+  if (/notallowederror|permissiondeniederror|permission (denied|dismissed)|microphone|getusermedia|not allowed by the user agent/i.test(text)) return "microphone";
+  if (/network|failed to fetch|load|timeout/i.test(text)) return "network";
+  return "unknown";
+}
+
+function diagnose(kind) {
+  try { console.warn("[aria-voice] " + kind); } catch (_) { /* a console is optional */ }
 }
 
 /* ---------------- show / hide ---------------- */
@@ -123,7 +163,8 @@ async function startCall() {
   const wasHidden = widget.hidden;
   showWidget();
   if (!isConfigured()) {
-    setStatus("error", "Voice isn’t set up on this page yet.");
+    diagnose("not-configured");
+    showFailure("unavailable");
     return;
   }
   if (inCall()) {   // a live call just comes back to the front; one that is still connecting says so. Never a second call.
@@ -185,9 +226,10 @@ function onStatus(status) {
 function onEnd() {
   if (widget.hidden) showWidget();   // the call ended while the avatar was put away: show how it ended
   if (failure) {
-    // An error already said why this call failed (and showed it). Retell also fires "ended" afterwards: keep the specific message.
+    // An error already said why this call failed (and showed it). Retell also fires "ended" afterwards: keep that message.
+    const kind = failure;
     reset();
-    setStatus("error", failure);
+    showFailure(kind);
     return;
   }
   const connected = everLive;
@@ -196,7 +238,8 @@ function onEnd() {
     setStatus("ended", "Call ended.");
     settleLater();
   } else {
-    setStatus("error", "The call didn’t connect. This is usually the microphone being blocked, or this site’s address not being on the Retell public key’s allowed domains. Check both, then try again.");
+    diagnose("ended-before-connecting");
+    showFailure("unavailable");
   }
 }
 
@@ -206,10 +249,11 @@ function onError(err) {
 
 function fail(err) {
   if (widget.hidden) showWidget();
-  const message = friendlyError(err);
-  failure = message;
+  const kind = classify(err);
+  diagnose(kind);
+  failure = kind === "microphone" ? "microphone" : "unavailable";
   reset();
-  setStatus("error", message);
+  showFailure(failure);
 }
 
 function reset() {
@@ -274,7 +318,8 @@ window.addEventListener("beforeunload", () => { try { call && call.end(); } catc
 
 syncControls();
 if (!isConfigured()) {
+  diagnose("not-configured");   // for the operator's console: the page has no public key or agent id yet
   document.querySelectorAll("[data-voice-start]").forEach((b) => {
-    b.title = "Voice is not set up on this page yet: it needs the public key and the agent id in demo-config.js";
+    b.title = unavailableNotice().message;
   });
 }

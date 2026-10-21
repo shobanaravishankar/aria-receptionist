@@ -12,6 +12,7 @@ import pytest
 from aria_booking import cli
 from aria_booking.demo import agent_ops
 from aria_booking.demo.agent_ops import OperatorConfig, OperatorError, State, load_config
+from aria_booking.showcase.config import load_showcase
 from aria_booking.showcase.site import ASSET_DIR, MAX_AVATAR_BYTES, SITE_DIR, build_site
 
 from test_demo_agent_ops import KEY, PUBLIC, TOKEN, TUNNEL, FakeSecrets
@@ -215,3 +216,47 @@ def test_the_hang_up_control_is_held_only_by_the_attempt_that_is_hanging_up_and_
     after_end = body[body.index("await ending.end()"):]
     assert after_end.index("if (run !== mine || mine.over) return;") < after_end.index("clearTimeout(endTimer)") < after_end.index("setTimeout("), "ownership is checked before the continuation touches the timer"
     assert "{ over: false, ending: false }" in VOICE_JS
+
+
+# ---------------------------------------------------------------- what a visitor is told when the voice fails
+
+
+def test_every_failure_sentence_is_chosen_in_one_place_and_the_errors_own_text_is_never_shown():
+    assert re.findall(r'setStatus\("error", [^;]*\);', VOICE_JS) == ['setStatus("error", MICROPHONE_BLOCKED);', 'setStatus("error", notice.message, notice);']
+    without_classify = re.sub(r"function classify\(err\) \{.*?\n\}\n", "", VOICE_JS, flags=re.S)
+    assert "err.message" not in without_classify and "String(err)" not in without_classify and ".stack" not in VOICE_JS, "the error's own text is read only to choose a sentence"
+    assert 'console.warn("[aria-voice] " + kind)' in VOICE_JS and VOICE_JS.count("console.") == 1, "one category word for the operator's console, nothing else"
+
+
+def test_the_script_names_no_setting_account_status_code_telephone_number_or_salon():
+    for word in ("Retell key", "allowed domains", "Public Keys", "API Keys", "Couldn’t start the call", "didn’t connect", "isn’t set up", "demo-config", "Glamour", "Fiona", "Serenity"):
+        assert word not in VOICE_JS, word
+    assert not re.search(r"\(?\d{3}\)?[ .-]\d{3}[ .-]\d{4}", VOICE_JS) and not re.search(r"\+\d{8,}", VOICE_JS), "no telephone number is written in the script"
+    assert "innerHTML" not in VOICE_JS and "insertAdjacentHTML" not in VOICE_JS, "the number is added as text and one link element, never as markup"
+
+
+def test_the_widget_carries_the_salon_number_only_when_one_is_configured(tmp_path):
+    plain = tmp_path / "plain"
+    build_site(plain, settings=SETTINGS)
+    assert "data-contact" not in (plain / "index.html").read_text(encoding="utf-8"), "an unset number adds nothing to the page"
+    numbered = tmp_path / "numbered"
+    build_site(numbered, showcase=load_showcase(overrides={"contact_phone": "(212) 555-0111"}), settings=SETTINGS)
+    page = Page()
+    page.feed((numbered / "index.html").read_text(encoding="utf-8"))
+    widget = page.find("aside", id="aria")[0]
+    assert (widget["data-contact-name"], widget["data-contact-phone"], widget["data-contact-tel"]) == ("Serenity Spa", "(212) 555-0111", "+12125550111")
+
+
+def test_the_name_and_number_on_the_widget_are_escaped_and_the_dialling_value_is_digits_only(tmp_path):
+    out = tmp_path / "odd"
+    build_site(out, showcase=load_showcase(overrides={"contact_phone": "+44 20 7946 0958", "contact_name": 'Lotus <b>"Spa"</b>'}), settings=SETTINGS)
+    html = (out / "index.html").read_text(encoding="utf-8")
+    page = Page()
+    page.feed(html)
+    widget = page.find("aside", id="aria")[0]
+    assert widget["data-contact-name"] == 'Lotus <b>"Spa"</b>' and 'data-contact-name="Lotus &lt;b&gt;&quot;Spa&quot;&lt;/b&gt;"' in html
+    assert widget["data-contact-tel"] == "+442079460958" and re.fullmatch(r"\+?\d{8,15}", widget["data-contact-tel"])
+
+
+def test_the_link_is_styled_to_be_read_and_reached_on_the_dark_status_box():
+    assert re.search(r"\.aria__tel \{[^}]*text-decoration: underline", CSS) and re.search(r"\.aria__tel:focus-visible \{[^}]*outline: 3px solid", CSS)
