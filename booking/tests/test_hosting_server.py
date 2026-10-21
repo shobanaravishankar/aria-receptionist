@@ -452,3 +452,52 @@ def test_a_showcase_file_puts_the_same_address_and_number_on_the_site_and_in_the
         assert "Appointments made here exist only in this prototype calendar" in text, "the lifecycle label ending is kept"
     finally:
         run.stop()
+
+
+# ---------------------------------------------------------------- the log line and a caller who goes away
+
+
+def test_the_log_line_is_written_before_the_answer_goes_out(running, monkeypatch):
+    import http.server
+
+    original = http.server.BaseHTTPRequestHandler.send_response
+
+    def marked(self, *args, **kwargs):
+        running.lines.append("<<answer sent>>")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(http.server.BaseHTTPRequestHandler, "send_response", marked)
+    assert running.get("/demo/health")[0] == 200
+    lines = list(running.lines)
+    logged = [i for i, line in enumerate(lines) if line.startswith("GET /demo/health 200")]
+    assert logged and lines.index("<<answer sent>>") > logged[-1], "anyone who has read the answer can already find its line"
+
+
+def test_a_caller_who_goes_away_mid_answer_is_still_logged_and_makes_no_noise(running, monkeypatch, capsys):
+    import http.client
+    import http.server
+
+    def gone(self, *args, **kwargs):
+        raise BrokenPipeError("the caller is gone")
+
+    monkeypatch.setattr(http.server.BaseHTTPRequestHandler, "send_response", gone)
+    connection = http.client.HTTPConnection("127.0.0.1", running.server.server_address[1], timeout=10)
+    with pytest.raises((http.client.RemoteDisconnected, ConnectionError)):
+        connection.request("GET", "/demo/health")
+        connection.getresponse()
+    connection.close()
+    text = "\n".join(running.lines)
+    assert "GET /demo/health 200" in text and "failed" not in text and capsys.readouterr().err == ""
+    assert "ended early" not in text, "a caller going away mid-answer is handled where it happens; it never reaches the error handler"
+
+
+def test_a_connection_error_outside_a_request_is_one_plain_line_and_any_other_failure_says_only_its_type(running, capsys):
+    for error in (ConnectionResetError("secret detail " + KEY), TimeoutError("secret detail " + KEY), ValueError("secret detail " + KEY)):
+        try:
+            raise error
+        except Exception:
+            running.server.handle_error(None, ("203.0.113.9", 5))
+    text = "\n".join(running.lines)
+    assert text.count("a connection ended early") == 2 and "a request failed (ValueError)" in text
+    assert KEY not in text and "203.0.113.9" not in text and "secret detail" not in text
+    assert capsys.readouterr().err == ""

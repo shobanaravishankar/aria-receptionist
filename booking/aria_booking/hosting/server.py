@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import signal
+import sys
 import tempfile
 import threading
 import time
@@ -136,15 +137,19 @@ def make_public_server(app: PublicApp, host: str, port: int) -> ThreadingHTTPSer
         protocol_version = "HTTP/1.1"
 
         def _send(self, reply: Reply, *, head: bool = False, started: float = 0.0) -> None:
-            self.send_response(reply.status)
-            self.send_header("Content-Type", reply.kind)
-            self.send_header("Content-Length", str(len(reply.body)))
-            for key, value in reply.extra.items():
-                self.send_header(key, value)
-            self.end_headers()
-            if not head:
-                self.wfile.write(reply.body)
+            # Logged BEFORE the answer goes out: the line exists as soon as anyone can have read the answer, and also when the caller has already gone away.
             app.log(f"{self.command} {urlparse(self.path).path} {reply.status} {int((time.time() - started) * 1000)}ms")
+            try:
+                self.send_response(reply.status)
+                self.send_header("Content-Type", reply.kind)
+                self.send_header("Content-Length", str(len(reply.body)))
+                for key, value in reply.extra.items():
+                    self.send_header(key, value)
+                self.end_headers()
+                if not head:
+                    self.wfile.write(reply.body)
+            except (ConnectionError, TimeoutError):  # the caller went away mid-answer: there is nobody to send the rest to
+                self.close_connection = True
 
         def _body(self) -> Optional[bytes]:
             try:
@@ -189,9 +194,16 @@ def make_public_server(app: PublicApp, host: str, port: int) -> ThreadingHTTPSer
         def log_message(self, *args) -> None:  # request lines carry call ids and queries: the app logs only method, path and status
             return
 
-    server = ThreadingHTTPServer((host, port), Handler)
-    server.daemon_threads = True
-    return server
+    class Server(ThreadingHTTPServer):
+        daemon_threads = True
+
+        def handle_error(self, request, client_address) -> None:
+            """A connection that ends early (a caller closing a tab, a reset) is one plain log line, not a traceback on stderr; nothing about the caller or the request is recorded."""
+            kind = sys.exc_info()[0]
+            app.log("a connection ended early" if kind is not None and issubclass(kind, (ConnectionError, TimeoutError))
+                    else f"a request failed ({kind.__name__ if kind is not None else 'unknown'})")
+
+    return Server((host, port), Handler)
 
 
 # ---------------------------------------------------------------- assembling and running
