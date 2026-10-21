@@ -1,0 +1,3 @@
+# What the PUBLIC backend needs to run (python -m aria_booking demo-public-serve): Python's own library plus the IANA time-zone data (a slim container image has none).
+# It does not need a browser, Playwright or Selenium; those are for the tests and for reading a real Booksy page.
+tzdata==2026.5

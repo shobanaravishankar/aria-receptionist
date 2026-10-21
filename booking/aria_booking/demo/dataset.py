@@ -16,7 +16,7 @@ import hashlib
 import random
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from ..catalog.bookable import BookableRegistry, BookableService
 from ..showcase.catalog import SHOWCASE_CATALOG
@@ -134,8 +134,10 @@ def _client(rng: random.Random) -> str:
 
 
 class DemoDataset:
-    def __init__(self, today: date, *, extra_staff: Iterable[DemoStaff] = (), overlay=None, diagnostic_unknown_hours: Iterable[str] = ()):
-        self.today = today
+    def __init__(self, today: date, *, extra_staff: Iterable[DemoStaff] = (), overlay=None, diagnostic_unknown_hours: Iterable[str] = (),
+                 today_source: Optional[Callable[[], date]] = None):
+        self._today_source = today_source  # a server that runs for days passes its clock here, so 'today' (the coverage window, the scripted days) follows the real date
+        self._today = today
         self.diagnostic_unknown_hours = frozenset(diagnostic_unknown_hours)  # staff ids whose hours are deliberately NOT shown (a test or diagnostic scenario)
         self.overlay = overlay  # appointments.overlay.StoreOverlay, or None: the plain generated calendar, which nothing can change
         everyone = ROSTER + tuple(extra_staff)
@@ -151,6 +153,14 @@ class DemoDataset:
         self._category = {service.service_id: category for service, category in pairs}
 
     # ---- what is covered -------------------------------------------------------------------------
+    @property
+    def today(self) -> date:
+        return self._today_source() if self._today_source is not None else self._today
+
+    @today.setter
+    def today(self, value: date) -> None:
+        self._today = value
+
     @property
     def first_day(self) -> date:
         return self.today - timedelta(days=COVERAGE_BEFORE_DAYS)

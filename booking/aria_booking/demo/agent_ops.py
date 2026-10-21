@@ -69,7 +69,7 @@ ALLOWED = (
 )
 CONFIG_KEYS = frozenset({
     "tunnel_url", "agent_name", "voice_id", "model", "model_temperature", "language", "max_call_duration_ms", "data_storage_retention_days",
-    "begin_message", "state_dir", "web_dir", "calendar_port", "tools_port", "page_port", "mode", "avatar_image",
+    "begin_message", "state_dir", "web_dir", "calendar_port", "tools_port", "page_port", "mode", "avatar_image", "backend_url",
 })
 RETIRED_KEYS = frozenset({"template_dir"})  # the page is no longer built from a website template; config files that still name it keep loading
 
@@ -130,6 +130,7 @@ class OperatorConfig:
     tools_port: int = 8787
     page_port: int = 5174
     mode: str = "availability"  # or "lifecycle": which reviewed prompt and function set this agent is held to
+    backend_url: str = ""  # the https address of the PUBLIC backend (``demo-public-serve``): the page then reads its calendar from there and is built to upload to a static host (Netlify)
     avatar_image: str = ""  # path of a square transparent png/webp/svg for the floating Aria avatar; empty = the built-in illustration. Kept out of Git (it may be a real likeness).
 
     def __post_init__(self) -> None:
@@ -189,6 +190,8 @@ def load_config(env: Mapping[str, str], *, file: Optional[str] = None, overrides
         values["state_dir"] = env["ARIA_DEMO_STATE_DIR"].strip()
     if (env.get("ARIA_AVATAR_IMAGE") or "").strip():
         values["avatar_image"] = env["ARIA_AVATAR_IMAGE"].strip()
+    if (env.get("ARIA_BACKEND_URL") or "").strip():
+        values["backend_url"] = env["ARIA_BACKEND_URL"].strip()
     values.update({k: v for k, v in (overrides or {}).items() if v not in (None, "")})
     for key in ("state_dir", "web_dir"):
         if key in values and values[key] is not None:
@@ -655,14 +658,25 @@ def prepare_web(config: OperatorConfig, secrets: Any, out: Callable[[str], None]
     tomorrow = (datetime.fromtimestamp(clock(), ZoneInfo(SPA_TIMEZONE)) + timedelta(days=1)).date().isoformat()
     settings = {"publicKey": public_key, "agentId": agent["agent_id"], "agentVersion": agent.get("version", 0)}
     showcase = replace(SHOWCASE, booking_note=LIFECYCLE_BOOKING_NOTE) if config.mode == "lifecycle" else SHOWCASE
+    backend = ""
+    if config.backend_url:
+        from ..hosting.config import HostingError, parse_origin
+
+        try:
+            backend = parse_origin(config.backend_url, setting="backend_url / ARIA_BACKEND_URL")
+        except HostingError as exc:
+            raise OperatorError(str(exc)) from None
     try:
         build_site(target, showcase=showcase, settings=settings, calendar_port=config.calendar_port, retention_days=config.data_storage_retention_days,
-                   avatar=config.avatar_image or None)
+                   avatar=config.avatar_image or None, origin=backend, static_host=bool(backend))
     except ValueError as exc:
         raise OperatorError(str(exc)) from None
     instructions = state.dir / "test-instructions.txt"
     instructions.write_text(test_instructions(config, tomorrow, target), encoding="utf-8", newline="\n")
     out(f"Isolated {SALON_NAME} voice page prepared in {target} with the prototype label and the separate test agent.")
+    if backend:
+        out(f"This page reads its calendar from the PUBLIC backend {backend} and is ready to upload to a static host (a _headers file is included): see DEPLOY.md, 'Updating the Netlify demo'.")
+        out(f"Before uploading, check the backend: python -m aria_booking demo-public-check --url {backend} --site-origin <the website's https address>")
     out(f"Serve it:  python -m http.server {config.page_port} --bind 127.0.0.1 --directory {target}")
     out(f"Open it at {config.page_url}  (localhost, NOT 127.0.0.1: the Retell public key allows localhost, not the numeric address). Steps: {instructions}")
     return 0

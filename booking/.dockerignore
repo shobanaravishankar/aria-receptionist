@@ -1,0 +1,14 @@
+# Keep the image small and keep anything personal out of it.
+.git
+.local
+**/__pycache__
+**/*.pyc
+tests
+showcase_evidence
+demo_evidence
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+.env
+.env.*
+fly.toml

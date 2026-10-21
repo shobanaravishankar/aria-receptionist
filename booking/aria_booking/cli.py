@@ -134,6 +134,23 @@ def build_parser() -> argparse.ArgumentParser:
                                               "(invented data, computed in a throw-away file; the demo's own appointment file is never opened)")
     p.add_argument("--today", default=None, help="the day the walk-through is given, YYYY-MM-DD (default: the real today in the spa's time zone)")
     p.add_argument("--format", choices=("text", "json"), default="text", help="text (default) or json")
+    p = sub.add_parser("demo-public-serve", help="run the PUBLIC backend of the Serenity demo (website, calendar and signed voice tools on one https origin); settings come from the environment, "
+                                                 "see DEPLOY.md. Simulated appointments in a file on a persistent volume; nothing is sent to anyone")
+    p.add_argument("--dev", action="store_true", help="development on this machine: allow http://localhost origins, a relative store path and no tool token")
+    p.add_argument("--host", default=None, help="the address to listen on (default 0.0.0.0: a container must accept the host's traffic)")
+    p.add_argument("--port", type=int, default=None, help="the port (default: PORT or ARIA_PORT, else 8080)")
+    p.add_argument("--store", default=None, help="the appointment file (default: ARIA_STORE_PATH)")
+    p.add_argument("--public-origin", default=None, help="this backend's own https address (default: ARIA_PUBLIC_ORIGIN)")
+    p.add_argument("--site-origin", action="append", default=None, help="a website allowed to read the calendar and show its staff page in a frame (repeatable; default: ARIA_SITE_ORIGINS)")
+    p.add_argument("--no-site", action="store_true", help="do not serve the website from here (a backend for a website hosted elsewhere)")
+    p = sub.add_parser("demo-public-check", help="ask a deployed public backend, from outside, the questions that matter (reachable, ready, the website may read it, the staff page may be framed, "
+                                                 "the tools refuse an unsigned call) and say what to change for each failure; read-only, signs nothing")
+    p.add_argument("--url", required=True, help="the backend's https address")
+    p.add_argument("--site-origin", default="", help="the website's https address, to check it is allowed (for example the Netlify address)")
+    p = sub.add_parser("demo-store", help="look after the demo's appointment file: a consistent copy, or a check (read-only on the file you name)")
+    p.add_argument("action", choices=("backup", "check"))
+    p.add_argument("--path", required=True, help="the appointment file (for backup: the file to copy)")
+    p.add_argument("--dest", default=None, help="for backup: the new file to make (it must not exist)")
     p = sub.add_parser("demo-screenshots", help="photograph the demo calendar page at the reference viewports (PNG files); invented data, loopback only")
     p.add_argument("--out", required=True, help="the folder for the PNG files")
     p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today)")
@@ -199,6 +216,9 @@ def main(
 
     if args.command == "demo-rehearsal":
         return _demo_rehearsal(args, out)
+
+    if args.command in ("demo-public-serve", "demo-public-check", "demo-store"):
+        return _hosting(args, env, out)
 
     if args.command in ("demo-screenshots", "demo-compare", "demo-day"):
         return _demo_visual(args, cfg, out)
@@ -613,6 +633,52 @@ def _demo_serve_lifecycle(args, cfg: Config, key: str, tool_token: str, today, o
         site.server_close()
         driver.close()
     return EXIT_OK
+
+
+def _hosting(args, env, out) -> int:
+    """The public backend and its tools. Standalone: no Booksy, no Retell API call, no browser (the server imports none of them)."""
+    if args.command == "demo-public-serve":
+        from .hosting.config import HostingError, load_public_config
+        from .hosting.server import serve_public
+
+        try:
+            config = load_public_config(env, dev=args.dev, overrides={"host": args.host, "port": args.port, "store": args.store, "public_origin": args.public_origin,
+                                                                      "site_origins": tuple(args.site_origin or ()), "serve_site": False if args.no_site else None})
+        except HostingError as exc:
+            out(f"refused: {exc}")
+            return EXIT_REFUSED
+        return serve_public(config, out=out, version=os.environ.get("ARIA_BUILD", ""))
+    if args.command == "demo-public-check":
+        from .hosting.checks import check_public
+        from .hosting.config import HostingError, parse_origin
+
+        try:
+            url = parse_origin(args.url, setting="--url", dev=True)  # a person may check a backend on their own machine too
+            site = parse_origin(args.site_origin, setting="--site-origin", dev=True) if args.site_origin else ""
+        except HostingError as exc:
+            out(f"refused: {exc}")
+            return EXIT_REFUSED
+        checks = check_public(url, site)
+        for check in checks:
+            out(f"{'PASS' if check.ok else 'FAIL'}  {check.name}: {check.detail}" + (f"\n      fix: {check.fix}" if check.fix and not check.ok else ""))
+        failed = [c for c in checks if not c.ok and c.required]
+        out("all checks passed" if not failed else f"{len(failed)} check(s) failed: fix them and run this again")
+        return EXIT_OK if not failed else EXIT_REFUSED
+    from .hosting.store_tools import StoreToolError, backup, summarize
+
+    try:
+        if args.action == "check":
+            summary = summarize(Path(args.path))
+            out(json.dumps(summary, indent=2))
+            return EXIT_OK if summary["integrity"] == "ok" else EXIT_REFUSED
+        if not args.dest:
+            out("refused: backup needs --dest, the new file to make.")
+            return EXIT_REFUSED
+        backup(Path(args.path), Path(args.dest), out=out)
+        return EXIT_OK
+    except StoreToolError as exc:
+        out(f"refused: {exc}")
+        return EXIT_REFUSED
 
 
 def _demo_rehearsal(args, out) -> int:

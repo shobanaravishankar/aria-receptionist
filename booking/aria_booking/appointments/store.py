@@ -281,6 +281,14 @@ class AppointmentStore:
             outbox = {r["status"]: r["n"] for r in conn.execute("SELECT status, COUNT(*) AS n FROM outbox GROUP BY status")}
             return {"appointments": by_status, "clients": conn.execute("SELECT COUNT(*) FROM clients").fetchone()[0], "outbox": outbox}
 
+    def can_write(self) -> bool:
+        """Can a write transaction be opened right now? It is opened and rolled back with nothing changed: the file is writable, the disk accepts it and nobody holds the lock."""
+        try:
+            with self._write():
+                return True
+        except StoreError:
+            return False
+
     def change_stamp(self) -> str:
         """A short token that differs whenever a booking, cancellation, move or seed has changed the file, so a page can ask 'has anything changed?' cheaply and refresh
         only then. Counts and ids only: no names, no phone numbers."""

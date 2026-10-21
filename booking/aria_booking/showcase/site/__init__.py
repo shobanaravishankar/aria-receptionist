@@ -64,14 +64,15 @@ def duration_text(minutes: Optional[int]) -> str:
     return " ".join(p for p in (f"{hours} hr" if hours else "", f"{rest} min" if rest else "") if p)
 
 
-def calendar_origin(calendar_port: int) -> str:
-    """Where the demo calendar server is, for the page's open-times requests: 'localhost', like every other address this page uses."""
-    return f"http://localhost:{calendar_port}"
+def calendar_origin(calendar_port: int, origin: str = "") -> str:
+    """Where the demo calendar server is, for the page's open-times requests. On a person's own machine: 'localhost', like every other address this page uses. On a public backend
+    (``origin``, an https origin with no path) that address instead, so nothing in the page points at this machine."""
+    return origin or f"http://localhost:{calendar_port}"
 
 
-def calendar_link(calendar_port: int) -> str:
-    """The demo calendar page. 'localhost', like the voice page: the same machine, one consistent address."""
-    return f"http://localhost:{calendar_port}/pro/en-us/{DEMO_BUSINESS_ID}/calendar?date=today&view=day&staffers=working"
+def calendar_link(calendar_port: int, origin: str = "") -> str:
+    """The demo calendar page, on the same origin as ``calendar_origin``."""
+    return f"{calendar_origin(calendar_port, origin)}/pro/en-us/{DEMO_BUSINESS_ID}/calendar?date=today&view=day&staffers=working"
 
 
 def _variants(items) -> str:
@@ -114,7 +115,7 @@ def _credits() -> list:
 
 
 def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: int, retention_days: int, bookable: Optional[dict] = None, avatar_file: str = DEFAULT_AVATAR,
-                 refresh_seconds: int = 5) -> str:
+                 refresh_seconds: int = 5, origin: str = "") -> str:
     credits = {c["file"]: c for c in _credits()}
     alts = {name: c["alt"] for name, c in credits.items()}
     alts["_size"] = {name: (c["width"], c["height"]) for name, c in credits.items()}
@@ -125,8 +126,8 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
     )
     panels = "".join(_panel(catalog, cid, heading, line, photo, alts, n == 0) for n, (cid, _label, heading, line, photo) in enumerate(present))
     people = _people(rows)
-    cal = calendar_link(calendar_port)  # the configured staff calendar address: used only as the frame's source, never hard-coded elsewhere
-    bookable_script = script_tag(bookable if bookable is not None else bookable_data([(cid, label) for cid, label, *_r in present], calendar_origin(calendar_port), catalog, refresh_seconds=refresh_seconds))
+    cal = calendar_link(calendar_port, origin)  # the configured staff calendar address: used only as the frame's source, never hard-coded elsewhere
+    bookable_script = script_tag(bookable if bookable is not None else bookable_data([(cid, label) for cid, label, *_r in present], calendar_origin(calendar_port, origin), catalog, refresh_seconds=refresh_seconds))
     phone = (f'<p>Phone: <a href="tel:{_e("".join(ch for ch in showcase.contact_phone if ch.isdigit() or ch == "+"))}">{_e(showcase.contact_phone)}</a></p>'
              if showcase.contact_phone else "<p>Contact details are not configured in this prototype.</p>")
     credit_items = "".join(
@@ -273,6 +274,21 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
 """
 
 
+STATIC_HOST_HEADERS = """/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: microphone=(self)
+/index.html
+  Cache-Control: no-cache
+/*.js
+  Cache-Control: no-cache
+/*.css
+  Cache-Control: no-cache
+/assets/*
+  Cache-Control: public, max-age=3600
+"""  # Netlify's _headers file; harmless anywhere else
+
+
 MAX_AVATAR_BYTES = 600_000  # a bigger picture slows the page for a visitor; `showcase-avatar` makes a web-sized copy
 
 
@@ -293,10 +309,12 @@ def _use_avatar(out: Path, avatar) -> str:
 
 
 def build_site(out_dir, *, showcase: Showcase = SHOWCASE, catalog: Catalog = SHOWCASE_CATALOG, rows=ROSTER_ROWS, settings: Optional[dict] = None,
-               calendar_port: int = 8790, retention_days: int = 7, avatar=None, refresh_seconds: int = 5) -> list:
+               calendar_port: int = 8790, retention_days: int = 7, avatar=None, refresh_seconds: int = 5, origin: str = "", static_host: bool = False) -> list:
     """Write the page into ``out_dir`` (created if needed) and return the files written. ``settings`` are the PUBLIC voice settings (public key, agent id, version):
     never a secret, and none at all is fine: the page then says voice is not configured instead of pretending. ``avatar`` is an optional image (png, webp or svg,
-    square, transparent background) that replaces the built-in illustration; it is copied in, never referenced from outside the folder."""
+    square, transparent background) that replaces the built-in illustration; it is copied in, never referenced from outside the folder. ``origin`` is the https address of the
+    backend that serves the calendar (a public deployment); left empty the page points at the calendar on this machine, by ``calendar_port``. ``static_host`` also writes the
+    ``_headers`` file a static host such as Netlify reads."""
     out = Path(out_dir)
     (out / "assets").mkdir(parents=True, exist_ok=True)
     shutil.copytree(ASSET_DIR, out / "assets", dirs_exist_ok=True)
@@ -304,12 +322,16 @@ def build_site(out_dir, *, showcase: Showcase = SHOWCASE, catalog: Catalog = SHO
     written = []
     index = out / "index.html"
     index.write_text(render_index(showcase, catalog, rows, calendar_port=calendar_port, retention_days=retention_days, avatar_file=avatar_file,
-                                          refresh_seconds=refresh_seconds), encoding="utf-8", newline="\n")
+                                          refresh_seconds=refresh_seconds, origin=origin), encoding="utf-8", newline="\n")
     written.append(index)
     for name in ("styles.css", "voice.js", "site.js", "views.js"):
         shutil.copyfile(SITE_DIR / name, out / name)
         written.append(out / name)
     written.extend(sorted(p for p in (out / "assets").rglob("*") if p.is_file()))
+    if static_host:  # a site that will be uploaded to a static host (Netlify) gets the host's rules file next to it
+        headers_file = out / "_headers"
+        headers_file.write_text(STATIC_HOST_HEADERS, encoding="utf-8", newline="\n")
+        written.append(headers_file)
     config = out / "demo-config.js"
     config.write_text("/* Public-only settings for the prototype page. Generated; not for Git. */\nwindow.RETELL_DEMO = " + json.dumps(settings or {}) + ";\n", encoding="utf-8", newline="\n")
     written.append(config)

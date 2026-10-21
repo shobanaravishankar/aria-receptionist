@@ -1,0 +1,40 @@
+# Fly.io: copy this file to booking/fly.toml and replace the three REPLACE values. Secrets NEVER go in this file:
+#   flyctl secrets set ARIA_RETELL_API_KEY=... ARIA_RETELL_TOOL_TOKEN=...      (typed by you, at the prompt or from your password manager)
+# One machine only: the appointment file is one SQLite file on one volume.
+app = "REPLACE-WITH-YOUR-APP-NAME"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  ARIA_STORE_PATH = "/data/appointments.sqlite3"
+  ARIA_PUBLIC_ORIGIN = "https://REPLACE-WITH-YOUR-APP-NAME.fly.dev"
+  # the websites allowed to read the calendar and to show its staff page in a frame (https, no trailing slash); comma-separated
+  ARIA_SITE_ORIGINS = "https://glamour-dayspa-aria-demo.netlify.app"
+  ARIA_RETELL_AGENT_ID = "REPLACE-WITH-THE-EXISTING-TEST-AGENT-ID"
+  ARIA_RETELL_AGENT_VERSION = "0"
+  # ARIA_RETELL_PUBLIC_KEY is a PUBLIC key (restricted by Retell to the allowed domains): it may be set here or as a secret.
+
+[mounts]
+  source = "aria_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

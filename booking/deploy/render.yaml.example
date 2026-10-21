@@ -1,0 +1,29 @@
+# Render: copy to render.yaml at the root of the repository you connect (or create the same service by hand in the dashboard). Secrets are NOT in this file:
+# the two `sync: false` entries are typed into the dashboard. A paid instance with a disk is required: the free tier has no disk and sleeps after about 15 minutes.
+services:
+  - type: web
+    name: serenity-demo
+    runtime: docker
+    dockerfilePath: ./booking/Dockerfile
+    dockerContext: ./booking
+    plan: starter
+    healthCheckPath: /healthz
+    disk:
+      name: aria-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: ARIA_STORE_PATH
+        value: /data/appointments.sqlite3
+      - key: ARIA_PUBLIC_ORIGIN
+        value: https://REPLACE-WITH-YOUR-SERVICE-NAME.onrender.com
+      - key: ARIA_SITE_ORIGINS
+        value: https://glamour-dayspa-aria-demo.netlify.app
+      - key: ARIA_RETELL_AGENT_ID
+        value: REPLACE-WITH-THE-EXISTING-TEST-AGENT-ID
+      - key: ARIA_RETELL_AGENT_VERSION
+        value: "0"
+      - key: ARIA_RETELL_API_KEY
+        sync: false
+      - key: ARIA_RETELL_TOOL_TOKEN
+        sync: false

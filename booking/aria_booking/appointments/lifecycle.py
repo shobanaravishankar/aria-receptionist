@@ -38,6 +38,13 @@ class Lifecycle:
     clock: Callable[[], datetime]
     seeded: Optional[SeedReport] = None
 
+    def maintain(self) -> SeedReport:
+        """Daily upkeep for a server that stays up for days: fictional visits whose time has passed are settled, and the fictional upcoming ones are topped up, by the same rules as a
+        start. A client's own appointment is never touched. Safe to run any number of times."""
+        self.store.settle_past_seeds()
+        self.seeded = seed_demo(self.store, self.judge, self.clock, self.tz)
+        return self.seeded
+
 
 def open_lifecycle(
     path: Path, *, today: Optional[date] = None, timezone: str = SPA_TIMEZONE, real_now: Optional[Callable[[], datetime]] = None, seed: bool = True,
@@ -47,6 +54,8 @@ def open_lifecycle(
     clock = demo_clock(today, tz, real_now)
     store = AppointmentStore(path, clock=lambda: to_epoch(clock()))
     store.settle_past_seeds()  # the fictional fixtures only: a caller's appointment is never marked completed for them
-    dataset = DemoDataset(clock().date(), overlay=StoreOverlay(store, tz), diagnostic_unknown_hours=diagnostic_unknown_hours)
+    # with no explicit demo date the calendar's 'today' follows the real date in the spa's time zone, however long the server stays up
+    dataset = DemoDataset(clock().date(), overlay=StoreOverlay(store, tz), diagnostic_unknown_hours=diagnostic_unknown_hours,
+                          today_source=(lambda: clock().date()) if today is None else None)
     judge = PlacementJudge(dataset, tz=tz, clock=clock, min_lead_minutes=min_lead_minutes, grid_minutes=grid_minutes)
     return Lifecycle(store, dataset, judge, tz, clock, seed_demo(store, judge, clock, tz) if seed else None)
