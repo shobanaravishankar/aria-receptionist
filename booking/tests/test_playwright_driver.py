@@ -536,3 +536,28 @@ def test_the_census_will_not_click_something_that_looks_like_an_action():
         driver.read_day(DAY)
     assert "click" not in [n for n, _t in page.calls]
     driver.close()
+
+
+# ---------------------------------------------------------------- tests of this machine's own pages are headless; the live-site path is not
+
+
+def test_headless_is_a_choice_only_offline_tests_make_and_the_live_default_is_unchanged(tmp_path):
+    cfg = Config(business_id="1234567", local_dir=tmp_path)
+    assert launch_options(cfg)["headless"] is False and launch_options(cfg, headless=False)["headless"] is False
+    assert launch_options(cfg, headless=True)["headless"] is True
+    assert {k: v for k, v in launch_options(cfg, headless=True).items() if k != "headless"} == {k: v for k, v in launch_options(cfg).items() if k != "headless"}
+
+
+def test_a_session_passes_its_headless_choice_to_the_browser_and_defaults_to_the_visible_window(tmp_path):
+    visible, hidden = FakePW(), FakePW()
+    PlaywrightSession(Config(business_id="1234567", local_dir=tmp_path / "a"), starter=lambda: visible).page()
+    PlaywrightSession(Config(business_id="1234567", local_dir=tmp_path / "b"), starter=lambda: hidden, headless=True).page()
+    assert visible.launched[0]["headless"] is False and hidden.launched[0]["headless"] is True
+
+
+def test_the_test_suites_own_browser_session_is_headless_and_no_test_file_asks_for_a_visible_window(tmp_path):
+    from test_playwright_smoke import LoopbackOnlySession
+
+    assert LoopbackOnlySession(Config(business_id="1234567", local_dir=tmp_path))._headless is True
+    offenders = [p.name for p in Path(__file__).parent.glob("test_*.py") if p.name != Path(__file__).name and re.search(r"headless\s*=\s*False", p.read_text(encoding="utf-8"))]
+    assert offenders == [], offenders

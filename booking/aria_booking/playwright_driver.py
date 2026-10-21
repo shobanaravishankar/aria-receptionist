@@ -85,9 +85,10 @@ SETTLE_FN = """(ms) => {
 }"""
 
 
-def launch_options(cfg: Config) -> dict[str, Any]:
-    """Exactly what the browser is started with. headless=False is explicit; nothing here hides automation."""
-    options: dict[str, Any] = {"user_data_dir": str(cfg.playwright_profile_dir), "headless": False, "viewport": dict(VIEWPORT)}
+def launch_options(cfg: Config, *, headless: bool = False) -> dict[str, Any]:
+    """Exactly what the browser is started with. For the live site headless=False is explicit and nothing here hides automation. ONLY offline tests of this machine's own pages
+    pass headless=True (their session class does), so that running the tests never puts a browser window on anyone's screen."""
+    options: dict[str, Any] = {"user_data_dir": str(cfg.playwright_profile_dir), "headless": headless, "viewport": dict(VIEWPORT)}
     if cfg.browser_channel:
         options["channel"] = cfg.browser_channel
     return options
@@ -104,8 +105,8 @@ def _start_playwright():
 class PlaywrightSession:
     """The Playwright instance, browser context and page. Create it anywhere, but call everything except ``__init__`` ONLY on the owner thread."""
 
-    def __init__(self, cfg: Config, *, starter: Callable[[], Any] = _start_playwright):
-        self._cfg, self._starter = cfg, starter
+    def __init__(self, cfg: Config, *, starter: Callable[[], Any] = _start_playwright, headless: bool = False):
+        self._cfg, self._starter, self._headless = cfg, starter, headless
         self._pw: Any = None
         self._context: Any = None
         self._page: Any = None
@@ -135,7 +136,7 @@ class PlaywrightSession:
             self._pw = self._starter()
         self._cfg.playwright_profile_dir.mkdir(parents=True, exist_ok=True)
         try:
-            self._context = self._pw.chromium.launch_persistent_context(**launch_options(self._cfg))
+            self._context = self._pw.chromium.launch_persistent_context(**launch_options(self._cfg, headless=self._headless))
         except PlaywrightError as exc:
             if "Executable doesn't exist" in str(exc) or "executable doesn't exist" in str(exc).lower():
                 raise DriverUnavailable(

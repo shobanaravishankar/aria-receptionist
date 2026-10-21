@@ -170,7 +170,11 @@ BLOCKED: list[str] = []  # every request the browser tried to make to anything o
 
 
 class LoopbackOnlySession(PlaywrightSession):
-    """The real session, plus a guard: the browser can reach ONLY 127.0.0.1 (and about:/data: pages). A test can never touch Booksy or any other site."""
+    """The real session, plus a guard: the browser can reach ONLY 127.0.0.1 (and about:/data: pages). A test can never touch Booksy or any other site.
+    It is HEADLESS: a test run never puts a browser window on anyone's screen (the live-site path keeps its explicit visible window)."""
+
+    def __init__(self, cfg, **kwargs):
+        super().__init__(cfg, headless=True, **kwargs)
 
     def _launch(self):
         super()._launch()
@@ -224,9 +228,8 @@ def check(tools, staff="Lily", time_="16:00"):
 # ---------------------------------------------------------------- launch and one real read
 
 
-def test_the_browser_really_starts_headful_and_the_synthetic_page_is_captured_exactly(shared):
-    agent = shared._run(lambda page: page.evaluate("navigator.userAgent"), 20)
-    assert "HeadlessChrome" not in agent, "a visible (headful) browser window"
+def test_the_browser_starts_and_the_synthetic_page_is_captured_exactly(shared):
+    # (That the live-site path starts a VISIBLE window is checked on the launch options; a test run itself is headless on purpose, so it never puts a window on anyone's screen.)
     assert shared._run(lambda page: page.evaluate("window.outerWidth > 0 && window.outerHeight > 0"), 20) is True
     shared.read_day(DAY)
     raw = shared._run(lambda page: page.evaluate(__import__("aria_booking.playwright_driver", fromlist=["x"]).as_function(
@@ -590,3 +593,12 @@ def test_after_a_verified_sign_in_the_same_window_reads_the_calendar(tmp_path, s
     finally:
         driver.close()
 
+
+
+def test_the_browser_the_tests_use_is_really_headless(tmp_path, site, channel):
+    driver, _cfg = new_driver(tmp_path, site, channel)
+    try:
+        agent = driver._run(lambda page: page.evaluate("navigator.userAgent"), 30)
+    finally:
+        driver.close()
+    assert "Headless" in agent, "a test run must never put a browser window on anyone's screen"
