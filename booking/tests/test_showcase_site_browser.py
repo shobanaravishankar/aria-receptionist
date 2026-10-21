@@ -85,7 +85,7 @@ WIDTHS = [(360, 640), (390, 844), (768, 1024), (1024, 768), (1440, 900)]
 @pytest.mark.parametrize("width,height", WIDTHS)
 def test_nothing_overflows_sideways_at_any_width(driver, sites, width, height):
     result = look(driver, sites["configured"], width, height, """() => {
-        const wide = [...document.querySelectorAll('body *')].filter(e => !e.closest('.tabs') && !e.closest('.voice-panel') && e.getBoundingClientRect().right > innerWidth + 1 && getComputedStyle(e).position !== 'fixed')
+        const wide = [...document.querySelectorAll('body *')].filter(e => !e.closest('.tabs') && !e.closest('.aria') && e.getBoundingClientRect().right > innerWidth + 1 && getComputedStyle(e).position !== 'fixed')
             .map(e => e.tagName + '.' + e.className).slice(0, 5);
         return {scroll: document.documentElement.scrollWidth, inner: innerWidth, wide};
     }""")
@@ -132,12 +132,14 @@ def test_pictures_load_and_the_fonts_are_the_self_hosted_ones(driver, sites):
         window.scrollTo(0, document.querySelector('#menu').offsetTop);
         await new Promise(r => setTimeout(r, 600));
         await document.fonts.ready;
-        const images = [...document.images].map(i => [i.getAttribute('src'), i.complete && i.naturalWidth > 0]);
-        return {images, serif: document.fonts.check('600 20px "Cormorant Garamond"'), sans: document.fonts.check('16px Jost'),
+        const images = [...document.images].filter(i => !i.classList.contains('aria__img')).map(i => [i.getAttribute('src'), i.complete && i.naturalWidth > 0]);
+        const avatar = document.querySelector('.aria__img');
+        return {images, avatar: avatar.complete && avatar.naturalWidth > 0, serif: document.fonts.check('600 20px "Cormorant Garamond"'), sans: document.fonts.check('16px Jost'),
                 faces: [...document.fonts].filter(f => f.status === 'loaded').map(f => f.family.replace(/"/g, '')),
                 h1: getComputedStyle(document.querySelector('h1')).fontFamily};
     }""")
     assert all(ok for _src, ok in result["images"]) and len(result["images"]) == 4, result["images"]
+    assert result["avatar"] is True, "the floating avatar picture loads"
     assert result["serif"] and result["sans"] and {"Cormorant Garamond", "Jost"} <= set(result["faces"]) and result["h1"].startswith('"Cormorant Garamond"')
 
 
@@ -189,33 +191,6 @@ def test_the_phone_bar_appears_after_the_hero_and_hides_at_the_top(driver, sites
 
 def test_the_phone_bar_is_not_there_on_a_desktop(driver, sites):
     assert look(driver, sites["configured"], 1440, 900, "() => getComputedStyle(document.querySelector('.mobile-cta')).display", scroll=False) == "none"
-
-
-def test_the_voice_panel_opens_from_every_speak_button_and_shows_connecting_without_a_close_button(driver, sites):
-    def press(page):
-        page.click(".site-header [data-voice-start]")
-        page.wait_for_function("() => document.querySelector('.voice-status__ring').dataset.state === 'connecting'")
-
-    state = look(driver, sites["configured"], 1440, 900, """() => ({open: !document.getElementById('voice-panel').hidden,
-        text: document.querySelector('.voice-status__text').textContent, closeHidden: document.querySelector('[data-voice-close]').hidden,
-        note: document.querySelector('.voice-panel__mic').textContent})""", scroll=False, actions=press)
-    assert state["open"] and state["text"].startswith("Connecting to Aria") and state["closeHidden"] is True and "up to 7 days" in state["note"]
-
-
-def test_without_settings_the_panel_says_voice_is_not_configured_and_escape_closes_it(driver, sites):
-    def press(page):
-        page.click(".hero .btn-light")
-        page.wait_for_function("() => document.querySelector('.voice-status__text').textContent.includes('configured')")
-
-    shown = look(driver, sites["bare"], 1440, 900, "() => ({open: !document.getElementById('voice-panel').hidden, text: document.querySelector('.voice-status__text').textContent})",
-                 scroll=False, actions=press)
-    assert shown == {"open": True, "text": "Voice isn’t configured yet."}
-
-    def escape(page):
-        press(page)
-        page.keyboard.press("Escape")
-
-    assert look(driver, sites["bare"], 1440, 900, "() => document.getElementById('voice-panel').hidden", scroll=False, actions=escape) is True
 
 
 def test_no_script_or_page_error_was_raised_in_any_of_this():

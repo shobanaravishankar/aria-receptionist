@@ -61,7 +61,7 @@ def driver(tmp_path_factory, channel):
 
 
 def run_scenario(driver, site, steps: str) -> dict:
-    """Load the page, press the voice button, run ``steps`` (JavaScript that calls the SDK hooks), and report what the panel shows."""
+    """Load the page, press the voice button, run ``steps`` (JavaScript that calls the SDK hooks), and report what the floating Aria avatar shows."""
 
     def work(page):
         if not getattr(page, "_stubbed", False):
@@ -76,12 +76,12 @@ def run_scenario(driver, site, steps: str) -> dict:
         page.wait_for_function("() => window.__hooks !== undefined")
         page.evaluate(steps)
         return page.evaluate("""() => ({
-            state: document.querySelector('.voice-status__ring').dataset.state,
-            text: document.querySelector('.voice-status__text').textContent,
-            retryHidden: document.getElementById('voice-retry').hidden,
-            retryLabel: document.getElementById('voice-retry').textContent,
-            endHidden: document.getElementById('voice-end').hidden,
-            closeHidden: document.querySelector('[data-voice-close]').hidden,
+            state: document.getElementById('aria').dataset.state,
+            text: document.querySelector('.aria__text').textContent,
+            retryHidden: document.getElementById('aria-call').hidden,   // the Call icon is also the retry control
+            retryLabel: document.getElementById('aria-call').getAttribute('aria-label'),
+            endHidden: document.getElementById('aria-hangup').hidden,
+            closeHidden: document.getElementById('aria-hide').hidden,
             inCall: document.documentElement.dataset.ariaCall || null,
         })""")
 
@@ -94,7 +94,7 @@ def run_scenario(driver, site, steps: str) -> dict:
 def test_a_domain_error_stays_on_screen_when_the_ended_event_follows(driver, site):
     shown = run_scenario(driver, site, "window.__hooks.onError(new Error('Forbidden: origin not allowed (403)')); window.__hooks.onEnd();")
     assert shown["state"] == "error" and shown["text"].startswith(DOMAIN) and "403" in shown["text"] and GENERIC not in shown["text"]
-    assert shown["retryHidden"] is False and shown["retryLabel"] == "Try again" and shown["closeHidden"] is False and shown["endHidden"] is True and shown["inCall"] is None
+    assert shown["retryHidden"] is False and shown["retryLabel"] == "Try calling Aria again" and shown["closeHidden"] is False and shown["endHidden"] is True and shown["inCall"] is None
 
 
 def test_a_microphone_error_stays_on_screen_when_the_ended_event_follows(driver, site):
@@ -135,7 +135,7 @@ def test_an_end_with_no_error_before_the_call_connected_still_gets_the_generic_m
 
 def test_a_call_that_went_live_and_then_ended_normally_says_so(driver, site):
     shown = run_scenario(driver, site, "window.__hooks.onStatus('live'); window.__hooks.onEnd();")
-    assert shown["state"] == "ended" and shown["text"].startswith("Call ended.") and shown["retryLabel"] == "Talk to Aria again"
+    assert shown["state"] == "ended" and shown["text"].startswith("Call ended.") and shown["retryLabel"] == "Call Aria" and shown["retryHidden"] is False
 
 
 def test_a_new_attempt_forgets_the_last_failure(driver, site):
@@ -143,10 +143,10 @@ def test_a_new_attempt_forgets_the_last_failure(driver, site):
     run_scenario(driver, site,"window.__hooks.onError(new Error('Forbidden: origin not allowed (403)')); window.__hooks.onEnd();")
 
     def retry(page):
-        page.click("#voice-retry")
-        page.wait_for_function("() => document.querySelector('.voice-status__ring').dataset.state === 'connecting'")
+        page.click("#aria-call")
+        page.wait_for_function("() => document.getElementById('aria').dataset.state === 'connecting'")
         page.evaluate("window.__hooks.onEnd();")
-        return page.evaluate("() => document.querySelector('.voice-status__text').textContent")
+        return page.evaluate("() => document.querySelector('.aria__text').textContent")
 
     text = driver._run(retry, 30)
     assert text.startswith(GENERIC) and DOMAIN not in text

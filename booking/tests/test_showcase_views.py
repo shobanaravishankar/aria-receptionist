@@ -111,7 +111,7 @@ def test_the_open_times_form_has_labelled_fields_and_a_live_results_region(built
 
 def test_a_call_in_progress_can_be_put_away_and_brought_back(built):
     _out, _html, page = built
-    assert page.find("button", id="voice-minimize") and "hidden" in page.find("button", id="voice-minimize")[0]
+    assert page.find("button", id="aria-hide") and "hidden" not in page.find("button", id="aria-hide")[0], "the avatar can always be put away, and doing so never ends a call"
     bar = page.find("div", id="call-bar")
     assert bar and "hidden" in bar[0] and bar[0].get("role") == "region"
     assert page.find("button", id="call-show") and page.find("button", id="call-end")

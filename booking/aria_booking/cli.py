@@ -135,6 +135,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today)")
     p = sub.add_parser("showcase-preview", help="build the Serenity page and photograph it at desktop and phone widths (JPEG files); loopback only, no call, no network")
     p.add_argument("--out", default="showcase_evidence", help="the folder for the JPEG files (default: showcase_evidence)")
+    p.add_argument("--avatar", default=None, help="photograph the page with this avatar image instead of the built-in illustration (png/webp/svg, transparent background)")
+    p = sub.add_parser("showcase-avatar", help="make a web-sized copy (square, transparent WebP) of an avatar image, offline, in a local browser")
+    p.add_argument("--source", required=True, help="the avatar image (png, webp or jpeg with real transparency for a cut-out)")
+    p.add_argument("--out", required=True, help="where to write the web copy (.webp)")
+    p.add_argument("--size", type=int, default=512, help="the side of the square copy in pixels (default 512)")
     p = sub.add_parser("demo-compare", help="diff the demo's data-independent regions (sidebar, toolbar, hour axis) against a user-supplied screenshot of the real day view")
     p.add_argument("--reference", required=True, help="a PNG screenshot of the real day view; its size sets the viewport")
     p.add_argument("--today", default=None, help="the demo date, YYYY-MM-DD (default: the real today)")
@@ -197,11 +202,24 @@ def main(
         from .showcase.site.preview import capture as capture_showcase
 
         try:
-            for path in capture_showcase(Path(args.out), channel=cfg.browser_channel):
+            for path in capture_showcase(Path(args.out), channel=cfg.browser_channel, avatar=args.avatar):
                 out(f"wrote {path}")
-        except RuntimeError as exc:
+        except (RuntimeError, ValueError) as exc:
             out(f"stopped: {exc}")
             return EXIT_REFUSED
+        return EXIT_OK
+
+    if args.command == "showcase-avatar":
+        from pathlib import Path
+
+        from .showcase.site.avatar import optimize_avatar
+
+        try:
+            written = optimize_avatar(Path(args.source), Path(args.out), size=args.size, channel=cfg.browser_channel)
+        except (RuntimeError, ValueError, OSError) as exc:
+            out(f"stopped: {exc}")
+            return EXIT_REFUSED
+        out(f"wrote {written} ({written.stat().st_size // 1024} KB)")
         return EXIT_OK
 
     if args.command == "demo-serve":  # decided before anything else: this command never builds a Booksy driver, and `serve` never builds the demo

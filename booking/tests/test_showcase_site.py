@@ -100,7 +100,10 @@ def test_one_h1_a_lang_a_title_a_description_and_a_skip_link(built):
 
 def test_every_image_has_alt_text_and_its_size_and_exists(built):
     out, _html, page = built
-    images = [a for t, a in page.tags if t == "img"]
+    everything = [a for t, a in page.tags if t == "img"]
+    avatar = [a for a in everything if a.get("class") == "aria__img"]
+    assert len(avatar) == 1 and avatar[0]["src"] == "assets/aria-avatar.svg" and (out / avatar[0]["src"]).is_file() and avatar[0]["alt"].startswith("Aria"), "the floating avatar"
+    images = [a for a in everything if a.get("class") != "aria__img"]
     assert len(images) == 4, "the hero, the massage and facial photos and the band picture: a few relevant pictures, no clutter"
     for attrs in images:
         assert 20 <= len(attrs["alt"]) <= 200 and attrs["width"].isdigit() and attrs["height"].isdigit() and (out / attrs["src"]).is_file(), attrs

@@ -178,7 +178,7 @@ def test_the_instructions_say_how_the_two_calendar_views_work_with_a_call_and_na
         text = (tmp_path / f"state{port}" / "test-instructions.txt").read_text(encoding="utf-8")
         assert f"python -m aria_booking demo-serve --lifecycle{flag}\n" in text, "only a page port other than the default is passed on"
         assert "'Calendar' lists a treatment's open times" in text and "it books nothing" in text and "'Staff calendar' shows the detailed schedule" in text
-        assert "same tab" in text and "Hide while I look around" in text and "call bar" in text
+        assert "same tab" in text and "floating Aria avatar" in text and "WITHOUT ending the call" in text and "call bar" in text
         assert KEY not in text and TOKEN not in text and PUBLIC not in text
 
 

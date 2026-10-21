@@ -69,7 +69,7 @@ ALLOWED = (
 )
 CONFIG_KEYS = frozenset({
     "tunnel_url", "agent_name", "voice_id", "model", "model_temperature", "language", "max_call_duration_ms", "data_storage_retention_days",
-    "begin_message", "state_dir", "web_dir", "calendar_port", "tools_port", "page_port", "mode",
+    "begin_message", "state_dir", "web_dir", "calendar_port", "tools_port", "page_port", "mode", "avatar_image",
 })
 RETIRED_KEYS = frozenset({"template_dir"})  # the page is no longer built from a website template; config files that still name it keep loading
 
@@ -130,6 +130,7 @@ class OperatorConfig:
     tools_port: int = 8787
     page_port: int = 5174
     mode: str = "availability"  # or "lifecycle": which reviewed prompt and function set this agent is held to
+    avatar_image: str = ""  # path of a square transparent png/webp/svg for the floating Aria avatar; empty = the built-in illustration. Kept out of Git (it may be a real likeness).
 
     def __post_init__(self) -> None:
         if self.mode not in MODES:
@@ -186,6 +187,8 @@ def load_config(env: Mapping[str, str], *, file: Optional[str] = None, overrides
         values["tunnel_url"] = env["ARIA_DEMO_TUNNEL_URL"].strip()
     if (env.get("ARIA_DEMO_STATE_DIR") or "").strip():
         values["state_dir"] = env["ARIA_DEMO_STATE_DIR"].strip()
+    if (env.get("ARIA_AVATAR_IMAGE") or "").strip():
+        values["avatar_image"] = env["ARIA_AVATAR_IMAGE"].strip()
     values.update({k: v for k, v in (overrides or {}).items() if v not in (None, "")})
     for key in ("state_dir", "web_dir"):
         if key in values and values[key] is not None:
@@ -610,7 +613,7 @@ def lifecycle_instructions(config: OperatorConfig, tomorrow: str, web_dir: Path)
         "4. The calendar page Aria reads and writes (refresh it after each change; it must agree with what she says):",
         f"     {calendar}",
         "   On the website, 'Calendar' lists a treatment's open times for a day (the same calendar and rules Aria uses; it books nothing) and 'Staff calendar' shows the detailed schedule above;",
-        "   both open in the same tab with a 'Back to ...' control, so a call with Aria keeps going while you look (use 'Hide while I look around' on the call panel, then 'Show' on the call bar).",
+        "   both open in the same tab with a 'Back to ...' control, so a call with Aria keeps going while you look (the floating Aria avatar stays on the page; its x hides it WITHOUT ending the call, and the call bar then offers Show and End call).",
         "",
         "The fictional clients (reserved 555-01xx numbers: they reach no real phone, and nothing is ever sent to them):",
         f"  - {WILLA[0]}, number {WILLA[1][2:5]}-{WILLA[1][5:8]}-{WILLA[1][8:]} ({WILLA[1]}): upcoming waxing (a Tuesday), head spa (a Friday) and massage (a Sunday); past completed lash, massage and facial; a cancelled lash and a missed facial.",
@@ -652,7 +655,11 @@ def prepare_web(config: OperatorConfig, secrets: Any, out: Callable[[str], None]
     tomorrow = (datetime.fromtimestamp(clock(), ZoneInfo(SPA_TIMEZONE)) + timedelta(days=1)).date().isoformat()
     settings = {"publicKey": public_key, "agentId": agent["agent_id"], "agentVersion": agent.get("version", 0)}
     showcase = replace(SHOWCASE, booking_note=LIFECYCLE_BOOKING_NOTE) if config.mode == "lifecycle" else SHOWCASE
-    build_site(target, showcase=showcase, settings=settings, calendar_port=config.calendar_port, retention_days=config.data_storage_retention_days)
+    try:
+        build_site(target, showcase=showcase, settings=settings, calendar_port=config.calendar_port, retention_days=config.data_storage_retention_days,
+                   avatar=config.avatar_image or None)
+    except ValueError as exc:
+        raise OperatorError(str(exc)) from None
     instructions = state.dir / "test-instructions.txt"
     instructions.write_text(test_instructions(config, tomorrow, target), encoding="utf-8", newline="\n")
     out(f"Isolated {SALON_NAME} voice page prepared in {target} with the prototype label and the separate test agent.")

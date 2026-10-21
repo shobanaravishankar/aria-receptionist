@@ -30,9 +30,10 @@ class _Quiet(SimpleHTTPRequestHandler):
         return
 
 
-def capture(out_dir, *, channel: Optional[str] = None, site_dir=None) -> list[Path]:
-    """Write previews into ``out_dir``: the top of the page, the whole page, the facial menu, the voice panel and (when the page is built here) the Calendar and Staff
-    calendar views, for desktop and for a phone. Returns the files."""
+def capture(out_dir, *, channel: Optional[str] = None, site_dir=None, avatar=None) -> list[Path]:
+    """Write previews into ``out_dir``: the top of the page (with the floating Aria avatar at rest), the whole page, the facial menu, the avatar while a call is connecting
+    and while Aria speaks, and (when the page is built here) the Calendar and Staff calendar views, for desktop and for a phone. ``avatar`` photographs the page with that
+    image instead of the built-in illustration. Returns the files."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
@@ -57,7 +58,7 @@ def capture(out_dir, *, channel: Optional[str] = None, site_dir=None) -> list[Pa
         calendar = make_site(DemoDataset(today), 0, allowed_origins=page_origins(page_port))
         threading.Thread(target=calendar.serve_forever, daemon=True).start()
         calendar_port = calendar.server_address[1]
-        build_site(site_dir, settings={"publicKey": "public_key_preview", "agentId": "agent_preview", "agentVersion": 0}, calendar_port=calendar_port)
+        build_site(site_dir, settings={"publicKey": "public_key_preview", "agentId": "agent_preview", "agentVersion": 0}, calendar_port=calendar_port, avatar=avatar)
     written: list[Path] = []
     blocked: list[str] = []
     try:
@@ -97,10 +98,16 @@ def capture(out_dir, *, channel: Optional[str] = None, site_dir=None) -> list[Pa
                 page.screenshot(path=str(out / f"{name}-facials.jpg"), type="jpeg", quality=80)
                 written.append(out / f"{name}-facials.jpg")
                 page.evaluate("window.scrollTo(0, 0)")
-                page.click("[data-voice-start] >> nth=0")
-                page.wait_for_timeout(400)
-                page.screenshot(path=str(out / f"{name}-voice-panel.jpg"), type="jpeg", quality=82)
-                written.append(out / f"{name}-voice-panel.jpg")
+                page.click('[data-testid="aria-call"]')  # a click, as a visitor would: the stub SDK makes no call
+                page.wait_for_function("() => document.getElementById('aria').dataset.state === 'connecting'")
+                page.wait_for_timeout(300)
+                page.screenshot(path=str(out / f"{name}-aria-calling.jpg"), type="jpeg", quality=82)
+                written.append(out / f"{name}-aria-calling.jpg")
+                page.evaluate("() => { window.__hooks.onStatus('live'); window.__hooks.onAgentStartTalking(); }")
+                page.wait_for_function("() => document.getElementById('aria').dataset.speaking === 'true'")
+                page.wait_for_timeout(300)
+                page.screenshot(path=str(out / f"{name}-aria-speaking.jpg"), type="jpeg", quality=82)
+                written.append(out / f"{name}-aria-speaking.jpg")
                 if built_here:
                     page.goto(base, wait_until="networkidle")
                     page.evaluate("location.hash = '#calendar'")

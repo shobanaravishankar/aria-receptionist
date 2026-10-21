@@ -37,11 +37,36 @@ The page has two in-page views, opened from the header, the hero, the Hours sect
   readable and nothing is open, and says it *cannot confirm* when a schedule cannot be read (unknown is never shown as free). It books nothing.
 * **Staff calendar**: the existing detailed schedule, in a frame (loaded the first time it is opened), from the configured calendar address.
 
-They are views of the one page, not new tabs or pages, so a call with Aria is never interrupted. **Hide while I look around** on the call panel puts the panel away and
-shows a small call bar (**Show**, **End call**); the call itself is untouched.
+They are views of the one page, not new tabs or pages, so a call with Aria is never interrupted: the floating Aria avatar (below) stays on the page through both views.
 
 The browser reads only synthetic open times from the calendar server, which allows only the prepared page's own address (`--page-port`, default 5174; `localhost` and
 `127.0.0.1`) to read them. No credential is in any of this: the page's script holds none, and the calendar answers are read-only.
+
+## The floating Aria avatar
+
+Aria is a small avatar floating at the bottom corner of every page, on a genuinely transparent background (no card, no dark scrim, no scroll lock), with separate icon
+controls: **Call** (green handset), **Hang up** (red, shown only while a call is on or being set up) and a small **x** that hides the avatar. Each has an accessible name
+and tooltip, a visible keyboard focus ring and a touch target of at least 44 px (52-56 px for the call controls).
+
+* Nothing is called by loading the page. A call starts only from a click on **Call** or on any "Speak to Aria" button, and repeated clicks never start a second call.
+* Every state comes from the voice SDK: *Connecting to Aria...*, *Listening...*, *Aria is speaking...* (the avatar's glow follows the SDK's own start/stop-talking events
+  and nothing else), *Call ended.*, or a specific error (blocked microphone, allowed-domain problem, network). Reduced motion switches the animations off.
+* The status bubble keeps the notice that Aria is an AI assistant and that the test call may be retained for review (`retention_days`).
+* The **x** hides the avatar and **never ends a call**: while a call is on and the avatar is hidden, a call bar says so and offers **Show** and **End call**. A call that
+  ends while the avatar is hidden brings it back to say how it ended.
+* Hanging up while the SDK is still loading creates no call at all.
+
+**The picture.** The default is a small original illustration (`showcase/site/assets/aria-avatar.svg`). To use your own (a square image with a transparent background),
+make a web-sized copy and point the operator at it:
+
+```bash
+python -m aria_booking showcase-avatar --source my-avatar.png --out .local/avatar/aria-avatar.webp     # a small transparent WebP, made offline in a local browser
+python -m aria_booking showcase-preview --out .local/avatar-preview --avatar .local/avatar/aria-avatar.webp   # photograph the page with it (loopback only)
+# then, for the page the operator builds: set ARIA_AVATAR_IMAGE (or "avatar_image" in the operator config) to that file and run `demo-agent prepare-web`
+```
+
+**This repository is public: never commit a real person's likeness.** Keep a supplied avatar under `booking/.local/` (git-ignored) or anywhere outside the repository; the
+tests fail if a picture other than the credited stock photographs is added to `showcase/site/assets/`. The build refuses an avatar over 600 KB (run `showcase-avatar`).
 
 ## Changing things
 

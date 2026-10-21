@@ -22,6 +22,8 @@ from .bookable import bookable_data, script_tag
 
 SITE_DIR = Path(__file__).resolve().parent
 ASSET_DIR = SITE_DIR / "assets"
+DEFAULT_AVATAR = "aria-avatar.svg"  # an original neutral illustration; a build can supply its own image (square, transparent background)
+AVATAR_TYPES = {".svg", ".png", ".webp"}  # formats with real transparency
 
 # (category id, tab label, panel heading, short line, photo file or None)
 CATEGORIES = (
@@ -45,6 +47,9 @@ ICON_MIC = ('<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path
 ICON_CALENDAR = ('<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.500" y="5" width="17" height="15" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/>'
                  '<path d="M3.500 10h17M8 3v4M16 3v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="14.500" r="1.500" fill="currentColor"/></svg>')
 ICON_MENU = ('<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 7h14M5 12h14M5 17h9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>')
+ICON_PHONE = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+              '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>')  # Feather icons (MIT)
+ICON_HANGUP = ICON_PHONE.replace("<svg ", '<svg class="turned" ', 1)  # the same handset, laid down by CSS
 ICON_BACK = ('<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.500 5.500 8 12l6.500 6.500" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>')
 ICON_CHAT = ('<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6.500A2.500 2.500 0 0 1 6.500 4h11A2.500 2.500 0 0 1 20 6.500v7a2.500 2.500 0 0 1-2.500 2.500H11l-4.500 3.500V16h0A2.500 2.500 0 0 1 4 13.500Z" '
              'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>')
@@ -108,7 +113,7 @@ def _credits() -> list:
     return json.loads((ASSET_DIR / "credits.json").read_text(encoding="utf-8"))["images"]
 
 
-def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: int, retention_days: int, bookable: Optional[dict] = None) -> str:
+def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: int, retention_days: int, bookable: Optional[dict] = None, avatar_file: str = DEFAULT_AVATAR) -> str:
     credits = {c["file"]: c for c in _credits()}
     alts = {name: c["alt"] for name, c in credits.items()}
     alts["_size"] = {name: (c["width"], c["height"]) for name, c in credits.items()}
@@ -244,23 +249,18 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
 <div class="call-bar" id="call-bar" hidden role="region" aria-label="Call with Aria" data-testid="call-bar"><span class="call-bar__dot" aria-hidden="true"></span><span class="call-bar__text" id="call-bar-text">On a call with Aria</span>
   <button type="button" class="btn btn-small btn-ghost" id="call-show">Show</button><button type="button" class="btn btn-small btn-primary" id="call-end">End call</button></div>
 
-<div class="voice-panel" id="voice-panel" hidden role="dialog" aria-modal="true" aria-labelledby="voice-panel-title" aria-describedby="voice-status">
-  <button type="button" class="voice-panel__scrim" tabindex="-1" aria-hidden="true"></button>
-  <div class="voice-panel__card">
-    <button type="button" class="voice-panel__close" data-voice-close aria-label="Close">&times;</button>
-    <div class="voice-panel__avatar" aria-hidden="true">A</div>
-    <h2 id="voice-panel-title">Speak to Aria</h2>
-    <p class="voice-panel__sub">Aria is a voice assistant for {_e(showcase.name)}. Allow the microphone when your browser asks.</p>
-    <div class="voice-status" id="voice-status" aria-live="polite"><span class="voice-status__ring" data-state="idle"></span><span class="voice-status__text">Ready when you are.</span></div>
-    <div class="voice-panel__actions">
-      <button type="button" class="btn btn-ghost" id="voice-minimize" data-voice-minimize hidden>Hide while I look around</button>
-      <button type="button" class="btn btn-primary" id="voice-end" data-voice-end hidden>End call</button>
-      <button type="button" class="btn btn-ghost" id="voice-retry" hidden>Try again</button>
+<aside class="aria" id="aria" data-state="idle" role="region" aria-label="Aria, the voice assistant" data-testid="aria-widget">
+  <p class="aria__status" id="voice-status" role="status" aria-live="polite" hidden data-testid="aria-status"><span class="aria__dot" aria-hidden="true"></span>
+    <span class="aria__body"><span class="aria__text"></span><span class="aria__fine">Aria is an AI voice assistant. Retell may retain this test call for review for up to {retention_days} days.</span></span></p>
+  <div class="aria__stage">
+    <img class="aria__img" src="assets/{avatar_file}" alt="Aria, the {_e(showcase.name)} voice assistant" width="400" height="400" decoding="async" data-testid="aria-avatar">
+    <div class="aria__controls">
+      <button type="button" class="aria-btn aria-btn--call" id="aria-call" data-voice-start data-testid="aria-call" aria-label="Call Aria" title="Call Aria, an AI voice assistant. Your browser will ask for microphone access.">{ICON_PHONE}</button>
+      <button type="button" class="aria-btn aria-btn--hangup" id="aria-hangup" data-testid="aria-hangup" aria-label="Hang up" title="Hang up" hidden>{ICON_HANGUP}</button>
     </div>
-    <p class="voice-panel__mic" data-idle="Your browser will ask for microphone access. Retell may retain this test call for review for up to {retention_days} days." data-live="Aria is an AI assistant. Speak normally; press End call when you’re done.">Your browser will ask for microphone access. Retell may retain this test call for review for up to {retention_days} days.</p>
-    <details class="voice-config" id="voice-config"><summary>Setup details</summary><p>This page needs a Retell public key and an agent id in demo-config.js. The page never holds a secret.</p></details>
+    <button type="button" class="aria__hide" id="aria-hide" data-testid="aria-hide" aria-label="Hide Aria" title="Hide Aria (a call in progress keeps going)"><span aria-hidden="true">&times;</span></button>
   </div>
-</div>
+</aside>
 <div class="toast" id="toast" role="status" hidden></div>
 <script src="site.js" defer></script>
 <script src="views.js" defer></script>
@@ -270,20 +270,41 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
 """
 
 
+MAX_AVATAR_BYTES = 600_000  # a bigger picture slows the page for a visitor; `showcase-avatar` makes a web-sized copy
+
+
+def _use_avatar(out: Path, avatar) -> str:
+    """The avatar file name the page uses: the built-in illustration, or the supplied image copied in as assets/aria-avatar.<ext>."""
+    if avatar in (None, ""):
+        return DEFAULT_AVATAR
+    source = Path(avatar)
+    if source.suffix.lower() not in AVATAR_TYPES:
+        raise ValueError("the avatar must be a .png, .webp or .svg with a transparent background")
+    if not source.is_file():
+        raise ValueError("the avatar file was not found")
+    if source.stat().st_size > MAX_AVATAR_BYTES:
+        raise ValueError(f"the avatar is {source.stat().st_size // 1024} KB: make a web-sized copy first with `python -m aria_booking showcase-avatar --source <file> --out <file.webp>`")
+    name = "aria-avatar" + source.suffix.lower()
+    shutil.copyfile(source, out / "assets" / name)
+    return name
+
+
 def build_site(out_dir, *, showcase: Showcase = SHOWCASE, catalog: Catalog = SHOWCASE_CATALOG, rows=ROSTER_ROWS, settings: Optional[dict] = None,
-               calendar_port: int = 8790, retention_days: int = 7) -> list:
+               calendar_port: int = 8790, retention_days: int = 7, avatar=None) -> list:
     """Write the page into ``out_dir`` (created if needed) and return the files written. ``settings`` are the PUBLIC voice settings (public key, agent id, version):
-    never a secret, and none at all is fine: the page then says voice is not configured instead of pretending."""
+    never a secret, and none at all is fine: the page then says voice is not configured instead of pretending. ``avatar`` is an optional image (png, webp or svg,
+    square, transparent background) that replaces the built-in illustration; it is copied in, never referenced from outside the folder."""
     out = Path(out_dir)
     (out / "assets").mkdir(parents=True, exist_ok=True)
+    shutil.copytree(ASSET_DIR, out / "assets", dirs_exist_ok=True)
+    avatar_file = _use_avatar(out, avatar)
     written = []
     index = out / "index.html"
-    index.write_text(render_index(showcase, catalog, rows, calendar_port=calendar_port, retention_days=retention_days), encoding="utf-8", newline="\n")
+    index.write_text(render_index(showcase, catalog, rows, calendar_port=calendar_port, retention_days=retention_days, avatar_file=avatar_file), encoding="utf-8", newline="\n")
     written.append(index)
     for name in ("styles.css", "voice.js", "site.js", "views.js"):
         shutil.copyfile(SITE_DIR / name, out / name)
         written.append(out / name)
-    shutil.copytree(ASSET_DIR, out / "assets", dirs_exist_ok=True)
     written.extend(sorted(p for p in (out / "assets").rglob("*") if p.is_file()))
     config = out / "demo-config.js"
     config.write_text("/* Public-only settings for the prototype page. Generated; not for Git. */\nwindow.RETELL_DEMO = " + json.dumps(settings or {}) + ";\n", encoding="utf-8", newline="\n")

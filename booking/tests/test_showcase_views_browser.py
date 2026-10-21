@@ -362,12 +362,12 @@ def test_an_unreadable_schedule_is_said_as_cannot_confirm_and_never_shown_as_fre
 def test_an_active_call_is_untouched_by_opening_using_and_leaving_both_views(driver, stack):
     def work(page):
         out = {}
-        page.locator('[data-voice-start]').first.click()
+        page.locator('[data-testid="aria-call"]').click()
         page.wait_for_function("() => window.__hooks !== undefined")
         page.evaluate("window.__hooks.onStatus('live')")
-        out["live"] = page.evaluate("({panel: !document.getElementById('voice-panel').hidden, call: document.documentElement.dataset.ariaCall || null, hide: !document.getElementById('voice-minimize').hidden})")
-        page.locator('#voice-minimize').click()
-        out["minimised"] = page.evaluate("({panel: !document.getElementById('voice-panel').hidden, bar: !document.getElementById('call-bar').hidden, text: document.getElementById('call-bar-text').textContent, scroll: document.body.style.overflow})")
+        out["live"] = page.evaluate("({avatar: !document.getElementById('aria').hidden, call: document.documentElement.dataset.ariaCall || null, hangup: !document.getElementById('aria-hangup').hidden})")
+        page.locator('[data-testid="aria-hide"]').click()
+        out["hidden"] = page.evaluate("({avatar: !document.getElementById('aria').hidden, bar: !document.getElementById('call-bar').hidden, text: document.getElementById('call-bar-text').textContent, scroll: document.body.style.overflow})")
         page.locator('[data-testid="nav-calendar"]').click()
         page.wait_for_function("() => !document.getElementById('view-calendar').hidden")
         pick(page, "Swedish Massage", "1 hr · $85", TOMORROW.isoformat())
@@ -377,60 +377,53 @@ def test_an_active_call_is_untouched_by_opening_using_and_leaving_both_views(dri
         page.wait_for_function("() => document.getElementById('home').hidden === false")
         out["after"] = page.evaluate("({created: window.__created, ended: window.__ended, call: document.documentElement.dataset.ariaCall || null, bar: !document.getElementById('call-bar').hidden, marker: window.__marker, sameHooks: typeof window.__hooks.onEnd})")
         page.locator('#call-show').click()
-        out["shown"] = page.evaluate("({panel: !document.getElementById('voice-panel').hidden, bar: !document.getElementById('call-bar').hidden, end: !document.getElementById('voice-end').hidden})")
-        page.locator('#voice-end').click()
+        out["shown"] = page.evaluate("({avatar: !document.getElementById('aria').hidden, bar: !document.getElementById('call-bar').hidden, hangup: !document.getElementById('aria-hangup').hidden})")
+        page.locator('[data-testid="aria-hangup"]').click()
         page.wait_for_function("() => window.__ended === 1")
         out["pages"] = len(page.context.pages)
         return out
 
     out = run(driver, stack, work)
-    assert out["live"] == {"panel": True, "call": "1", "hide": True}
-    assert out["minimised"]["panel"] is False and out["minimised"]["bar"] is True and out["minimised"]["text"].startswith("Aria · ") and out["minimised"]["scroll"] == ""
+    assert out["live"] == {"avatar": True, "call": "1", "hangup": True}
+    assert out["hidden"]["avatar"] is False and out["hidden"]["bar"] is True and out["hidden"]["text"].startswith("Aria · ") and out["hidden"]["scroll"] == ""
     assert out["after"] == {"created": 1, "ended": 0, "call": "1", "bar": True, "marker": "same page", "sameHooks": "function"}, "one call, never ended, never recreated, the same page"
-    assert out["shown"] == {"panel": True, "bar": False, "end": True} and out["pages"] == 1
+    assert out["shown"] == {"avatar": True, "bar": False, "hangup": True} and out["pages"] == 1
+
+
+def test_the_avatar_stays_through_both_views_when_it_is_left_showing_and_the_call_carries_on(driver, stack):
+    def work(page):
+        page.locator('[data-testid="aria-call"]').click()
+        page.wait_for_function("() => window.__hooks !== undefined")
+        page.evaluate("window.__hooks.onStatus('live')")
+        seen = []
+        for selector, view in (('[data-testid="nav-calendar"]', "view-calendar"), ('[data-testid="nav-staff-calendar"]', "view-staff")):
+            page.locator(selector).click()
+            page.wait_for_function(f"() => !document.getElementById('{view}').hidden")
+            seen.append(page.evaluate("({avatar: !document.getElementById('aria').hidden, hangup: !document.getElementById('aria-hangup').hidden, created: window.__created, ended: window.__ended})"))
+        page.go_back()  # moving between the views replaced the history entry, so one Back is home
+        page.wait_for_function("() => document.getElementById('home').hidden === false")
+        seen.append(page.evaluate("({avatar: !document.getElementById('aria').hidden, created: window.__created, ended: window.__ended, home: !document.getElementById('home').hidden})"))
+        return seen
+
+    seen = run(driver, stack, work)
+    assert seen[0] == {"avatar": True, "hangup": True, "created": 1, "ended": 0} and seen[1] == {"avatar": True, "hangup": True, "created": 1, "ended": 0}
+    assert seen[2] == {"avatar": True, "created": 1, "ended": 0, "home": True}
 
 
 def test_asking_aria_from_the_calendar_view_during_a_call_brings_the_same_call_back_and_never_starts_another(driver, stack):
     def work(page):
-        page.locator('[data-voice-start]').first.click()
+        page.locator('[data-testid="aria-call"]').click()
         page.wait_for_function("() => window.__hooks !== undefined")
         page.evaluate("window.__hooks.onStatus('live')")
-        page.locator('#voice-minimize').click()
+        page.locator('[data-testid="aria-hide"]').click()
         page.locator('[data-testid="nav-calendar"]').click()
         page.wait_for_function("() => !document.getElementById('view-calendar').hidden")
         page.locator('#view-calendar [data-voice-start]').click()
         page.wait_for_timeout(300)
-        return page.evaluate("({created: window.__created, ended: window.__ended, panel: !document.getElementById('voice-panel').hidden, bar: !document.getElementById('call-bar').hidden, toast: document.getElementById('toast').textContent, view: !document.getElementById('view-calendar').hidden})")
+        return page.evaluate("({created: window.__created, ended: window.__ended, avatar: !document.getElementById('aria').hidden, bar: !document.getElementById('call-bar').hidden, toast: document.getElementById('toast').textContent, view: !document.getElementById('view-calendar').hidden})")
 
     out = run(driver, stack, work)
-    assert out == {"created": 1, "ended": 0, "panel": True, "bar": False, "toast": "You’re connected to Aria.", "view": True}, "no 'already connecting' message for a call that is live"
-
-
-def test_a_call_that_ends_while_the_panel_is_put_away_shows_how_it_ended(driver, stack):
-    def work(page):
-        page.locator('[data-voice-start]').first.click()
-        page.wait_for_function("() => window.__hooks !== undefined")
-        page.evaluate("window.__hooks.onStatus('live')")
-        page.locator('#voice-minimize').click()
-        page.evaluate("window.__hooks.onEnd()")
-        return page.evaluate("({panel: !document.getElementById('voice-panel').hidden, bar: !document.getElementById('call-bar').hidden, text: document.querySelector('.voice-status__text').textContent})")
-
-    out = run(driver, stack, work)
-    assert out["panel"] is True and out["bar"] is False and out["text"].startswith("Call ended.")
-
-
-def test_the_minimise_control_only_exists_for_a_call_in_progress(driver, stack):
-    def work(page):
-        before = page.evaluate("document.getElementById('voice-minimize').hidden")
-        page.locator('[data-voice-start]').first.click()
-        page.wait_for_function("() => window.__hooks !== undefined")
-        connecting = page.evaluate("document.getElementById('voice-minimize').hidden")
-        page.evaluate("window.__hooks.onError(new Error('Failed to fetch'))")
-        failed = page.evaluate("({hide: document.getElementById('voice-minimize').hidden, bar: document.getElementById('call-bar').hidden})")
-        return before, connecting, failed
-
-    before, connecting, failed = run(driver, stack, work)
-    assert before is True and connecting is True and failed == {"hide": True, "bar": True}
+    assert out == {"created": 1, "ended": 0, "avatar": True, "bar": False, "toast": "You’re connected to Aria.", "view": True}, "no 'already connecting' message for a call that is live"
 
 
 def test_the_preview_photographs_both_views_with_real_open_times_and_reaches_only_this_machine(tmp_path, channel):
@@ -438,7 +431,7 @@ def test_the_preview_photographs_both_views_with_real_open_times_and_reaches_onl
 
     written = capture(tmp_path, channel=channel)  # raises if the page tried to reach anything beyond this machine
     names = sorted(p.name for p in written)
-    assert names == sorted(f"{device}-{shot}.jpg" for device in ("desktop", "phone") for shot in ("top", "full", "facials", "voice-panel", "calendar", "staff-calendar"))
+    assert names == sorted(f"{device}-{shot}.jpg" for device in ("desktop", "phone") for shot in ("top", "full", "facials", "aria-calling", "aria-speaking", "calendar", "staff-calendar"))
     assert all(p.stat().st_size > 5_000 for p in written)
 
 

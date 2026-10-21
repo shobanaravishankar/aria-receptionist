@@ -144,33 +144,41 @@ noscript .panel[hidden] { display: block; }
 .js .mobile-cta:not(.show) { transform: translateY(140%); opacity: 0; pointer-events: none; }
 .has-mobile-cta { padding-bottom: 84px; }
 
-/* Voice panel (dialog) */
-.voice-panel { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 18px; }
-.voice-panel[hidden] { display: none; }
-.voice-panel__scrim { position: absolute; inset: 0; border: 0; background: rgba(11, 61, 59, .62); cursor: pointer; }
-.voice-panel__card { position: relative; z-index: 1; width: min(460px, 100%); background: var(--white); border-radius: 24px; padding: 30px 26px 26px; box-shadow: 0 30px 80px rgba(0, 0, 0, .35); text-align: center; }
-.voice-panel__close { position: absolute; top: 10px; right: 12px; width: 44px; height: 44px; border: 0; background: transparent; font-size: 30px; line-height: 1; color: var(--ink-soft); cursor: pointer; border-radius: 50%; }
-.voice-panel__close:hover { background: var(--teal-50); color: var(--teal-900); }
-.voice-panel__close[hidden] { display: none; }
-.voice-panel__avatar { width: 74px; height: 74px; margin: 0 auto 14px; border-radius: 50%; background: linear-gradient(135deg, var(--teal-500), var(--teal-900)); color: var(--white); display: grid; place-items: center; font: 600 34px/1 "Cormorant Garamond", Georgia, serif; }
-.voice-panel h2 { font-size: 34px; }
-.voice-panel__sub { margin: 8px 0 18px; color: var(--ink-soft); font-size: 16px; }
-.voice-status { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 14px 16px; border-radius: 16px; background: var(--teal-50); color: var(--teal-900); min-height: 60px; }
-.voice-status__ring { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--ink-soft); }
-.voice-status__ring[data-state="connecting"] { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
-.voice-status__ring[data-state="live"] { background: var(--green); animation: pulse 1.6s ease-in-out infinite; }
-.voice-status__ring[data-state="error"] { background: var(--red); }
-.voice-status__ring[data-state="ended"] { background: var(--ink-soft); }
-.voice-status__text { text-align: left; font-size: 16px; }
-.voice-panel__actions { margin-top: 18px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-.voice-panel__actions [hidden] { display: none; }
-.voice-panel__mic { margin-top: 16px; font-size: 13.5px; color: var(--ink-soft); }
-.voice-config { margin-top: 14px; text-align: left; font-size: 14px; color: var(--ink-soft); }
-.voice-config summary { cursor: pointer; }
+/* Aria: a small floating avatar on a transparent background, with separate Call and Hang up icon controls. No card, no scrim, no scroll lock. */
+.aria { position: fixed; right: 16px; bottom: 16px; z-index: 95; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; background: transparent; pointer-events: none; }
+.aria[hidden] { display: none; }
+.aria > * { pointer-events: auto; }
+.aria__status { margin: 0; display: flex; gap: 10px; align-items: flex-start; max-width: min(300px, calc(100vw - 32px)); background: rgba(11, 61, 59, .95); color: var(--white); border-radius: 16px; padding: 10px 14px; font-size: 15px; line-height: 1.35; box-shadow: 0 8px 24px rgba(11, 61, 59, .3); }
+.aria__status[hidden] { display: none; }
+.aria__dot { flex: none; width: 12px; height: 12px; margin-top: 5px; border-radius: 50%; background: var(--mist-faint); }
+.aria[data-state="connecting"] .aria__dot { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+.aria[data-state="live"] .aria__dot { background: var(--green); animation: pulse 1.6s ease-in-out infinite; }
+.aria[data-state="error"] .aria__dot { background: var(--red); }
+.aria__body { display: block; min-width: 0; }
+.aria__text { display: block; overflow-wrap: anywhere; }
+.aria__fine { display: none; margin-top: 6px; font-size: 12.5px; line-height: 1.35; color: var(--mist-dim); }
+.aria[data-state="connecting"] .aria__fine, .aria[data-state="live"] .aria__fine { display: block; }
+.aria__stage { position: relative; width: clamp(132px, 12vw, 176px); padding-bottom: 28px; background: transparent; }
+.aria__img { display: block; width: 100%; height: auto; aspect-ratio: 1 / 1; object-fit: contain; background: transparent; pointer-events: none; user-select: none; filter: drop-shadow(0 10px 16px rgba(11, 61, 59, .28)); transition: filter .25s ease; }
+.aria[data-speaking="true"] .aria__img { filter: drop-shadow(0 0 5px rgba(26, 154, 149, .95)) drop-shadow(0 0 16px rgba(26, 154, 149, .6)); animation: aria-glow 1.4s ease-in-out infinite; }
+@keyframes aria-glow { 0%, 100% { opacity: 1; } 50% { opacity: .86; } }
+.aria__controls { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); display: flex; gap: 12px; }
+.aria-btn { width: 56px; height: 56px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; color: var(--white); cursor: pointer; box-shadow: 0 8px 20px rgba(11, 61, 59, .38); transition: transform .15s ease, filter .15s ease; }
+.aria-btn[hidden] { display: none; }
+.aria-btn svg { width: 26px; height: 26px; }
+.aria-btn svg.turned { transform: rotate(135deg); }
+.aria-btn--call { background: var(--green); }
+.aria-btn--hangup { background: var(--red); }
+.aria-btn:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.08); }
+.aria-btn:disabled { opacity: .6; cursor: progress; }
+.aria-btn:focus-visible, .aria__hide:focus-visible, .call-bar .btn:focus-visible { outline: 3px solid var(--white); outline-offset: 2px; box-shadow: 0 0 0 6px var(--teal-900); }
+.aria__hide { position: absolute; top: -8px; right: -8px; width: 44px; height: 44px; padding: 0; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; }
+.aria__hide span { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: rgba(11, 61, 59, .88); color: var(--white); font-size: 20px; line-height: 1; }
+.aria__hide:hover span { background: var(--teal-900); }
 .toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 120; background: var(--teal-900); color: var(--white); padding: 12px 20px; border-radius: 999px; font-size: 15px; max-width: calc(100% - 32px); }
 .toast[hidden] { display: none; }
 @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.35); opacity: .6; } }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .voice-status__ring { animation: none !important; } .btn { transition: none; } }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .aria__dot, .aria__img, .call-bar__dot { animation: none !important; } .aria__img, .aria-btn { transition: none; } .btn { transition: none; } }
 
 /* In-page views: open times and the staff calendar (same tab, same page, so a call with Aria is never interrupted) */
 #home[hidden], .view[hidden] { display: none; }
@@ -208,6 +216,14 @@ noscript .panel[hidden] { display: block; }
 .call-bar .btn-ghost:hover { background: rgba(255, 255, 255, .14); color: var(--white); }
 .call-bar .btn-primary { background: var(--white); color: var(--teal-900); box-shadow: none; }
 .call-bar .btn-primary:hover { background: var(--teal-100); color: var(--teal-900); }
+
+/* Phone: a smaller avatar, clear of the action bar */
+@media (max-width: 759px) {
+  .aria { right: 8px; bottom: 12px; }
+  .aria__stage { width: 112px; padding-bottom: 26px; }
+  .aria-btn { width: 52px; height: 52px; }
+  .mobile-cta.show ~ .aria { bottom: 84px; }
+}
 
 /* Tablet and up */
 @media (min-width: 760px) {

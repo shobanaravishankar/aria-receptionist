@@ -1,24 +1,25 @@
-/* Speak to Aria: starts ONE voice call from a click, through the Retell Web SDK (v3) with a browser PUBLIC key. No backend, no access token, no secret.
+/* Aria, the voice assistant: ONE voice call from a click, through the Retell Web SDK (v3) with a browser PUBLIC key. No backend, no access token, no secret.
  *
  *   new RetellClient({ key: publicKey }).createWebCall({ agent_id, hooks })
  *
  * The call is created from the visitor's click (never on page load), and the browser's own microphone prompt still applies. Real states only: no simulated
- * success and no canned greeting; Aria speaks first from the connected agent. The public settings come from demo-config.js (window.RETELL_DEMO).
+ * success, no canned greeting and no pretend speech animation; Aria speaks first from the connected agent, and the avatar's "speaking" glow follows the SDK's own
+ * agent_start_talking / agent_stop_talking events. The public settings come from demo-config.js (window.RETELL_DEMO).
+ *
+ * The widget is a small floating avatar with two separate icon controls (Call, Hang up) and a hide control. Hiding never ends a call: while a call is on and the
+ * avatar is put away, a call bar says so and can bring it back or end the call. The page is never navigated, so the call survives browsing.
  */
 
 const SDK_URL = "https://cdn.jsdelivr.net/npm/retell-client-js-sdk@3.0.1/+esm";
 const cfg = (typeof window !== "undefined" && window.RETELL_DEMO) || {};
 
-const panel = document.getElementById("voice-panel");
-const statusText = panel.querySelector(".voice-status__text");
-const statusRing = panel.querySelector(".voice-status__ring");
-const endBtn = document.getElementById("voice-end");
-const retryBtn = document.getElementById("voice-retry");
-const closeBtn = panel.querySelector("[data-voice-close]");
-const configBox = document.getElementById("voice-config");
-const micNote = panel.querySelector(".voice-panel__mic");
+const widget = document.getElementById("aria");
+const statusBox = document.getElementById("voice-status");
+const statusText = statusBox.querySelector(".aria__text");
+const callBtn = document.getElementById("aria-call");
+const hangBtn = document.getElementById("aria-hangup");
+const hideBtn = document.getElementById("aria-hide");
 const toastEl = document.getElementById("toast");
-const minimizeBtn = document.getElementById("voice-minimize");
 const bar = document.getElementById("call-bar");
 const barText = document.getElementById("call-bar-text");
 const barShow = document.getElementById("call-show");
@@ -28,21 +29,47 @@ let sdkPromise = null;   // memoized dynamic import
 let client = null;       // RetellClient (created once)
 let call = null;         // active WebCallSession, or null
 let starting = false;    // request in flight, not yet "live"
+let cancelled = false;   // hung up while the SDK was still loading: no call may be created for that click
 let everLive = false;    // did this call reach "live" before ending?
 let failure = null;      // the specific message of a failed start or call: the "ended" event that follows an error must not replace it with the generic one
-let lastFocus = null;
+let clearTimer = null;
 
 /* ---------------- helpers ---------------- */
-function setStatus(state, message) {
-  statusRing.dataset.state = state;
-  statusText.textContent = message;
-  if (barText) barText.textContent = "Aria · " + message;
+function inCall() {
+  return Boolean(call || starting);
 }
 
-/* The call bar shows only while a call is active (or connecting) and the panel is put away, so the visitor can browse the page, including its calendar views, without
-   ending the call: the call belongs to this page, and the page is never navigated. */
-function syncBar() {
-  if (bar) bar.hidden = !((call || starting) && panel.hidden);
+/* The two controls are separate: Call while there is no call, Hang up while there is one (or one is being set up). */
+function syncControls() {
+  const active = inCall();
+  const hadFocus = document.activeElement === callBtn || document.activeElement === hangBtn;
+  callBtn.hidden = active;
+  hangBtn.hidden = !active;
+  callBtn.setAttribute("aria-label", widget.dataset.state === "error" ? "Try calling Aria again" : "Call Aria");
+  if (hadFocus && !widget.hidden) (active ? hangBtn : callBtn).focus({ preventScroll: true });
+  if (bar) bar.hidden = !(active && widget.hidden);
+}
+
+function setStatus(state, message) {
+  clearTimeout(clearTimer);
+  widget.dataset.state = state;
+  statusText.textContent = message;
+  statusBox.hidden = !message;
+  if (barText) barText.textContent = "Aria · " + message;
+  if (state !== "live") delete widget.dataset.speaking;
+  syncControls();
+}
+
+/* "Call ended." is shown for a moment and then the widget returns to rest. Errors stay until the next try. */
+function settleLater() {
+  clearTimeout(clearTimer);
+  clearTimer = setTimeout(() => { if (!inCall() && widget.dataset.state === "ended") setStatus("idle", ""); }, 8000);
+}
+
+function setSpeaking(on) {
+  if (!call) return;
+  if (on) { widget.dataset.speaking = "true"; setStatus("live", "Aria is speaking…"); }
+  else { delete widget.dataset.speaking; setStatus("live", "Listening…"); }
 }
 
 function toast(message) {
@@ -67,62 +94,51 @@ function friendlyError(err) {
   if (/origin|domain|forbidden|unauthori[sz]ed|\b40[13]\b/i.test(raw))
     return "This web address isn’t on the Retell key’s allowed domains yet — add it in Retell → API Keys → Public Keys, then try again. (" + raw + ")";
   if (/denied|permission|notallowed|not allowed/i.test(raw))
-    return "Microphone blocked. Allow it for this site in your browser, then press “Speak to Aria” again.";
+    return "Microphone blocked. Allow it for this site in your browser, then press Call again.";
   if (/network|failed to fetch|load|timeout/i.test(raw))
     return "Network problem reaching Aria. Check the connection and try again. (" + raw + ")";
   return "Couldn’t start the call: " + raw;
 }
 
-/* ---------------- panel open / close ---------------- */
-function openPanel() {
-  if (panel.hidden) {
-    lastFocus = document.activeElement;
-    panel.hidden = false;
-    document.body.style.overflow = "hidden";
-  }
-  if (!isConfigured()) {
-    setStatus("error", "Voice isn’t configured yet.");
-    configBox.open = true;
-    endBtn.hidden = true;
-    retryBtn.hidden = true;
-    closeBtn.hidden = false;
-  }
-  syncBar();
+/* ---------------- show / hide ---------------- */
+function showWidget() {
+  widget.hidden = false;
+  syncControls();
 }
 
-function closePanel() {
-  panel.hidden = true;
-  document.body.style.overflow = "";
-  if (lastFocus && lastFocus.focus) lastFocus.focus();
-  syncBar();
-}
-
-function minimizePanel() {
-  if (!(call || starting)) return;   // only a call in progress can be put away; otherwise there is nothing to keep
-  panel.hidden = true;
-  document.body.style.overflow = "";
-  syncBar();
-  if (barShow) { try { barShow.focus(); } catch (_) {} }
+function hideWidget() {
+  const focusWasHere = widget.contains(document.activeElement);
+  widget.hidden = true;
+  syncControls();
+  if (focusWasHere) {
+    const next = !bar.hidden ? barShow : document.querySelector("[data-voice-start]:not(#aria-call)");
+    if (next) { try { next.focus({ preventScroll: true }); } catch (_) {} }
+  }
 }
 
 /* ---------------- call lifecycle ---------------- */
 async function startCall() {
-  openPanel();
-  if (!isConfigured()) return;
-  if (call || starting) { if (!everLive) toast("A call is already connecting."); return; }   // a live call just comes back to the front: the panel was opened above
+  const wasHidden = widget.hidden;
+  showWidget();
+  if (!isConfigured()) {
+    setStatus("error", "Voice isn’t set up on this page yet.");
+    return;
+  }
+  if (inCall()) {   // a live call just comes back to the front; one that is still connecting says so. Never a second call.
+    if (!everLive) toast("A call is already connecting.");
+    if (wasHidden) (hangBtn.hidden ? callBtn : hangBtn).focus({ preventScroll: true });
+    return;
+  }
 
   starting = true;
+  cancelled = false;
   failure = null;                  // a new attempt: forget the last failure
   document.documentElement.dataset.ariaCall = "1";
-  endBtn.hidden = true;
-  retryBtn.hidden = true;
-  if (minimizeBtn) minimizeBtn.hidden = true;
-  closeBtn.hidden = true;          // no accidental dismiss mid-connect
   setStatus("connecting", "Connecting to Aria…");
-  micNote.textContent = micNote.dataset.idle || "";
 
   try {
     const mod = await loadSdk();
+    if (cancelled) { cancelled = false; starting = false; delete document.documentElement.dataset.ariaCall; setStatus("idle", ""); return; }
     const RetellClient = mod.RetellClient || (mod.default && mod.default.RetellClient);
     if (!RetellClient) throw new Error("Retell SDK failed to load");
     if (!client) client = new RetellClient({ key: cfg.publicKey });
@@ -133,14 +149,15 @@ async function startCall() {
         onStatus: onStatus,
         onEnd: onEnd,
         onError: onError,
-        onAgentStartTalking: () => { if (call) setStatus("live", "Aria is speaking…"); },
-        onAgentStopTalking: () => { if (call) setStatus("live", "Listening…"); },
+        onAgentStartTalking: () => setSpeaking(true),
+        onAgentStopTalking: () => setSpeaking(false),
       },
     };
     if (Number.isFinite(cfg.agentVersion)) options.agent_version = cfg.agentVersion;
     if (cfg.recaptchaToken) options.recaptchaToken = cfg.recaptchaToken;
 
     call = client.createWebCall(options);   // returns immediately; progress arrives through the hooks
+    syncControls();
   } catch (err) {
     fail(err);
   }
@@ -153,12 +170,7 @@ function onStatus(status) {
   } else if (status === "live") {
     starting = false;
     everLive = true;
-    setStatus("live", "Connected — say hello to Aria.");
-    endBtn.hidden = false;
-    retryBtn.hidden = true;
-    if (minimizeBtn) minimizeBtn.hidden = false;
-    closeBtn.hidden = false;
-    micNote.textContent = micNote.dataset.live || "";
+    setStatus("live", "Listening…");
     try { call.startAudioPlayback && call.startAudioPlayback(); } catch (_) {}
     toast("You’re connected to Aria.");
   }
@@ -166,27 +178,21 @@ function onStatus(status) {
 }
 
 function onEnd() {
-  if (panel.hidden) openPanel();   // the call ended while the panel was put away: show how it ended
+  if (widget.hidden) showWidget();   // the call ended while the avatar was put away: show how it ended
   if (failure) {
     // An error already said why this call failed (and showed it). Retell also fires "ended" afterwards: keep the specific message.
     reset();
     setStatus("error", failure);
-    retryBtn.textContent = "Try again";
-    retryBtn.hidden = false;
-    closeBtn.hidden = false;
     return;
   }
   const connected = everLive;
   reset();
   if (connected) {
-    setStatus("ended", "Call ended. Press “Speak to Aria” to talk again.");
-    retryBtn.textContent = "Talk to Aria again";
+    setStatus("ended", "Call ended.");
+    settleLater();
   } else {
     setStatus("error", "The call didn’t connect. This is usually the microphone being blocked, or this site’s address not being on the Retell public key’s allowed domains. Check both, then try again.");
-    retryBtn.textContent = "Try again";
   }
-  retryBtn.hidden = false;
-  closeBtn.hidden = false;
 }
 
 function onError(err) {
@@ -194,62 +200,55 @@ function onError(err) {
 }
 
 function fail(err) {
-  if (panel.hidden) openPanel();
+  if (widget.hidden) showWidget();
   const message = friendlyError(err);
   failure = message;
   reset();
   setStatus("error", message);
-  retryBtn.hidden = false;
-  retryBtn.textContent = "Try again";
-  closeBtn.hidden = false;
 }
 
 function reset() {
   starting = false;
+  cancelled = false;
   everLive = false;
   call = null;
-  endBtn.hidden = true;
-  if (minimizeBtn) minimizeBtn.hidden = true;
   delete document.documentElement.dataset.ariaCall;
-  syncBar();
+  delete widget.dataset.speaking;
+  syncControls();
 }
 
 async function endCall() {
-  if (!call) { onEnd(); return; }
-  endBtn.disabled = true;
+  if (!call) {
+    if (starting) {   // still loading the SDK: nothing exists to end; make sure nothing is created for that click
+      cancelled = true;
+      starting = false;
+      delete document.documentElement.dataset.ariaCall;
+      setStatus("idle", "");
+      return;
+    }
+    onEnd();
+    return;
+  }
+  hangBtn.disabled = true;
   setStatus("connecting", "Ending the call…");
   try { await call.end(); } catch (_) { /* onEnd/onError will still fire */ }
-  endBtn.disabled = false;
+  hangBtn.disabled = false;
   // Safety net if no event arrives:
   setTimeout(() => { if (call) onEnd(); }, 1500);
 }
 
 /* ---------------- wire up ---------------- */
 document.querySelectorAll("[data-voice-start]").forEach((b) => b.addEventListener("click", startCall));
-
-closeBtn.addEventListener("click", async () => {
-  if (call || starting) { await endCall(); }
-  closePanel();
-});
-if (minimizeBtn) minimizeBtn.addEventListener("click", minimizePanel);
-if (barShow) barShow.addEventListener("click", () => { openPanel(); });
+hangBtn.addEventListener("click", endCall);
+hideBtn.addEventListener("click", hideWidget);   // hiding never ends a call
+if (barShow) barShow.addEventListener("click", () => { showWidget(); (hangBtn.hidden ? callBtn : hangBtn).focus({ preventScroll: true }); });
 if (barEnd) barEnd.addEventListener("click", () => { endCall(); });
-document.querySelectorAll(".voice-panel__scrim").forEach((b) => b.addEventListener("click", async () => {
-  if (call || starting) return;   // never dismiss the panel by accident mid-call
-  closePanel();
-}));
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !panel.hidden && !call && !starting) closePanel();
-});
-
-endBtn.addEventListener("click", endCall);
-retryBtn.addEventListener("click", startCall);
 
 // A denied microphone can surface as an unhandled rejection; route it to the visible error path
 window.addEventListener("unhandledrejection", (e) => {
   const r = e && e.reason;
   const text = ((r && r.name) || "") + " " + ((r && r.message) || String(r || ""));
-  if ((call || starting) && /notallowed|permission|denied/i.test(text)) {
+  if (inCall() && /notallowed|permission|denied/i.test(text)) {
     e.preventDefault();
     fail(r);
     try { call && call.end(); } catch (_) {}
@@ -258,8 +257,9 @@ window.addEventListener("unhandledrejection", (e) => {
 
 window.addEventListener("beforeunload", () => { try { call && call.end(); } catch (_) {} });
 
+syncControls();
 if (!isConfigured()) {
   document.querySelectorAll("[data-voice-start]").forEach((b) => {
-    b.title = "Voice is not configured yet: the page needs the public key and the agent id in demo-config.js";
+    b.title = "Voice is not set up on this page yet: it needs the public key and the agent id in demo-config.js";
   });
 }
