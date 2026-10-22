@@ -22,8 +22,10 @@ export interface CallDoc {
   rev: number;
   /** Who is running a tool step for this call right now, and until when (epoch ms). Others wait for it; a holder that died is taken over once it expires. */
   lock: { holder: string; until: number } | null;
+  /** A step of this call was abandoned mid-way (its lease ran out before it saved): whether it changed anything is unknown, so the call is closed to further steps. Never cleared. */
+  interrupted: boolean;
 }
-export const emptyCall = (): CallDoc => ({ numbers: [], failed: 0, changes: 0, attempts: 0, preferred: null, identity: null, rev: 0, lock: null });
+export const emptyCall = (): CallDoc => ({ numbers: [], failed: 0, changes: 0, attempts: 0, preferred: null, identity: null, rev: 0, lock: null, interrupted: false });
 
 /** Another invocation of the same call saved first. Nothing was written; the caller loads again and redoes its step against the newer document. */
 export class CallConflict extends Error {}

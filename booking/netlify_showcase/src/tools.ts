@@ -207,6 +207,15 @@ export class LifecycleTools {
     const deadline = Date.now() + CALL_WAIT_MS;
     for (let attempt = 1; ; attempt++) {
       const doc = await this.acquire(callId, me, deadline);
+      if (doc.interrupted) { // an earlier step was abandoned mid-way and may have changed something nobody counted: close the call rather than go on with accounts that may be wrong
+        doc.lock = null;
+        try {
+          await this.calls.save(callId, doc);
+        } catch (error) {
+          if (!(error instanceof CallConflict)) throw error;
+        }
+        return this.branded(this.labelled(response("needs_review", this.contacting("Something interrupted this call earlier, so I can't be sure of what was saved or counted. Please don't rely on anything that wasn't confirmed, and don't ask me to change anything more on this call."), { reason: "call_interrupted" })));
+      }
       const start = structuredClone(doc);
       let result: Reply | undefined;
       let failure: unknown;
@@ -244,6 +253,7 @@ export class LifecycleTools {
         await new Promise((resolve) => setTimeout(resolve, 20 + Math.floor(Math.random() * 30)));
         continue;
       }
+      if (doc.lock !== null && doc.lock.holder !== me) doc.interrupted = true; // we are taking over a lease that ran out: its step never reported back
       doc.lock = { holder: me, until: at + CALL_LEASE_MS };
       try {
         await this.calls.save(callId, doc);
