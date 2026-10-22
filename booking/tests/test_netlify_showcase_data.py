@@ -21,7 +21,7 @@ def _exporter():
 def test_the_committed_data_files_equal_what_the_python_modules_export():
     exporter = _exporter()
     built = exporter.build()
-    assert set(built) == {"showcase_items.json", "roster.json", "dataset.json"}
+    assert set(built) == {"showcase_items.json", "roster.json", "dataset.json", "page.json"}
     for name, content in built.items():
         committed = json.loads((SHOWCASE / "src" / "data" / name).read_text(encoding="utf-8"))
         assert committed == content, f"{name} is out of date: run  python netlify_showcase/oracle/export_data.py  from the booking folder"
@@ -30,6 +30,6 @@ def test_the_committed_data_files_equal_what_the_python_modules_export():
 def test_the_exported_data_holds_no_personal_or_secret_looking_text():
     from aria_booking.showcase.leaks import find_leaks
 
-    for name in ("showcase_items.json", "roster.json", "dataset.json"):
+    for name in ("showcase_items.json", "roster.json", "dataset.json", "page.json"):
         text = (SHOWCASE / "src" / "data" / name).read_text(encoding="utf-8")
         assert not find_leaks(text), (name, find_leaks(text))

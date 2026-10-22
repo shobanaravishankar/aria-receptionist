@@ -43,7 +43,7 @@ class Quiet(SimpleHTTPRequestHandler):
         return
 
 
-def start_stack(site_dir, dataset, *, refresh_seconds: int = 5):
+def start_stack(site_dir, dataset, *, refresh_seconds: int = 5, poll_mode: str = "always"):
     """The website on one local port and the calendar on another, wired the way the operator wires them; returns what the tests need and what closes them."""
     page_server = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(site_dir)))
     threading.Thread(target=page_server.serve_forever, daemon=True).start()
@@ -51,7 +51,7 @@ def start_stack(site_dir, dataset, *, refresh_seconds: int = 5):
     calendar = make_site(dataset, 0, allowed_origins=page_origins(page_port), clock=lambda: NOW)
     threading.Thread(target=calendar.serve_forever, daemon=True).start()
     calendar_port = calendar.server_address[1]
-    build_site(site_dir, settings=SETTINGS, calendar_port=calendar_port, refresh_seconds=refresh_seconds)
+    build_site(site_dir, settings=SETTINGS, calendar_port=calendar_port, refresh_seconds=refresh_seconds, poll_mode=poll_mode)
     return {"page": f"http://127.0.0.1:{page_port}/", "calendar_port": calendar_port, "dataset": dataset}, (page_server, calendar)
 
 
@@ -483,9 +483,9 @@ def book(lc, name: str, phone: str, hour: int, *, day=TOMORROW, staff: str = "91
     return outcome.appointment
 
 
-def lifecycle_stack(tmp_path, refresh_seconds):
+def lifecycle_stack(tmp_path, refresh_seconds, poll_mode="always"):
     lc = open_lifecycle(tmp_path / "fresh.sqlite3", today=TODAY, real_now=lambda: NOW, seed=False)
-    found, servers = start_stack(tmp_path / "site", lc.dataset, refresh_seconds=refresh_seconds)
+    found, servers = start_stack(tmp_path / "site", lc.dataset, refresh_seconds=refresh_seconds, poll_mode=poll_mode)
     found["lc"] = lc
     return found, servers
 
@@ -494,6 +494,16 @@ def lifecycle_stack(tmp_path, refresh_seconds):
 def fresh(tmp_path):
     """A calendar with a stored-appointment file; the page asks 'has anything changed?' every second."""
     found, servers = lifecycle_stack(tmp_path, 1)
+    yield found
+    for server in servers:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.fixture
+def call_only(tmp_path):
+    """The free-host build: the page asks every second, but ONLY while a call with Aria is live."""
+    found, servers = lifecycle_stack(tmp_path, 1, poll_mode="call")
     yield found
     for server in servers:
         server.shutdown()
@@ -996,3 +1006,55 @@ def test_the_avatar_led_entry_in_the_calendar_view_starts_the_one_call_and_it_su
 
     shown = run(driver, stack, work)
     assert shown == {"created": 1, "ended": 0, "same": "same page", "call": "1", "state": "live", "widgets": 1}
+
+
+
+# ---------------------------------------------------------------- the free-host build: the calendar is asked about only while a call is live
+
+
+@pytest.mark.parametrize("view_selector,view", [('[data-testid="nav-calendar"]', "view-calendar"), ('[data-testid="nav-staff-calendar"]', "view-staff")])
+def test_in_call_mode_nothing_is_asked_while_a_view_is_open_and_nobody_is_on_a_call(driver, call_only, view_selector, view):
+    def work(page):
+        counts = []
+        page.on("request", lambda request: counts.append(request.url) if "/demo/changes" in request.url else None)
+        go_to(page, view_selector, view)
+        page.wait_for_timeout(3500)
+        return len(counts)
+
+    assert run(driver, call_only, work) == 0, "an idle open view costs the host nothing"
+
+
+def test_in_call_mode_the_page_asks_while_a_call_is_live_and_looks_once_more_when_it_ends(driver, call_only):
+    def work(page):
+        changes, frames = [], []
+        page.on("request", lambda request: changes.append(request.url) if "/demo/changes" in request.url else frames.append(request.url) if "/pro/en-us/9000001/calendar" in request.url else None)
+        go_to(page, '[data-testid="nav-staff-calendar"]', "view-staff")
+        page.wait_for_timeout(1500)
+        idle = len(changes)
+        loads_idle = len(frames)
+        page.evaluate("document.documentElement.dataset.ariaCall = '1'")  # voice.js sets this for the whole of a call
+        page.wait_for_timeout(3500)
+        during = len(changes)
+        page.evaluate("delete document.documentElement.dataset.ariaCall")
+        page.wait_for_timeout(2000)
+        ended = len(changes)
+        page.wait_for_timeout(2500)
+        return idle, during, ended, len(changes), loads_idle, len(frames), state(page)
+
+    idle, during, ended, later, loads_idle, loads_after, shown = run(driver, call_only, work)
+    assert idle == 0
+    assert 2 <= during <= 8, f"about one a second while the call is live: {during}"
+    assert later <= ended + 1, "and none once it has ended"
+    assert loads_after > loads_idle, "the staff calendar was shown afresh when the call ended"
+    assert shown["staff"] and not shown["home"], "the view the visitor was in stays open"
+
+
+def test_the_default_build_still_watches_whenever_a_view_is_open(driver, fresh):
+    def work(page):
+        counts = []
+        page.on("request", lambda request: counts.append(request.url) if "/demo/changes" in request.url else None)
+        go_to(page, '[data-testid="nav-calendar"]', "view-calendar")
+        page.wait_for_timeout(3500)
+        return len(counts)
+
+    assert run(driver, fresh, work) >= 2

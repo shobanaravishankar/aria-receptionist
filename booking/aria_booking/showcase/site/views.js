@@ -21,6 +21,10 @@
   var homeTitle = document.title;
   var data = window.SERENITY_BOOKABLE || { groups: [] };
   var watchMs = Math.max(1, Number(data.refreshSeconds) || 5) * 1000;
+  // pollMode "call" (a free static host): the page asks "has anything changed?" ONLY while a call with Aria is live (voice.js marks it on the page), and looks afresh when a view opens and
+  // once more when the call ends; otherwise the Refresh buttons do it. Left unset the page watches whenever a view is open, as before.
+  var callOnly = data.pollMode === "call";
+  function inCall() { return Boolean(document.documentElement.dataset.ariaCall); }
   var current = null;
   var ready = false;
 
@@ -113,7 +117,7 @@
 
   function schedule(ms) {
     clearTimeout(timer);
-    timer = current && document.visibilityState !== "hidden" ? setTimeout(poll, ms) : null;
+    timer = current && document.visibilityState !== "hidden" && (!callOnly || inCall()) ? setTimeout(poll, ms) : null;
   }
 
   function poll() {
@@ -133,6 +137,13 @@
   function refreshActive() { if (current === "calendar") refreshTimes(true); else if (current === "staff-calendar") refreshStaff(); }
   // Hidden: stop asking, but KEEP the last stamp seen. When the tab is shown again the first answer is compared with it, so a booking made meanwhile is noticed and the open view refreshed.
   document.addEventListener("visibilitychange", function () { if (document.visibilityState !== "hidden" && current) schedule(0); else stopWatching(); });
+  if (callOnly && window.MutationObserver) {
+    new MutationObserver(function () {
+      if (!current) return;
+      if (inCall()) startWatching();             // a call began while a view is open: now it is worth asking
+      else { stopWatching(); refreshActive(); }   // the call ended: stop asking, and show the calendar as it is now (the selection and the view stay as they were)
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-aria-call"] });
+  }
 
   // ---------------------------------------------------------------- customer calendar: open times
   var form = document.getElementById("open-times-form");

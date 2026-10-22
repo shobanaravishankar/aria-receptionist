@@ -131,7 +131,7 @@ def _credits() -> list:
 
 
 def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: int, retention_days: int, bookable: Optional[dict] = None, avatar_file: str = DEFAULT_AVATAR,
-                 refresh_seconds: int = 5, origin: str = "") -> str:
+                 refresh_seconds: int = 5, origin: str = "", poll_mode: str = "always") -> str:
     credits = {c["file"]: c for c in _credits()}
     alts = {name: c["alt"] for name, c in credits.items()}
     alts["_size"] = {name: (c["width"], c["height"]) for name, c in credits.items()}
@@ -143,7 +143,7 @@ def render_index(showcase: Showcase, catalog: Catalog, rows, *, calendar_port: i
     panels = "".join(_panel(catalog, cid, heading, line, photo, alts, n == 0) for n, (cid, _label, heading, line, photo) in enumerate(present))
     people = _people(rows)
     cal = calendar_link(calendar_port, origin)  # the configured staff calendar address: used only as the frame's source, never hard-coded elsewhere
-    bookable_script = script_tag(bookable if bookable is not None else bookable_data([(cid, label) for cid, label, *_r in present], calendar_origin(calendar_port, origin), catalog, refresh_seconds=refresh_seconds))
+    bookable_script = script_tag(bookable if bookable is not None else bookable_data([(cid, label) for cid, label, *_r in present], calendar_origin(calendar_port, origin), catalog, refresh_seconds=refresh_seconds, poll_mode=poll_mode))
     tel = normalize_phone(showcase.contact_phone) if showcase.contact_phone else None
     contact_attrs = (f' data-contact-name="{_e(showcase.contact_name or showcase.name)}" data-contact-phone="{_e(showcase.contact_phone)}" data-contact-tel="{_e(tel)}"'
                      if tel else "")   # the widget's "call the salon" sentence: only when a number is configured, so an unset number adds nothing to the page
@@ -326,7 +326,7 @@ def _use_avatar(out: Path, avatar) -> str:
 
 
 def build_site(out_dir, *, showcase: Showcase = SHOWCASE, catalog: Catalog = SHOWCASE_CATALOG, rows=ROSTER_ROWS, settings: Optional[dict] = None,
-               calendar_port: int = 8790, retention_days: int = 7, avatar=None, refresh_seconds: int = 5, origin: str = "", static_host: bool = False) -> list:
+               calendar_port: int = 8790, retention_days: int = 7, avatar=None, refresh_seconds: int = 5, origin: str = "", static_host: bool = False, poll_mode: str = "always") -> list:
     """Write the page into ``out_dir`` (created if needed) and return the files written. ``settings`` are the PUBLIC voice settings (public key, agent id, version):
     never a secret, and none at all is fine: the page then says voice is not configured instead of pretending. ``avatar`` is an optional image (png, webp or svg,
     square, transparent background) that replaces the built-in illustration; it is copied in, never referenced from outside the folder. ``origin`` is the https address of the
@@ -339,7 +339,7 @@ def build_site(out_dir, *, showcase: Showcase = SHOWCASE, catalog: Catalog = SHO
     written = []
     index = out / "index.html"
     index.write_text(render_index(showcase, catalog, rows, calendar_port=calendar_port, retention_days=retention_days, avatar_file=avatar_file,
-                                          refresh_seconds=refresh_seconds, origin=origin), encoding="utf-8", newline="\n")
+                                          refresh_seconds=refresh_seconds, origin=origin, poll_mode=poll_mode), encoding="utf-8", newline="\n")
     written.append(index)
     for name in ("styles.css", "voice.js", "site.js", "views.js"):
         shutil.copyfile(SITE_DIR / name, out / name)
