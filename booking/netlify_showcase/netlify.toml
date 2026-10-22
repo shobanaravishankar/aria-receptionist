@@ -1,0 +1,16 @@
+# The Serenity Spa showcase on Netlify: the website (a prepared folder, see DEPLOY_PACK.md), one Function for the voice tools and the calendar, and Netlify Database.
+# Nothing here costs money by itself: it uses the Free plan's functions and database allowances. A production deploy is metered (15 credits); previews are not.
+
+[build]
+  # The prepared website bundle (built by scripts/build_site.py). It is not committed: it holds the public voice settings and, if used, the approved avatar.
+  publish = "site"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+  directory = "netlify/functions"
+
+# Netlify Database migrations are read from netlify/database/migrations (0001_showcase/migration.sql).
+
+# Same-origin: the page's own address serves the calendar, the open times and the voice tools. The Function declares its own paths (config.path in netlify/functions/api.mts:
+# /tools/*, /demo/*, /pro/*, /healthz, /readyz), so there are no redirect rules to keep in step with it.

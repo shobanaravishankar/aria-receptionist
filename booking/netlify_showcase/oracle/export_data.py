@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from aria_booking.demo import dataset as ds  # noqa: E402
+from aria_booking.demo import page as pg  # noqa: E402
 from aria_booking.showcase import roster as ro  # noqa: E402
 from aria_booking.showcase.catalog import SHOWCASE_CATALOG  # noqa: E402
 
@@ -59,9 +60,13 @@ def _dataset() -> dict:
     }
 
 
+def _page() -> dict:
+    return {"css": pg.CSS, "js": pg.JS, "icons": dict(pg.ICONS), "sideMenu": [list(row) for row in pg.SIDE_MENU], "categoryColors": {k: list(v) for k, v in pg.CATEGORY_COLORS.items()}}
+
+
 def build() -> dict:
     """File name -> the JSON-able content it must hold."""
-    return {"showcase_items.json": _items(), "roster.json": _roster(), "dataset.json": _dataset()}
+    return {"showcase_items.json": _items(), "roster.json": _roster(), "dataset.json": _dataset(), "page.json": _page()}
 
 
 def main() -> None:

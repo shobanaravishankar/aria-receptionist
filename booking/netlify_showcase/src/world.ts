@@ -46,7 +46,7 @@ export async function openWorld(opts: WorldOptions): Promise<World> {
   const clock = opts.clock;
   const store = opts.store ?? new MemoryStore({ clock: () => epochOf(clock()), randomReference: opts.randomReference });
   const calls = opts.calls ?? new MemoryCallStore();
-  await store.settlePastSeeds(); // the fictional fixtures only: a caller's appointment is never marked completed for them
+  if (opts.seed !== false) await store.settlePastSeeds(); // the fictional fixtures only: a caller's appointment is never marked completed for them (hosted: the guarded daily upkeep does this)
   // with no explicit demo date the calendar's 'today' follows the real date in the spa's time zone, however long the server stays up
   const dataset = new DemoDataset({ today: () => dateOf(clock()), diagnosticUnknownHours: opts.diagnosticUnknownHours });
   const judge = new PlacementJudge(dataset, { clock, minLeadMinutes: opts.minLeadMinutes, gridMinutes: opts.gridMinutes });
