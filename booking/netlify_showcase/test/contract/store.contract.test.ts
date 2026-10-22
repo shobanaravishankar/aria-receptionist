@@ -262,6 +262,12 @@ for (const backend of backends) {
       assert.equal([ra!.startUtc, rb!.startUtc].filter((t) => t === T(1, 900)).length, 1);
     });
 
+    /** What a read-back would have recorded: the saved technician and the generation of that write. */
+    const basis = async (client: number, family: string) => {
+      const saved = await store.preferences.get(client, family);
+      return saved === null ? null : { staffId: saved.staffId, generation: saved.generation };
+    };
+
     test("preferences: set, repeat, change, unchanged, remove, and a missing client is refused", async () => {
       const client = (await store.book(booking())).appointment!.clientId;
       const first = await store.preferences.set(client, "massage-swedish-massage", "910001", { requestKey: "p1" });
@@ -271,7 +277,7 @@ for (const backend of backends) {
       const changed = await store.preferences.set(client, "massage-swedish-massage", "910006");
       assert.deepEqual([changed.status, changed.preference!.version, changed.previous], ["saved", 2, "910001"]);
       assert.deepEqual((await store.preferences.forClient(client)).map((p) => [p.familyId, p.staffId]), [["massage-swedish-massage", "910006"]]);
-      const held = { staffId: "910006", version: 2 };
+      const held = await basis(client, "massage-swedish-massage");
       assert.equal((await store.preferences.remove(client, "massage-swedish-massage", { requestKey: "p2", expected: held })).status, "removed");
       assert.equal((await store.preferences.remove(client, "massage-swedish-massage", { requestKey: "p2", expected: held })).status, "replayed");
       assert.equal((await store.preferences.remove(client, "massage-swedish-massage", { expected: null })).status, "nothing_to_remove");
@@ -283,21 +289,44 @@ for (const backend of backends) {
     test("preferences: a change applies only to the state the caller confirmed (a stale one changes nothing)", async () => {
       const client = (await store.book(booking())).appointment!.clientId;
       const family = "massage-swedish-massage";
-      assert.equal((await store.preferences.set(client, family, "910001", { expected: { staffId: "910009", version: 1 } })).status, "stale"); // nothing saved, something else expected
+      assert.equal((await store.preferences.set(client, family, "910001", { expected: { staffId: "910009", generation: 1 } })).status, "stale"); // nothing saved, something else expected
       assert.equal(await store.preferences.get(client, family), null);
       assert.equal((await store.preferences.set(client, family, "910001", { expected: null })).status, "saved");
       assert.equal((await store.preferences.set(client, family, "910006", { expected: null })).status, "stale"); // expected none, but one is saved
-      const moved = await store.preferences.set(client, family, "910006", { requestKey: "m1", expected: { staffId: "910001", version: 1 } });
+      const old = await basis(client, family);
+      const moved = await store.preferences.set(client, family, "910006", { requestKey: "m1", expected: old });
       assert.deepEqual([moved.status, moved.preference!.staffId, moved.preference!.version], ["saved", "910006", 2]);
-      const late = await store.preferences.set(client, family, "910008", { requestKey: "m2", expected: { staffId: "910001", version: 1 } }); // confirmed against the old state
+      const late = await store.preferences.set(client, family, "910008", { requestKey: "m2", expected: old }); // confirmed against the old state
       assert.deepEqual([late.status, late.preference!.staffId], ["stale", "910006"]);
-      assert.equal((await store.preferences.set(client, family, "910008", { requestKey: "m2", expected: { staffId: "910006", version: 2 } })).status, "replayed"); // a stale answer still used its key
+      assert.equal((await store.preferences.set(client, family, "910008", { requestKey: "m2", expected: await basis(client, family) })).status, "replayed"); // a stale answer still used its key
       assert.equal((await store.preferences.get(client, family))!.staffId, "910006");
-      // an old value restored later is a NEW state: the version moved on, so a confirmation of the first one no longer applies
-      await store.preferences.set(client, family, "910001", { expected: { staffId: "910006", version: 2 } });
-      const gone = await store.preferences.remove(client, family, { requestKey: "r1", expected: { staffId: "910001", version: 1 } });
-      assert.deepEqual([gone.status, gone.preference!.staffId, gone.preference!.version], ["stale", "910001", 3]);
-      assert.equal((await store.preferences.remove(client, family, { expected: { staffId: "910001", version: 3 } })).status, "removed");
+      // an old value restored later is a NEW state: its generation is new, so a confirmation of the first one no longer applies
+      await store.preferences.set(client, family, "910001", { expected: await basis(client, family) });
+      const gone = await store.preferences.remove(client, family, { requestKey: "r1", expected: old });
+      assert.deepEqual([gone.status, gone.preference!.staffId], ["stale", "910001"]);
+      assert.equal((await store.preferences.remove(client, family, { expected: await basis(client, family) })).status, "removed");
+    });
+
+    test("preferences: the generation is never reused, so a confirmation survives neither a change back nor a removal and re-creation", async () => {
+      const client = (await store.book(booking())).appointment!.clientId;
+      const family = "massage-swedish-massage";
+      await store.preferences.set(client, family, "910001");
+      const read = await basis(client, family); // a removal is read back for exactly this
+      // removed by something else, then the SAME technician saved again: version starts again at 1, the generation does not
+      assert.equal((await store.preferences.remove(client, family, { expected: read })).status, "removed");
+      await store.preferences.set(client, family, "910001");
+      const recreated = (await store.preferences.get(client, family))!;
+      assert.equal(recreated.version, 1);
+      assert.notEqual(recreated.generation, read!.generation);
+      const late = await store.preferences.remove(client, family, { requestKey: "late-remove", expected: read });
+      assert.deepEqual([late.status, late.preference!.staffId], ["stale", "910001"]);
+      assert.equal((await store.preferences.get(client, family))!.staffId, "910001", "the newly saved choice survived");
+      // and a save confirmed before a change-and-change-back is stale too
+      const before = await basis(client, family);
+      await store.preferences.set(client, family, "910002");
+      await store.preferences.set(client, family, "910001");
+      assert.equal((await store.preferences.set(client, family, "910003", { expected: before })).status, "stale");
+      assert.equal((await store.preferences.get(client, family))!.staffId, "910001");
     });
 
     test("preferences: a repeated key never reapplies its change, even after the state moved on or was recreated", async () => {
@@ -307,11 +336,11 @@ for (const backend of backends) {
       await store.preferences.set(client, family, "910002");
       assert.equal((await store.preferences.set(client, family, "910001", { requestKey: "k" })).status, "replayed"); // not an unconditional overwrite
       assert.equal((await store.preferences.get(client, family))!.staffId, "910002");
-      // a removal, then the SAME technician saved again at the same version: the old removal's retry must replay, not remove it
-      assert.equal((await store.preferences.remove(client, family, { requestKey: "r", expected: { staffId: "910002", version: 2 } })).status, "removed");
+      // a removal, then the SAME technician saved again: the old removal's retry must replay, not remove it
+      const held = await basis(client, family);
+      assert.equal((await store.preferences.remove(client, family, { requestKey: "r", expected: held })).status, "removed");
       await store.preferences.set(client, family, "910002");
-      assert.deepEqual([(await store.preferences.get(client, family))!.staffId, (await store.preferences.get(client, family))!.version], ["910002", 1]);
-      assert.equal((await store.preferences.remove(client, family, { requestKey: "r", expected: { staffId: "910002", version: 1 } })).status, "replayed");
+      assert.equal((await store.preferences.remove(client, family, { requestKey: "r", expected: held })).status, "replayed");
       assert.equal((await store.preferences.get(client, family))!.staffId, "910002");
     });
 
@@ -321,7 +350,8 @@ for (const backend of backends) {
       const results = await Promise.all(Array.from({ length: 6 }, () => store.preferences.set(client, family, "910001", { requestKey: "same", expected: null })));
       assert.deepEqual(results.map((r) => r.status).sort(), ["replayed", "replayed", "replayed", "replayed", "replayed", "saved"]);
       assert.equal((await store.preferences.get(client, family))!.version, 1);
-      const removals = await Promise.all(Array.from({ length: 6 }, () => store.preferences.remove(client, family, { requestKey: "same-remove", expected: { staffId: "910001", version: 1 } })));
+      const held = await basis(client, family);
+      const removals = await Promise.all(Array.from({ length: 6 }, () => store.preferences.remove(client, family, { requestKey: "same-remove", expected: held })));
       assert.deepEqual(removals.map((r) => r.status).sort(), ["removed", "replayed", "replayed", "replayed", "replayed", "replayed"]);
     });
   });

@@ -23,13 +23,14 @@ export interface Preference {
   clientId: number;
   familyId: string;
   staffId: string;
-  version: number;
+  version: number; // counts the changes to this preference; starts again at 1 if it is recreated
+  generation: number; // unique to every write, never reused, so a confirmation can tell 'the same technician, saved again later' from the state it was read back at
   createdAt: number;
   updatedAt: number;
 }
 export const SAVED = "saved", UNCHANGED = "unchanged", REMOVED = "removed", NOTHING = "nothing_to_remove", REPLAYED = "replayed", STALE = "stale";
-/** The saved preference a caller confirmed (its technician and version), or null when none was saved. A change only applies to exactly that state; otherwise the outcome is STALE and nothing changes. */
-export type Expected = { staffId: string; version: number };
+/** The saved preference a caller confirmed (its technician and generation), or null when none was saved. A change only applies to exactly that state; otherwise the outcome is STALE and nothing changes. */
+export type Expected = { staffId: string; generation: number };
 export interface PreferenceOutcome {
   status: string; // saved / unchanged / removed / nothing_to_remove / replayed / stale (what is saved is no longer what the caller confirmed: nothing changed)
   preference: Preference | null; // the state AFTER the call (null once removed)

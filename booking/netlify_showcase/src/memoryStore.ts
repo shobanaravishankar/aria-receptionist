@@ -322,6 +322,7 @@ export class MemoryStore implements Store {
 
 class MemoryPreferences implements PreferenceStore {
   private readonly rows: Preference[] = [];
+  private generation = 0; // one counter for every write, never reused
   private readonly requests = new Map<string, string>(); // `${kind}|${key}` -> kind
   private readonly store: MemoryStore;
   private readonly clock: () => number;
@@ -344,16 +345,16 @@ class MemoryPreferences implements PreferenceStore {
       const current = this.rows.find((p) => p.clientId === clientId && p.familyId === familyId);
       const now = this.clock();
       let result: PreferenceOutcome;
-      const matches = opts.expected === undefined || (opts.expected === null ? !current : Boolean(current) && current!.staffId === opts.expected.staffId && current!.version === opts.expected.version);
+      const matches = opts.expected === undefined || (opts.expected === null ? !current : Boolean(current) && current!.staffId === opts.expected.staffId && current!.generation === opts.expected.generation);
       if (current && current.staffId === staffId) result = { status: UNCHANGED, preference: { ...current }, previous: null };
       else if (!matches) result = { status: STALE, preference: current ? { ...current } : null, previous: null };
       else if (!current) {
-        const row: Preference = { clientId, familyId, staffId, version: 1, createdAt: now, updatedAt: now };
+        const row: Preference = { clientId, familyId, staffId, version: 1, generation: ++this.generation, createdAt: now, updatedAt: now };
         this.rows.push(row);
         result = { status: SAVED, preference: { ...row }, previous: null };
       } else {
         const before = current.staffId;
-        Object.assign(current, { staffId, version: current.version + 1, updatedAt: now });
+        Object.assign(current, { staffId, version: current.version + 1, generation: ++this.generation, updatedAt: now });
         result = { status: SAVED, preference: { ...current }, previous: before };
       }
       if (key) this.requests.set(`set|${key}`, "set");
@@ -368,7 +369,7 @@ class MemoryPreferences implements PreferenceStore {
       const index = this.rows.findIndex((p) => p.clientId === clientId && p.familyId === familyId);
       let result: PreferenceOutcome;
       if (index < 0) result = { status: NOTHING, preference: null, previous: null };
-      else if (opts.expected === null || this.rows[index].staffId !== opts.expected.staffId || this.rows[index].version !== opts.expected.version) result = { status: STALE, preference: { ...this.rows[index] }, previous: null };
+      else if (opts.expected === null || this.rows[index].staffId !== opts.expected.staffId || this.rows[index].generation !== opts.expected.generation) result = { status: STALE, preference: { ...this.rows[index] }, previous: null };
       else {
         const [gone] = this.rows.splice(index, 1);
         result = { status: REMOVED, preference: null, previous: gone.staffId };

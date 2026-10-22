@@ -189,7 +189,7 @@ export class PreferenceTools extends LifecycleTools {
     return this.setReadback(callId, wanted, family, person, current, false);
   }
   private async setReadback(callId: string, wanted: Record<string, any>, family: Family, person: DemoStaff, current: Preference | null, stale: boolean): Promise<Reply> {
-    const token = await this.newPending("pref_set", callId, { ...wanted, version: current ? current.version : null }); // the version it was read back at: the write applies to exactly that state
+    const token = await this.newPending("pref_set", callId, { ...wanted, generation: current ? current.generation : null }); // the generation it was read back at: the write applies to exactly that state
     const lead = stale ? "That has changed since I read it out. " : "";
     const was = current ? this.show(current.staffId) : null;
     const what = current ? `change your preferred technician for ${family.name} from ${was} to ${person.name}` : `save ${person.name} as your preferred technician for ${family.name}`;
@@ -203,6 +203,7 @@ export class PreferenceTools extends LifecycleTools {
     let outcome;
     let now: Preference | null;
     try {
+      this.willChange(doc);
       outcome = await this.store.preferences.set(client.clientId, family.id, person.staffId, { requestKey: this.tokenKey("pref_set", callId, token), expected: basis });
       now = await this.store.preferences.get(client.clientId, family.id);
     } catch (error) {
@@ -252,7 +253,7 @@ export class PreferenceTools extends LifecycleTools {
     return this.removeReadback(callId, wanted, family, current, false);
   }
   private async removeReadback(callId: string, wanted: Record<string, any>, family: Family, current: Preference, stale: boolean): Promise<Reply> {
-    const token = await this.newPending("pref_remove", callId, { ...wanted, version: current.version }); // the version it was read back at: the removal applies to exactly that state
+    const token = await this.newPending("pref_remove", callId, { ...wanted, generation: current.generation }); // the generation it was read back at: the removal applies to exactly that state
     const lead = stale ? "That has changed since I read it out. " : "";
     return reply("confirmation_required", `${lead}To confirm: remove ${this.show(current.staffId) ?? "your saved technician"} as your preferred technician for ${family.name}. Your appointments won't change. Shall I go ahead?`, {
       confirmation_token: token, service: family.name,
@@ -264,6 +265,7 @@ export class PreferenceTools extends LifecycleTools {
     let outcome;
     let gone: boolean;
     try {
+      this.willChange(doc);
       outcome = await this.store.preferences.remove(client.clientId, family.id, { requestKey: this.tokenKey("pref_remove", callId, token), expected: basis });
       gone = (await this.store.preferences.get(client.clientId, family.id)) === null;
     } catch (error) {
@@ -279,9 +281,9 @@ export class PreferenceTools extends LifecycleTools {
   }
 }
 
-/** The saved preference a read-back was made against (its technician and version), or null when none was saved then. */
+/** The saved preference a read-back was made against (its technician and generation), or null when none was saved then. */
 function basisOf(payload: Record<string, any>): Expected | null {
-  return typeof payload.current === "string" && typeof payload.version === "number" ? { staffId: payload.current, version: payload.version } : null;
+  return typeof payload.current === "string" && typeof payload.generation === "number" ? { staffId: payload.current, generation: payload.generation } : null;
 }
 
 function sortKeys(o: Record<string, any>): Record<string, any> {

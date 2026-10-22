@@ -49,7 +49,9 @@ const SUCCESS_STATUSES = new Set(["booked_verified", "already_booked"]);
 export const LIFECYCLE_OK: ReadonlySet<string> = new Set(["booked_verified", "already_booked", "cancelled", "already_cancelled", "rescheduled", "already_rescheduled", "unchanged", "found"]);
 export const MAX_NUMBERS_PER_CALL = 3; // a caller cannot try number after number to find who is a client
 export const MAX_FAILED_MATCHES_PER_CALL = 5;
-const MAX_CALL_REDOS = 12; // how many times a step may be redone because another invocation of the same call saved first
+const MAX_CALL_REDOS = 12; // how many times a step may be redone, or its changes folded in, because the call's memory was written under it
+const CALL_LEASE_MS = 20_000; // how long one step may hold a call before another may take over (a step takes well under this)
+const CALL_WAIT_MS = 15_000; // how long a step waits for the one ahead of it before the caller is told to try again
 export const MAX_CHANGES_PER_CALL = 3;
 export const NAME_MAX = 80;
 export const SHOWN_UPCOMING = 3;
@@ -196,10 +198,16 @@ export class LifecycleTools {
   /** Runs one tool call: the call id is checked, what the call remembers is loaded first and saved after, and the answer is labelled with its source. */
   protected async run(callId: string, work: (doc: CallDoc) => Promise<Reply>): Promise<Reply> {
     if (typeof callId !== "string" || !callId.trim()) return this.labelled(response("needs_clarification", "I could not identify this call, so I can't check the calendar.", { reason: "no_call_id" }));
-    // What the call remembers is saved by compare-and-set. If another invocation of THIS call saved first (parallel tool calls, on any instance), nothing is lost: this one loads the newer
-    // memory and redoes its step against it. Redoing is safe because every write a step makes carries a request key, so it replays instead of repeating.
+    // One tool step of one call runs at a time, on any instance: the step takes a short lease on the call's memory (a field of its document, taken by compare-and-set), others wait for it, and
+    // the step's final save releases it. So a step always sees what the steps before it left (the limits on attempts and changes hold under parallel calls) and counts its own change once.
+    // The compare-and-set is also the backstop if a lease is ever lost (a holder that stalled past its lease, or a direct write): a step that made NO effect is redone against the newer memory;
+    // a step that DID make an effect (a booking, a cancellation, a move, a preference) is never redone, because its answer is already true: what it changed in the memory is folded into the
+    // newer memory instead.
+    const me = randomBytes(8).toString("hex");
+    const deadline = Date.now() + CALL_WAIT_MS;
     for (let attempt = 1; ; attempt++) {
-      const doc = await this.calls.load(callId);
+      const doc = await this.acquire(callId, me, deadline);
+      const start = structuredClone(doc);
       let result: Reply | undefined;
       let failure: unknown;
       let failed = false;
@@ -209,16 +217,60 @@ export class LifecycleTools {
         failed = true;
         failure = error;
       }
+      doc.lock = null;
       try {
         await this.calls.save(callId, doc);
       } catch (error) {
         if (!(error instanceof CallConflict)) throw error;
-        if (attempt >= MAX_CALL_REDOS) throw new StoreError("this call is busy; try again");
-        await new Promise((resolve) => setTimeout(resolve, Math.floor(Math.random() * 15 * attempt)));
-        continue;
+        if (this.effected.has(doc)) await this.fold(callId, start, doc, me);
+        else if (attempt >= MAX_CALL_REDOS) throw new StoreError("this call is busy; try again");
+        else continue;
       }
       if (failed) throw failure;
       return result!;
+    }
+  }
+  /** Marks the step as about to make an effect that must not be repeated or lost (called just before a write to the records). */
+  protected willChange(doc: CallDoc): void {
+    this.effected.add(doc);
+  }
+  private readonly effected = new WeakSet<CallDoc>();
+  private async acquire(callId: string, me: string, deadline: number): Promise<CallDoc> {
+    for (;;) {
+      const doc = await this.calls.load(callId);
+      const at = Date.now();
+      if (doc.lock !== null && doc.lock.holder !== me && doc.lock.until > at) {
+        if (at >= deadline) throw new StoreError("this call is busy; try again");
+        await new Promise((resolve) => setTimeout(resolve, 20 + Math.floor(Math.random() * 30)));
+        continue;
+      }
+      doc.lock = { holder: me, until: at + CALL_LEASE_MS };
+      try {
+        await this.calls.save(callId, doc);
+        return doc;
+      } catch (error) {
+        if (!(error instanceof CallConflict)) throw error; // somebody else took it first: look again
+      }
+    }
+  }
+  /** Add what a step changed (its memory now minus its memory when it began) to the newest memory, once, and release the lease if it is still ours. */
+  private async fold(callId: string, start: CallDoc, ours: CallDoc, me: string): Promise<void> {
+    for (let attempt = 1; attempt <= MAX_CALL_REDOS; attempt++) {
+      const latest = await this.calls.load(callId);
+      latest.numbers = [...new Set([...latest.numbers, ...ours.numbers])];
+      latest.failed += ours.failed - start.failed;
+      latest.changes += ours.changes - start.changes;
+      latest.attempts += ours.attempts - start.attempts;
+      if (JSON.stringify(ours.preferred) !== JSON.stringify(start.preferred)) latest.preferred = ours.preferred;
+      if (JSON.stringify(ours.identity) !== JSON.stringify(start.identity)) latest.identity = ours.identity;
+      if (latest.lock !== null && latest.lock.holder === me) latest.lock = null;
+      try {
+        await this.calls.save(callId, latest);
+        return;
+      } catch (error) {
+        if (!(error instanceof CallConflict)) throw error;
+        await new Promise((resolve) => setTimeout(resolve, Math.floor(Math.random() * 15 * attempt)));
+      }
     }
   }
   private labelled(r: Reply): Reply {
@@ -1125,6 +1177,7 @@ export class LifecycleTools {
     };
     let outcome: Outcome;
     try {
+      this.willChange(doc);
       outcome = await this.store.book(booking, { validate: async (rowsBetween, placement) => void (await this.judge.require(placement, rowsBetween)), outbox: this.outbox });
     } catch (error) {
       if (error instanceof StoreError) return this.unavailable();
@@ -1218,6 +1271,7 @@ export class LifecycleTools {
   private async commitCancel(callId: string, token: string, row: StoredAppointment, reason: unknown, doc: CallDoc): Promise<Reply> {
     let outcome: Outcome;
     try {
+      this.willChange(doc);
       outcome = await this.store.cancel(row.reference, { expectedVersion: row.version, reason: typeof reason === "string" ? reason : null, requestKey: this.tokenKey("cancel", callId, token), outbox: this.outbox });
     } catch (error) {
       if (error instanceof StoreError) return this.unavailable();
@@ -1347,6 +1401,7 @@ export class LifecycleTools {
   private async commitMove(callId: string, token: string, row: StoredAppointment, staffId: string, startUtc: number, doc: CallDoc): Promise<Reply> {
     let outcome: Outcome;
     try {
+      this.willChange(doc);
       outcome = await this.store.reschedule(row.reference, {
         startUtc, staffId, expectedVersion: row.version, validate: async (rowsBetween, placement) => void (await this.judge.require(placement, rowsBetween)),
         requestKey: this.tokenKey("reschedule", callId, token), outbox: this.outbox,

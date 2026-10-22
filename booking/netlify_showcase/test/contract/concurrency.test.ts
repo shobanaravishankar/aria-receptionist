@@ -62,7 +62,7 @@ describe("preferences on Postgres: one statement, one effect", () => {
     const store = pgStore();
     const id = await client(store);
     await store.preferences.set(id, FAMILY, "910001");
-    const confirmed = { staffId: "910001", version: 1 }; // what the caller was read back
+    const confirmed = { staffId: "910001", generation: (await store.preferences.get(id, FAMILY))!.generation }; // what the caller was read back
     let interrupt = true;
     const interrupted = pgStore({ async query(sql: string, values?: any[]) {
       if (interrupt && sql.includes("insert into preference_requests") && sql.includes("'remove'")) { interrupt = false; throw new Error("simulated function interruption"); }
@@ -79,10 +79,11 @@ describe("preferences on Postgres: one statement, one effect", () => {
     assert.equal(retry.status, "stale");
     assert.equal((await store.preferences.get(id, FAMILY))!.staffId, "910002");
     // and when the removal DID commit, its retry replays instead of removing again
-    const first = await store.preferences.remove(id, FAMILY, { requestKey: "good-remove", expected: { staffId: "910002", version: 2 } });
+    const held = { staffId: "910002", generation: (await store.preferences.get(id, FAMILY))!.generation };
+    const first = await store.preferences.remove(id, FAMILY, { requestKey: "good-remove", expected: held });
     assert.equal(first.status, "removed");
     await store.preferences.set(id, FAMILY, "910003", { requestKey: "later-save" });
-    assert.equal((await store.preferences.remove(id, FAMILY, { requestKey: "good-remove", expected: { staffId: "910002", version: 2 } })).status, "replayed");
+    assert.equal((await store.preferences.remove(id, FAMILY, { requestKey: "good-remove", expected: held })).status, "replayed");
     assert.equal((await store.preferences.get(id, FAMILY))!.staffId, "910003");
   });
 
@@ -90,9 +91,10 @@ describe("preferences on Postgres: one statement, one effect", () => {
     const store = pgStore();
     const id = await client(store);
     await store.preferences.set(id, FAMILY, "910001");
+    const held = { staffId: "910001", generation: (await store.preferences.get(id, FAMILY))!.generation };
     const [removed, saved] = await Promise.all([
-      store.preferences.remove(id, FAMILY, { requestKey: "r", expected: { staffId: "910001", version: 1 } }),
-      store.preferences.set(id, FAMILY, "910002", { requestKey: "s", expected: { staffId: "910001", version: 1 } }),
+      store.preferences.remove(id, FAMILY, { requestKey: "r", expected: held }),
+      store.preferences.set(id, FAMILY, "910002", { requestKey: "s", expected: held }),
     ]);
     const final = await store.preferences.get(id, FAMILY);
     const events = (await pg.pool.query("select kind from preference_events order by event_id")).rows.map((r) => r.kind);

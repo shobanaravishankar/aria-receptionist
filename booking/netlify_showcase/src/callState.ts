@@ -20,8 +20,10 @@ export interface CallDoc {
   identity: Identity | null;
   /** The revision this document was loaded at (0: the call has no row yet). A save only succeeds against the revision it was loaded at; see CallConflict. */
   rev: number;
+  /** Who is running a tool step for this call right now, and until when (epoch ms). Others wait for it; a holder that died is taken over once it expires. */
+  lock: { holder: string; until: number } | null;
 }
-export const emptyCall = (): CallDoc => ({ numbers: [], failed: 0, changes: 0, attempts: 0, preferred: null, identity: null, rev: 0 });
+export const emptyCall = (): CallDoc => ({ numbers: [], failed: 0, changes: 0, attempts: 0, preferred: null, identity: null, rev: 0, lock: null });
 
 /** Another invocation of the same call saved first. Nothing was written; the caller loads again and redoes its step against the newer document. */
 export class CallConflict extends Error {}

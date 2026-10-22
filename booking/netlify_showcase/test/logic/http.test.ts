@@ -74,14 +74,14 @@ test("a request that does need records opens the database once, and says so plai
   }
 });
 
-test("caching: only answers that depend on no record are kept, briefly, and only by the browser", async () => {
+test("caching: only answers that depend on no record are kept, briefly, and only by the visitor's own browser (private)", async () => {
   const cache = async (request: HttpRequest) => (await handle(request, app())).headers["cache-control"];
-  assert.equal(await cache(get("/demo/health")), "public, max-age=60");
-  assert.equal(await cache(get("/demo/open-times", { service_id: "not-a-treatment", date: tomorrow })), "public, max-age=300");
-  assert.equal(await cache(get("/demo/open-times", { service_id: SWEDISH, date: "2099-01-01" })), "public, max-age=300");
-  assert.equal(await cache(get("/pro/en-us/9000001/calendar", { date: "2099-01-01" })), "public, max-age=300");
+  assert.equal(await cache(get("/demo/health")), "private, max-age=60");
+  assert.equal(await cache(get("/demo/open-times", { service_id: "not-a-treatment", date: tomorrow })), "private, max-age=300");
+  assert.equal(await cache(get("/demo/open-times", { service_id: SWEDISH, date: "2099-01-01" })), "private, max-age=300");
+  assert.equal(await cache(get("/pro/en-us/9000001/calendar", { date: "2099-01-01" })), "private, max-age=300");
   assert.equal(await cache(get("/healthz")), "no-store");
   for (const response of [await handle(get("/demo/health"), app()), await handle(get("/demo/open-times", { service_id: "not-a-treatment", date: tomorrow }), app())]) {
-    assert.ok(!("netlify-cdn-cache-control" in response.headers) && !/s-maxage/.test(response.headers["cache-control"]), "no shared-cache directive: the answer varies with the Origin");
+    assert.ok(/^private, max-age=\d+$/.test(response.headers["cache-control"]) && !("netlify-cdn-cache-control" in response.headers), "private, and no shared-cache directive: the answer varies with the Origin");
   }
 });

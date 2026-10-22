@@ -59,8 +59,8 @@ const text = (status: number, body: string, extra: Record<string, string> = {}):
 const failure = (status: number, error: string): HttpResponse => json(status, { status: "error", ok: false, speak: "", error });
 /* Caching: what comes out of the database (open times, the change stamp, the calendar page) is never cached, because a stale answer would show a booked time as open and none of it may be kept
  * for someone else. What does NOT depend on any record (health, an unknown treatment, a date outside the demo window) may be kept briefly by the browser, so a reload costs nothing.
- * Only `cache-control`, never a shared (CDN) cache directive: the answer varies with the Origin header. */
-const BRIEFLY = (seconds: number): Record<string, string> => ({ "cache-control": `public, max-age=${seconds}` });
+ * `private`: kept by the visitor's own browser only, never by a shared cache (the answer varies with the Origin header). */
+const BRIEFLY = (seconds: number): Record<string, string> => ({ "cache-control": `private, max-age=${seconds}` });
 
 /** True only for a signature in the official form that matches the raw body and is fresh. Never throws. */
 export function verifySignature(rawBody: Uint8Array, header: string | null | undefined, apiKey: string | null, nowMs: number): boolean {

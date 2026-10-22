@@ -398,7 +398,7 @@ class PgPreferences implements PreferenceStore {
     this.db = db;
     this.clock = clock;
   }
-  private toPreference = (r: any): Preference => ({ clientId: Number(r.client_id), familyId: r.family_id, staffId: r.staff_id, version: Number(r.version), createdAt: Number(r.created_at), updatedAt: Number(r.updated_at) });
+  private toPreference = (r: any): Preference => ({ clientId: Number(r.client_id), familyId: r.family_id, staffId: r.staff_id, version: Number(r.version), generation: Number(r.generation), createdAt: Number(r.created_at), updatedAt: Number(r.updated_at) });
   async get(clientId: number, familyId: string): Promise<Preference | null> {
     const found = (await this.db.query("select * from client_preferences where client_id = $1 and family_id = $2", [clientId, familyId])).rows;
     return found.length ? this.toPreference(found[0]) : null;
@@ -424,13 +424,13 @@ class PgPreferences implements PreferenceStore {
            ), i as (
              insert into client_preferences (client_id, family_id, staff_id, version, created_at, updated_at)
                select $1::bigint, $2::text, $3::text, 1, $4::bigint, $4::bigint from go where not $6::boolean or $7::text is null
-             on conflict (client_id, family_id) do update set staff_id = excluded.staff_id, version = client_preferences.version + 1, updated_at = excluded.updated_at
+             on conflict (client_id, family_id) do update set staff_id = excluded.staff_id, version = client_preferences.version + 1, generation = nextval('preference_generation'), updated_at = excluded.updated_at
                where not $6::boolean and client_preferences.staff_id is distinct from excluded.staff_id
              returning *
            ), u as (
-             update client_preferences set staff_id = $3::text, version = version + 1, updated_at = $4::bigint
+             update client_preferences set staff_id = $3::text, version = version + 1, generation = nextval('preference_generation'), updated_at = $4::bigint
                where client_id = $1::bigint and family_id = $2::text and $6::boolean and $7::text is not null and exists (select 1 from go)
-                 and staff_id = $7::text and version = $8::integer and staff_id <> $3::text
+                 and staff_id = $7::text and generation = $8::bigint and staff_id <> $3::text
              returning *
            ), p as (
              select * from i union all select * from u
@@ -438,7 +438,7 @@ class PgPreferences implements PreferenceStore {
              insert into preference_events (client_id, family_id, kind, detail, at) select client_id, family_id, 'set', jsonb_build_object('staff', staff_id, 'version', version), $4::bigint from p
            )
            select (select count(*) from go)::integer as went, (select to_jsonb(p) from p limit 1) as saved`,
-          [clientId, familyId, staffId, this.clock(), key, checked, checked && opts.expected ? opts.expected.staffId : null, checked && opts.expected ? opts.expected.version : null],
+          [clientId, familyId, staffId, this.clock(), key, checked, checked && opts.expected ? opts.expected.staffId : null, checked && opts.expected ? opts.expected.generation : null],
         )
       ).rows[0];
     } catch (error) {
@@ -460,12 +460,12 @@ class PgPreferences implements PreferenceStore {
          ), go as (
            select 1 as one where $4::text is null union all select 1 from k
          ), d as (
-           delete from client_preferences where client_id = $1::bigint and family_id = $2::text and exists (select 1 from go) and staff_id = $5::text and version = $6::integer returning *
+           delete from client_preferences where client_id = $1::bigint and family_id = $2::text and exists (select 1 from go) and staff_id = $5::text and generation = $6::bigint returning *
          ), e as (
            insert into preference_events (client_id, family_id, kind, detail, at) select client_id, family_id, 'remove', jsonb_build_object('staff', staff_id, 'version', version), $3::bigint from d
          )
          select (select count(*) from go)::integer as went, (select staff_id from d limit 1) as removed`,
-        [clientId, familyId, this.clock(), key, opts.expected ? opts.expected.staffId : null, opts.expected ? opts.expected.version : null],
+        [clientId, familyId, this.clock(), key, opts.expected ? opts.expected.staffId : null, opts.expected ? opts.expected.generation : null],
       )
     ).rows[0];
     if (Number(row.went) === 0) return { status: REPLAYED, preference: null, previous: null };
