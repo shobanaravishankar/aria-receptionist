@@ -36,7 +36,10 @@ Do the draft first. A draft deploy has no production-publish charge, but functio
 2. **Deploy a DRAFT** (not production) from `booking/netlify_showcase`: `netlify deploy --dir site --functions netlify/functions` (no `--prod`). Netlify prints a draft URL.
    *The first thing this settles, and the docs do not say:* whether a CLI deploy of this kind (a) bundles the TypeScript Function, (b) provisions the database and applies `migrations/`
    (0001 the schema, 0002 the call-memory revision, 0003 the preference generation), (c) gives the Function its database address. If (b) did not happen, apply the schema with
-   `NETLIFY_DB_URL=... node scripts/apply_migrations.mjs` (a fallback that applies them in order and records them in the table the emulator uses). If the CLI cannot do this at all, the next
+   `NETLIFY_DB_URL=... node scripts/apply_migrations.mjs` (`--check` first to see what it would do). It needs only the right to create tables in the database's own schema: it never creates a
+   schema and never writes to the platform's protected `netlify` schema (a hosted owner role was refused `create schema` on the first draft attempt), it keeps its own record in
+   `public.showcase_migrations`, and it skips any migration the platform's `netlify.migrations` already names. A later Netlify build that applies migrations itself would not know these were
+   applied; `--record-in-platform-table` adds the names there with a plain INSERT (best effort; it says so if the role may not). If the CLI cannot do this at all, the next
    route is a Git-connected build, which is a decision for the project lead, not something prepared here.
 3. **Set the environment variables** on the site, then redeploy the draft.
 4. **Import the preserved demo data, BEFORE any request that opens the records.** The first request that needs data runs the daily upkeep, which tops up missing fictional seeds; importing first
