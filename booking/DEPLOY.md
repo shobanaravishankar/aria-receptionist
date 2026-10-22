@@ -67,18 +67,20 @@ Render: create a web service from `booking/Dockerfile` (see `deploy/render.yaml.
 
 1. **Public key allowed domains**: in the Retell dashboard add the website's hostname exactly (for the existing demo `glamour-dayspa-aria-demo.netlify.app`: hostname only, no `https://`, no
    port) to the public key's allowed domains, and keep `localhost` for local tests. If a call fails with a domain error the page says so.
-2. **Tool addresses**: with `ARIA_DEMO_TUNNEL_URL=https://<your-app>.fly.dev` run the existing `python -m aria_booking demo-agent update --mode lifecycle --confirm-update` (the recorded agent
-   only; it verifies the read-back). **The agent's tools point at ONE place at a time**: after this the local tunnel no longer receives calls, so do the local rehearsal first, and move the agent
-   back with the same command and the tunnel address if you rehearse locally again.
+2. **Tool addresses**: with `ARIA_DEMO_TUNNEL_URL=https://<your-app>.fly.dev` run the existing `python -m aria_booking demo-agent update --mode lifecycle-preferences --confirm-update` (the recorded
+   agent only; it verifies the read-back; use `--mode lifecycle` only for an agent that has the eight lifecycle functions and no preferred-technician ones, and then leave `ARIA_PREFERENCES` unset
+   on the backend). An agent with the eleven functions needs a backend with `ARIA_PREFERENCES=1`, otherwise those three tool addresses answer "not found". **The agent's tools point at ONE place at
+   a time**: after this the local tunnel no longer receives calls; to rehearse locally again move the agent back with the same command and the local tunnel's address.
 
 ## Updating the existing Netlify demo, and rolling it back
 
 The existing demo is a Netlify site (`Server: Netlify`). No Netlify project file, CLI state or deploy hook exists in this repository, and GitHub shows no deploy status for it, so it looks like a
 **manual upload**. Whoever owns the Netlify account does the upload; nothing here has the account.
 
-1. Build the bundle (the operator command, with the backend's address): 
-   `ARIA_BACKEND_URL=https://<your-app>.fly.dev python -m aria_booking demo-agent prepare-web` → the folder printed (default `booking/.local/demo-agent/web`). It points the page at the backend
-   and includes a `_headers` file (the microphone policy, cache rules). Add `ARIA_AVATAR_IMAGE=<the web-sized avatar>` if the personal avatar should appear.
+1. Build the bundle (the operator command, with the backend's address) **into its own folder**:
+   `ARIA_BACKEND_URL=https://<your-app>.fly.dev python -m aria_booking demo-agent prepare-web --web-dir <a new empty folder>` → the folder printed. It points the page at the backend
+   and includes a `_headers` file (the microphone policy, cache rules). Add `ARIA_AVATAR_IMAGE=<the web-sized avatar>` if the personal avatar should appear. **Always pass `--web-dir`**: the default
+   folder (`booking/.local/demo-agent/web`) is the page a local rehearsal serves, and a build for a static host would overwrite it with one that reads the public backend.
 2. Check the backend first: `python -m aria_booking demo-public-check --url https://<your-app>.fly.dev --site-origin https://glamour-dayspa-aria-demo.netlify.app` must say **all checks passed**.
 3. In Netlify: the site's **Deploys** page → drag the whole folder onto the upload area. Netlify keeps every earlier deploy.
 4. Open the live address, press the call icon, and ask for open times: see "What only a call can prove".
