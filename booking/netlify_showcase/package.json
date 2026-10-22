@@ -1,0 +1,20 @@
+{
+  "name": "serenity-showcase-netlify",
+  "private": true,
+  "version": "0.1.0",
+  "description": "The Serenity Spa sales showcase on Netlify (static site + Functions + Netlify Database). A TypeScript port of the Python demo backend's logic; see ARCHITECTURE.md.",
+  "type": "module",
+  "engines": { "node": ">=22.6" },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\"",
+    "test:logic": "node --test \"test/logic/*.test.ts\""
+  },
+  "dependencies": {
+    "@netlify/database": "*",
+    "@netlify/functions": "*"
+  },
+  "devDependencies": {
+    "@netlify/database-dev": "*",
+    "pg": "*"
+  }
+}
