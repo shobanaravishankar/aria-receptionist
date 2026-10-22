@@ -1,0 +1,215 @@
+{
+ "rows": [
+  {
+   "staffId": "910001",
+   "name": "Marisol",
+   "weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "hours": [
+    600,
+    1200
+   ],
+   "categories": [
+    "massage",
+    "body-scrub",
+    "head-spa"
+   ],
+   "hoursKnown": true
+  },
+  {
+   "staffId": "910002",
+   "name": "Tamsin",
+   "weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "hours": [
+    600,
+    1200
+   ],
+   "categories": [
+    "massage",
+    "facial"
+   ],
+   "hoursKnown": true
+  },
+  {
+   "staffId": "910003",
+   "name": "Odette",
+   "weekdays": [
+    1,
+    3,
+    5
+   ],
+   "hours": [
+    600,
+    1200
+   ],
+   "categories": [
+    "facial",
+    "lash"
+   ],
+   "hoursKnown": true
+  },
+  {
+   "staffId": "910004",
+   "name": "Priya",
+   "weekdays": [
+    2,
+    4,
+    6
+   ],
+   "hours": [
+    660,
+    1140
+   ],
+   "categories": [
+    "facial",
+    "waxing"
+   ],
+   "hoursKnown": true
+  },
+  {
+   "staffId": "910005",
+   "name": "Noor",
+   "weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "hours": [
+    600,
+    1200
+   ],
+   "categories": [
+    "facial",
+    "lash"
+   ],
+   "hoursKnown": true
+  },
+  {
+   "staffId": "910006",
+   "name": "Sienna",
+   "weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "hours": [
+    600,
+    1200
+   ],
+   "categories": [
+    "massage",
+    "head-spa"
+   ],
+   "hoursKnown": true
+  },
+  {
+   "staffId": "910007",
+   "name": "Rowan",
+   "weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "hours": [
+    600,
+    1200
+   ],
+   "categories": [
+    "massage",
+    "waxing"
+   ],
+   "hoursKnown": true
+  },
+  {
+   "staffId": "910008",
+   "name": "Imogen",
+   "weekdays": [
+    0,
+    1,
+    3,
+    4,
+    5,
+    6
+   ],
+   "hours": [
+    600,
+    1200
+   ],
+   "categories": [
+    "lash",
+    "waxing",
+    "massage"
+   ],
+   "hoursKnown": true
+  },
+  {
+   "staffId": "910009",
+   "name": "Calista",
+   "weekdays": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "hours": [
+    720,
+    1200
+   ],
+   "categories": [
+    "facial",
+    "waxing"
+   ],
+   "hoursKnown": true
+  },
+  {
+   "staffId": "910010",
+   "name": "Delphine",
+   "weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "hours": [
+    600,
+    1200
+   ],
+   "categories": [
+    "facial"
+   ],
+   "hoursKnown": true
+  }
+ ],
+ "roleByCategory": {
+  "massage": "Massage therapist",
+  "facial": "Esthetician",
+  "lash": "Lash and brow artist",
+  "waxing": "Waxing specialist",
+  "head-spa": "Scalp specialist",
+  "body-scrub": "Body treatment specialist"
+ },
+ "nearMissName": "Tamzin"
+}

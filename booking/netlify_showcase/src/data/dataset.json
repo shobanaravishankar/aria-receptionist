@@ -1,0 +1,307 @@
+{
+ "seed": "aria-demo-v1",
+ "gridStart": 540,
+ "gridEnd": 1260,
+ "coverageBeforeDays": 7,
+ "coverageAfterDays": 35,
+ "demoFamilies": [
+  [
+   "massage",
+   "Deep Tissue Massage",
+   15
+  ],
+  [
+   "massage",
+   "Swedish Massage",
+   15
+  ],
+  [
+   "massage",
+   "Hot Stone Massage",
+   15
+  ],
+  [
+   "massage",
+   "Aromatherapy Massage",
+   15
+  ],
+  [
+   "massage",
+   "Anti-Stress Massage",
+   15
+  ],
+  [
+   "massage",
+   "Reflexology Massage",
+   15
+  ],
+  [
+   "facial",
+   "Express Facial",
+   10
+  ],
+  [
+   "facial",
+   "Signature Facial",
+   10
+  ],
+  [
+   "facial",
+   "Back Facial",
+   10
+  ],
+  [
+   "facial",
+   "Teen Facial",
+   10
+  ],
+  [
+   "facial",
+   "Deep Hydration Facial",
+   10
+  ],
+  [
+   "facial",
+   "Gentleman Facial",
+   10
+  ],
+  [
+   "facial",
+   "Microdermabrasion Facial",
+   10
+  ],
+  [
+   "lash",
+   "Eyelash Tinting",
+   0
+  ],
+  [
+   "lash",
+   "Eyelash Lifting",
+   0
+  ],
+  [
+   "lash",
+   "Eyebrow Tinting",
+   0
+  ],
+  [
+   "waxing",
+   "Eyebrows",
+   0
+  ],
+  [
+   "waxing",
+   "Lip",
+   0
+  ],
+  [
+   "waxing",
+   "Full Face",
+   0
+  ],
+  [
+   "waxing",
+   "Full Leg",
+   5
+  ],
+  [
+   "waxing",
+   "Brazilian Line",
+   5
+  ],
+  [
+   "head-spa",
+   "Head Scalp Massage",
+   5
+  ],
+  [
+   "head-spa",
+   "Head Scalp Detoxification",
+   5
+  ]
+ ],
+ "firstNames": [
+  "Alex",
+  "Blair",
+  "Casey",
+  "Dana",
+  "Eden",
+  "Frankie",
+  "Gray",
+  "Harper",
+  "Indy",
+  "Jules",
+  "Kai",
+  "Lane",
+  "Morgan",
+  "Nico",
+  "Oakley",
+  "Parker",
+  "Quinn",
+  "Reese",
+  "Sage",
+  "Taylor",
+  "Uma",
+  "Val",
+  "Wren",
+  "Xan",
+  "Yael",
+  "Zion",
+  "Avery",
+  "Briar",
+  "Cleo",
+  "Drew",
+  "Ellis",
+  "Finley"
+ ],
+ "initials": "ABCDEFGHJKLMNPRSTW",
+ "scriptFirst": {
+  "910006": {
+   "hours": [
+    600,
+    1200
+   ],
+   "breaks": [],
+   "visits": [
+    [
+     690,
+     750,
+     "Swedish Massage, 1 hour",
+     "massage"
+    ]
+   ]
+  },
+  "910001": {
+   "hours": [
+    600,
+    1200
+   ],
+   "breaks": [],
+   "visits": [
+    [
+     600,
+     660,
+     "Hot Stone Massage, 1 hour",
+     "massage"
+    ],
+    [
+     945,
+     1035,
+     "Deep Tissue Massage, 1 hour 30 minutes",
+     "massage"
+    ]
+   ]
+  },
+  "910002": {
+   "hours": [
+    600,
+    1200
+   ],
+   "breaks": [],
+   "visits": [
+    [
+     660,
+     720,
+     "Signature Facial",
+     "facial"
+    ],
+    [
+     1020,
+     1080,
+     "Back Facial",
+     "facial"
+    ]
+   ]
+  },
+  "910007": {
+   "hours": [
+    600,
+    1200
+   ],
+   "breaks": [
+    [
+     900,
+     1020,
+     "Break"
+    ]
+   ],
+   "visits": [
+    [
+     600,
+     615,
+     "Eyebrows",
+     "waxing"
+    ]
+   ]
+  },
+  "910008": "off"
+ },
+ "scriptSecond": {
+  "910006": {
+   "hours": [
+    600,
+    1200
+   ],
+   "breaks": [],
+   "visits": [
+    [
+     600,
+     690,
+     "Deep Tissue Massage, 1 hour 30 minutes",
+     "massage"
+    ],
+    [
+     900,
+     960,
+     "Aromatherapy Massage, 1 hour",
+     "massage"
+    ]
+   ]
+  },
+  "910001": {
+   "hours": [
+    600,
+    1200
+   ],
+   "breaks": [
+    [
+     780,
+     840,
+     "Lunch"
+    ]
+   ],
+   "visits": [
+    [
+     870,
+     960,
+     "Swedish Massage, 1 hour 30 minutes",
+     "massage"
+    ]
+   ]
+  },
+  "910008": {
+   "hours": [
+    600,
+    1200
+   ],
+   "breaks": [],
+   "visits": [
+    [
+     1020,
+     1065,
+     "Eyelash Lifting",
+     "lash"
+    ]
+   ]
+  }
+ },
+ "diagnosticUnknownFirst": {
+  "hours": [
+   600,
+   1200
+  ],
+  "breaks": [],
+  "visits": []
+ }
+}
