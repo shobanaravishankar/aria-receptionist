@@ -2,3 +2,7 @@ node_modules/
 .netlify/
 *.local.json
 site/
+
+# a real export of the demo store is data about people: never commit it
+*.snapshot.json
+*.snapshot.json.*
