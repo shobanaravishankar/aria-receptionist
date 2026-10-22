@@ -51,6 +51,35 @@ TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
 SUCCESS_STATUSES = frozenset({"booked_verified", "already_booked"})
 CONTACT = "Please contact the salon directly."
 AVAILABILITY_ONLY_NOTE = "I can only check availability on this line, so I can't book it. Please contact the salon directly to book."
+def _edit_distance(a: str, b: str) -> int:
+    previous = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        current = [i]
+        for j, cb in enumerate(b, 1):
+            current.append(min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (ca != cb)))
+        previous = current
+    return previous[-1]
+
+
+def close_names(heard: str, team: list[str]) -> list[str]:
+    """Team names a mis-heard name could be (one letter off for short names, two for longer ones), nearest first, at most two. Used only to ASK 'did you mean ...?'."""
+    wanted = staff_key(heard)
+    scored = []
+    for name in team:
+        key = staff_key(name)
+        distance = _edit_distance(wanted, key)
+        if distance <= (1 if min(len(wanted), len(key)) <= 5 else 2):
+            scored.append((distance, len(scored), name))
+    return [name for _d, _i, name in sorted(scored)[:2]]
+
+
+# Same-day start-time bounds a caller can ask for ("later than my 3:45", "at 5 or later", "by 5", "before 5"): the argument and how it is said. A bound is a RULE, not a hint.
+WINDOW_ARGS = {
+    "starting_at_or_after": ("lo", 0, "at {} or later"), "starting_after": ("lo", 1, "later than {}"),
+    "starting_at_or_before": ("hi", 0, "at {} or earlier"), "starting_before": ("hi", -1, "earlier than {}"),
+}
+
+
 # how close a refused start is to being bookable: the most informative reason to give when nobody can take it
 REASON_RANK = {"not_working": 0, "outside_hours": 1, "on_break": 2, "ends_after_closing": 3, "too_soon": 4, "occupied": 5, "conflicts_next": 6}
 
@@ -349,10 +378,39 @@ class VoiceTools:
                 )
         if self._require_verified and not service.verified:
             return None, None, self._not_bookable(service.booksy_name, service.service_id)
+        problem = self._check_service_words(service, args.get("service_words"))
+        if problem is not None:
+            return None, None, problem
         staff = args.get("staff")
         if staff is not None and staff != "" and not isinstance(staff, str):
             return None, None, _response("needs_clarification", "Which technician did you have in mind?", reason="bad_staff")
         return service, (staff.strip() or None) if isinstance(staff, str) else None, None
+
+    def _check_service_words(self, service: BookableService, words: Any) -> Optional[dict]:
+        """The caller's OWN words for the treatment (``service_words``), when the agent passes them, must name the treatment it chose. A group ("massage", "a sixty minute massage") or
+        several services that fit ("deep tissue" in two places) is not a choice, and words that name a different treatment than the id are not a match: either way the caller is
+        asked, and nothing is checked or booked until they choose. Words that match nothing are not second-guessed. Nothing carries over from an earlier call: it is only these words."""
+        if not isinstance(words, str) or not words.strip():
+            return None
+        group = self._group_answer(words) if self._group_answer else None
+        if group is not None:
+            data = {k: v for k, v in group.items() if k not in ("status", "speak")}
+            return _response("needs_clarification", group["speak"], reason="service_not_chosen", service_chosen=False, **data)
+        resolution = self.catalog.resolve(words)
+        families = list(dict.fromkeys(i.family for i in resolution.items))
+        if resolution.kind == "ambiguous":
+            return _response(
+                "needs_clarification", f"Several services fit that: {join_choices(families[:8])}. Which one did you mean?", reason="service_not_chosen", service_chosen=False,
+                families=families[:8], instruction="The caller has not chosen one treatment. Ask which one they want and wait; do not pick for them and do not check the calendar yet.",
+            )
+        chosen = self.catalog.get(service.catalog_item) if service.catalog_item else None
+        if resolution.kind in ("exact", "variants") and chosen is not None and chosen.family not in families:
+            return _response(
+                "needs_clarification", f"Just to be sure I have the right treatment: did you mean {join_choices(families[:3] + [chosen.family])}?", reason="service_mismatch",
+                service_chosen=False, families=families[:3],
+                instruction="The service you chose is not the one the caller's words name. Ask which treatment they want and wait; use only the one they choose.",
+            )
+        return None
 
     @staticmethod
     def _not_bookable(name: str, service_id: str) -> dict:
@@ -370,6 +428,37 @@ class VoiceTools:
             "bookable": bool(mapped and (mapped.verified or not self._require_verified)),
             **({"bookable_service_id": mapped.service_id} if mapped and (mapped.verified or not self._require_verified) else {}),
         }
+
+    @staticmethod
+    def _on_schedule(names: list[str]) -> dict:
+        """Who works that day and does the service. It is a list of CANDIDATES: no time has been checked for any of them, and the result says so in a field and in words, so it cannot be
+        read out as 'these people are available'."""
+        return {
+            "technicians_on_schedule": list(names), "times_checked": False,
+            "instruction": (
+                "These technicians work that day and do this service, but NO time has been checked for any of them. Never say that any of them is free or available at the requested "
+                "time. Ask which one the caller would like, then call check_slot with that name (or call find_alternatives for real open times)."
+            ),
+        }
+
+    @staticmethod
+    def unknown_staff_reply(named: str, service: BookableService, team: list[tuple[str, str]]) -> dict:
+        """A name that matches nobody on the whole team: ask about it against the REAL roster. ``team`` is (name, staff id) for everyone. A sound-alike is only offered as a question, never used."""
+        who_does = [name for name, staff_id in team if service.eligible(name, staff_id)]
+        close = close_names(named, [name for name, _staff_id in team])
+        if close:
+            speak = f"I don't have a technician called {named}. Did you mean {join_choices(close)}?"
+        else:
+            listed = f" For {service.booksy_name} it's {join_names(who_does)}." if who_does else ""
+            speak = f"I don't have a technician called {named}.{listed} Which did you mean?"
+        return _response(
+            "needs_clarification", speak, reason="unknown_staff", candidates=who_does, closest=close, times_checked=False,
+            instruction=(
+                "No technician has that name. Ask the caller which of the real technicians they meant. A name in `closest` may only be offered as a question ('Did you mean ...?'); use it "
+                "only after the caller says yes. Never invent a technician, never assume a name, and never say that anyone is free or available: no time has been checked. After the "
+                "caller chooses, call this tool again with that name."
+            ),
+        )
 
     def _eligible_staff(self, snapshot: DaySnapshot, service: BookableService, named: Optional[str]) -> tuple[list[str], Optional[dict]]:
         """Technicians who can do this service on this day's snapshot, or a response explaining why none can be used."""
@@ -392,6 +481,8 @@ class VoiceTools:
                         "needs_clarification", f"I know more than one {named}: {join_choices(everyone)}. Which did you mean?",
                         reason="ambiguous_staff", candidates=everyone,
                     )
+                if not everyone:  # nobody on the WHOLE team goes by that name (a mishearing, a name from another place): ask, never treat the day's schedule as the answer
+                    return [], self.unknown_staff_reply(named, service, [(m.name, m.staff_id) for m in roster.members])
             present = [sd.staff for sd in days if staff_key(sd.staff) == wanted]
             if not present:  # "Lily" may mean "Lily Chen": match whole words of the name, never a fragment
                 present = [sd.staff for sd in days if words and words <= set(staff_key(sd.staff).split())]
@@ -403,11 +494,11 @@ class VoiceTools:
             if not present:
                 return [], _response(
                     "staff_unavailable", f"I don't see {named} on the schedule for that day.", reason="staff_not_on_schedule",
-                    available_staff=eligible,
+                    **self._on_schedule(eligible),
                 )
             if not service.eligible(present[0], next(sd.staff_id for sd in days if sd.staff == present[0])):
                 return [], _response(
-                    "staff_unavailable", f"{present[0]} doesn't do {service.booksy_name}.", reason="staff_not_eligible", available_staff=eligible,
+                    "staff_unavailable", f"{present[0]} doesn't do {service.booksy_name}.", reason="staff_not_eligible", **self._on_schedule(eligible),
                 )
             return present, None
         if not eligible:
@@ -450,6 +541,29 @@ class VoiceTools:
                 )
             start = datetime(day.year, day.month, day.day, hour, minute, tzinfo=self._tz)
         return day, start, None
+
+    def _parse_window(self, args: dict, day: date) -> tuple[Optional[tuple], str, Optional[dict]]:
+        """((lowest, highest) start in minutes since midnight, either may be None; inclusive), the words for it, or a clarification. Several bounds on one side: the stricter wins."""
+        lo = hi = None
+        phrases: dict[str, str] = {}
+        for arg, (side, shift, wording) in WINDOW_ARGS.items():
+            raw = args.get(arg)
+            if raw is None or raw == "":
+                continue
+            if not isinstance(raw, str) or not TIME_RE.match(raw):
+                return None, "", _response("needs_clarification", "What time did you mean? For example, 2:30 in the afternoon.", reason="bad_time")
+            hour, minute = (int(part) for part in raw.split(":"))
+            if hour > 23 or minute > 59:
+                return None, "", _response("needs_clarification", "That time doesn't look right. What time did you mean?", reason="bad_time")
+            value = hour * 60 + minute + shift
+            said = wording.format(spoken_time(datetime(day.year, day.month, day.day, hour, minute, tzinfo=self._tz)))
+            if side == "lo" and (lo is None or value > lo):
+                lo, phrases["lo"] = value, said
+            if side == "hi" and (hi is None or value < hi):
+                hi, phrases["hi"] = value, said
+        if lo is None and hi is None:
+            return None, "", None
+        return (lo, hi), " and ".join(phrases[k] for k in ("lo", "hi") if k in phrases), None
 
     # ---- explaining a refusal --------------------------------------------------------------
     def _why_not_one(self, snapshot: DaySnapshot, start: datetime, service: BookableService, staff: str) -> tuple[str, str, dict]:
@@ -545,7 +659,7 @@ class VoiceTools:
     # ---- finding alternatives --------------------------------------------------------------
     def _alternatives(
         self, first_day: date, preferred_minutes: int, first_snapshot: Optional[DaySnapshot], service: BookableService, named: Optional[str],
-        days: Optional[int] = None,
+        days: Optional[int] = None, window: Optional[tuple] = None,
     ) -> tuple[list[Slot], int, Optional[dict], float, bool]:
         """(chosen slots, number of days that could not be read, why the FIRST day's technician choice failed, if it did, the age in
         seconds of the OLDEST read this call itself made or reused, and whether the search was CUT SHORT by the request's time budget).
@@ -600,7 +714,13 @@ class VoiceTools:
                 local = slot.service.start.astimezone(self._tz)
                 return local.hour * 60 + local.minute
 
-            if offset == 0:
+            if window is not None:  # an explicit bound is a rule: only starts inside it are offered, and only from the day asked about
+                lo, hi = window
+                inside = [s for s in slots if (lo is None or minutes(s) >= lo) and (hi is None or minutes(s) <= hi)]
+                if not inside:
+                    continue
+                chosen.extend(inside[-self._max_options:] if (hi is not None and lo is None) else inside[: self._max_options])  # nearest the bound that was given
+            elif offset == 0:
                 after = [s for s in slots if minutes(s) >= preferred_minutes]
                 before = [s for s in slots if minutes(s) < preferred_minutes]
                 for slot in ([after[0]] if after else []) + ([before[-1]] if before else []):
@@ -813,6 +933,9 @@ class VoiceTools:
         day, start, problem = self._parse_when(args, need_time=False)
         if problem:
             return problem
+        window, said, problem = self._parse_window(args, day)
+        if problem:
+            return problem
         self._set_context(call_id, service, named)
         if start is not None:  # the caller gave a time (a new one replaces the old)
             preferred = start.hour * 60 + start.minute
@@ -822,10 +945,28 @@ class VoiceTools:
             preferred = 10 * 60
         else:  # no time given: keep the one asked for earlier in THIS call, if any
             preferred = self._preferred_minutes.get(call_id, 10 * 60)
-        slots, unreadable, first_error, oldest, cut_short = self._alternatives(day, preferred, None, service, named)
-        if not slots and first_error is not None and first_error["status"] == "staff_unavailable":
+        slots, unreadable, first_error, oldest, cut_short = self._alternatives(day, preferred, None, service, named, days=1 if window else None, window=window)
+        if not slots and first_error is not None and first_error["status"] in ("staff_unavailable", "needs_clarification"):  # a name nobody has, or two people with it: ask, never 'no openings for them'
             return self._stamp_age(first_error, oldest)
-        return self._stamp_age(self._offer(call_id, slots, unreadable, service, named, lead="", cut_short=cut_short), oldest)
+        if window is None:
+            return self._stamp_age(self._offer(call_id, slots, unreadable, service, named, lead="", cut_short=cut_short), oldest)
+        # an explicit start-time bound: the answer says what was asked, offers nothing outside it, and does not wander to other days
+        day_said = spoken_day(datetime(day.year, day.month, day.day, tzinfo=self._tz))
+        info = {"date": day.isoformat(), "from": None if window[0] is None else f"{window[0] // 60:02d}:{window[0] % 60:02d}",
+                "to": None if window[1] is None else f"{window[1] // 60:02d}:{window[1] % 60:02d}", "described_as": said}
+        if not slots and not unreadable and not cut_short:
+            who = f" with {named}" if named else ""
+            reply = _response(
+                "no_alternatives", f"I don't see any openings{who} starting {said} on {day_said}. Would you like me to look at other days?", options=[], days_searched=1,
+            )
+        else:
+            reply = self._offer(call_id, slots, unreadable, service, named, lead=f"For a start {said} on {day_said}: ", days_searched=1, cut_short=cut_short)
+        reply["window"] = info
+        reply["instruction"] = (
+            f"Every time listed, if any, starts {said} on {day_said}; nothing outside that was searched or offered. Never call an earlier or later time something it is not, and do not "
+            "offer a time from another day as if it met the request: if the caller wants other days, ask and search again."
+        )
+        return self._stamp_age(reply, oldest)
 
     # ---- the one writer ---------------------------------------------------------------------------
     def book_slot(self, call_id: str, args: dict) -> dict:

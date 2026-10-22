@@ -130,6 +130,7 @@ class LifecycleTools(VoiceTools):
         self._numbers: dict[str, set] = {}
         self._failed: dict[str, int] = {}
         self._changes: dict[str, int] = {}
+        self._identity: dict[str, dict] = {}  # call_id -> the number and name this call has settled on, so a later request in the SAME call cannot silently use another household member
         self._state_lock = threading.Lock()
 
     def _why_not_one(self, snapshot, start: datetime, service, staff: str):
@@ -278,18 +279,80 @@ class LifecycleTools(VoiceTools):
             tried.add(phone)
         return phone, None
 
+    @staticmethod
+    def _spoken_name(value: Any) -> Optional[str]:
+        """The name as the caller said it, one line, or None."""
+        if not isinstance(value, str):
+            return None
+        cleaned = " ".join("".join(ch for ch in value if ch.isprintable()).split())
+        return cleaned[:NAME_MAX] if cleaned else None
+
+    def _remember_identity(self, call_id: str, phone: str, spoken: Optional[str], client_id: Optional[int]) -> None:
+        with self._state_lock:
+            earlier = self._identity.get(call_id)
+            if spoken is None and earlier is not None and earlier["phone"] == phone:
+                spoken = earlier["name"]  # a request that gave only the number does not make the call forget who it settled on
+            if len(self._identity) >= 512:
+                self._identity.clear()
+            self._identity[call_id] = {"phone": phone, "name": spoken, "key": name_key(spoken) if spoken else None, "client_id": client_id}
+
+    def _identify(self, call_id: str, phone: str, spoken: Optional[str], confirmed: bool, *, booking: bool = False):
+        """Which record is meant by this number and this name, in this call: ``(record or None, problem or None, is_new)``.
+
+        A name that matches NOBODY on a number that already has a record is not a new person until the caller has spelled it: a recogniser's 'Villa' for 'Willa' must not become a second
+        client. The question never says whose record is on the number, and nothing is fuzzy-matched: only an exact name (case and spacing aside) selects a record. What the call has
+        settled on stays settled: a different name later in the same call is asked about, never silently used to read another household member's appointments."""
+        found = self._lc.store.clients_with_phone(phone)
+        with self._state_lock:
+            earlier = self._identity.get(call_id)
+        earlier = earlier if earlier and earlier["phone"] == phone else None
+        if earlier is not None and earlier["name"]:
+            if spoken is None:
+                spoken, confirmed = earlier["name"], True  # the caller already told this call who they are
+            elif name_key(spoken) == earlier["key"]:
+                confirmed = True
+            elif not confirmed:
+                return None, _reply(
+                    "needs_clarification", f"Earlier in this call I had the name as {earlier['name']}. Which name should I use for this?", reason="name_changed",
+                    instruction="The name is different from the one used earlier in this call. Ask which name is right and have them spell it, then call again with that name and name_confirmed true.",
+                ), False
+        if not found:
+            return None, None, True  # nobody has this number yet
+        if spoken is None:
+            choice = HistoryLookup._choose([ClientRef(str(c.client_id), c.name) for c in found], None)
+            if isinstance(choice, dict):
+                return None, choice, False  # the one question that settles it: the full name on the booking
+            return next(c for c in found if str(c.client_id) == choice.ref), None, False
+        same = [c for c in found if name_key(c.name) == name_key(spoken)]
+        if same:
+            return same[0], None, False
+        if not confirmed:
+            return None, _reply(
+                "needs_clarification",
+                "I couldn't match that name to a record on that number. To be sure I get it right, could you spell your first and last name for me, one letter at a time?",
+                reason="name_unmatched",
+                instruction="Ask the caller to spell their full name, then call this tool again with the name exactly as spelled and name_confirmed true. Do not guess a spelling, never say "
+                            "whose record is on the number, and never say how many records match.",
+            ), False
+        if booking:
+            return None, None, True  # spelled out and still nobody's: a new person on a number that is already used
+        return None, _reply("not_found", self._contacting("I can't find that name on that number."), reason="name_not_found"), False
+
     def _client(self, call_id: str, args: dict):
         phone, problem = self._phone(call_id, args)
         if problem:
             return None, None, problem
+        spoken = self._spoken_name(args.get("name"))
         try:
-            found = self._lc.store.clients_with_phone(phone)
+            record, problem, is_new = self._identify(call_id, phone, spoken, args.get("name_confirmed") is True)
         except StoreError:
             return None, None, self._unavailable()
-        choice = HistoryLookup._choose([ClientRef(str(c.client_id), c.name) for c in found], args.get("name") if isinstance(args.get("name"), str) else None)
-        if isinstance(choice, dict):
-            return None, None, choice
-        return next(c for c in found if str(c.client_id) == choice.ref), phone, None
+        if problem:
+            return None, None, problem
+        if record is None:  # no record on this number: the reviewed answer
+            return None, None, HistoryLookup._choose([], None)
+        self._remember_identity(call_id, phone, spoken, record.client_id)
+        return record, phone, None
 
     def _unavailable(self) -> dict:
         return _reply("system_unavailable", self._contacting("I can't reach the appointment records right now, so I can't confirm that."), reason="store_unavailable")
@@ -325,8 +388,20 @@ class LifecycleTools(VoiceTools):
             sharing = self._lc.store.clients_with_phone(phone)
         except StoreError:
             return None, self._unavailable()
-        if len(sharing) > 1 and name_key(args.get("name") if isinstance(args.get("name"), str) else "") != name_key(client.name):
+        spoken = self._spoken_name(args.get("name"))
+        with self._state_lock:
+            earlier = self._identity.get(call_id)
+        if earlier is not None and earlier["phone"] == phone and earlier["name"]:
+            if spoken is None:
+                spoken = earlier["name"]  # the name this call already settled on
+            elif name_key(spoken) != earlier["key"] and args.get("name_confirmed") is not True:
+                return None, _reply(
+                    "needs_clarification", f"Earlier in this call I had the name as {earlier['name']}. Which name should I use for this?", reason="name_changed",
+                    instruction="The name is different from the one used earlier in this call. Ask which name is right and have them spell it, then call again with that name and name_confirmed true.",
+                )
+        if len(sharing) > 1 and name_key(spoken or "") != name_key(client.name):
             return None, _reply("needs_clarification", "That number is on more than one record. Could you tell me the full name on the booking?", reason="name_needed")
+        self._remember_identity(call_id, phone, spoken, client.client_id)
         return row, None
 
     # ---- FIND: upcoming appointments -------------------------------------------------------------------------
@@ -375,7 +450,24 @@ class LifecycleTools(VoiceTools):
 
     # ---- HISTORY: the latest COMPLETED visit ---------------------------------------------------------------------
     def last_completed_visit(self, call_id: str, args: dict) -> dict:
-        return self._labelled(call_id, self._with_lock(call_id, lambda: self._history.last_completed_visit(call_id, args or {})))
+        return self._labelled(call_id, self._with_lock(call_id, lambda: self._last_visit(call_id, args or {})))
+
+    def _last_visit(self, call_id: str, args: dict) -> dict:
+        """The reviewed history answer, after the same identity rules as every other tool: a name that matches nobody on the number is asked about, and what the call settled on stays."""
+        raw = args.get("phone")
+        phone = normalize_phone(raw) if isinstance(raw, str) else None
+        if phone is not None and isinstance(call_id, str) and call_id.strip():
+            spoken = self._spoken_name(args.get("name"))
+            try:
+                record, problem, _new = self._identify(call_id, phone, spoken, args.get("name_confirmed") is True)
+            except StoreError:
+                return self._unavailable()
+            if problem is not None and problem.get("reason") in ("name_unmatched", "name_changed", "name_not_found"):
+                return problem
+            if record is not None:
+                self._remember_identity(call_id, phone, spoken, record.client_id)
+                args = {**args, "name": record.name}
+        return self._history.last_completed_visit(call_id, args)
 
     # ---- BOOK ----------------------------------------------------------------------------------------------------
     def book_appointment(self, call_id: str, args: dict) -> dict:
@@ -401,6 +493,14 @@ class LifecycleTools(VoiceTools):
         phone, problem = self._phone(call_id, {"phone": args.get("phone")})
         if problem:
             return problem
+        try:
+            record, problem, is_new = self._identify(call_id, phone, name, args.get("name_confirmed") is True, booking=True)
+            shared = is_new and bool(self._lc.store.clients_with_phone(phone))  # a number that already has someone on it, and this name is not one of them
+        except StoreError:
+            return self._unavailable()
+        if problem:
+            return problem
+        self._remember_identity(call_id, phone, name, record.client_id if record is not None else None)
         spec = {"service_id": service.service_id, "start_utc": to_epoch(start), "name": name, "phone": phone, "named": staff_key(named) if named else None, "asked": named}
         pending = self._take_pending("book", call_id, args.get("confirmation_token")) if args.get("confirmed") is True else None
         if pending is not None and self._same(pending.payload, spec):
@@ -415,13 +515,19 @@ class LifecycleTools(VoiceTools):
         full = {**spec, "staff_id": staff.staff_id, "staff_name": technician}
         token = self._new_pending("book", call_id, full)
         price = f" The listed price is {spoken_price(self._price(service))}." if self._price(service) is not None else ""
+        who = f"{name}, spelled {self._spelled(name)}, as a new client on this number" if shared else name  # a new person on a shared number hears the spelling they gave
         return _reply(
             "confirmation_required",
-            f"To confirm: {self._described(service.booksy_name, service.duration_minutes)}, with {technician}, on {spoken_slot(start)}, for {name}.{price} Shall I book it?",
+            f"To confirm: {self._described(service.booksy_name, service.duration_minutes)}, with {technician}, on {spoken_slot(start)}, for {who}.{price} Shall I book it?",
             confirmation_token=token, service_id=service.service_id, service=service.booksy_name, duration_minutes=service.duration_minutes, technician=technician,
             start=start.isoformat(), price_usd=self._price(service),
             instruction="Read this back, wait for the caller's clear yes, then call book_appointment again with the same details, the same confirmation_token and confirmed=true.",
         )
+
+    @staticmethod
+    def _spelled(name: str) -> str:
+        """'Willa Hartwell' read letter by letter, word by word: W I L L A, H A R T W E L L."""
+        return ", ".join(" ".join(ch.upper() for ch in word if ch.isalpha()) for word in name.split() if any(ch.isalpha() for ch in word))
 
     @staticmethod
     def _same(payload: dict, spec: dict) -> bool:
@@ -645,6 +751,10 @@ class LifecycleTools(VoiceTools):
     def _cannot_move(self, call_id: str, row, service, day, start, named, refusal: Optional[Refused]) -> dict:
         lead = f"Your {self._label(row)} appointment stays on {self._slot(row)}. "
         reason = refusal.reason if refusal is not None else "unknown"
+        if reason == "unknown_staff" and named:  # nobody on the team has that name: ask against the real roster, and say the appointment stays where it is
+            asked = self.unknown_staff_reply(named, service, [(s.name, s.staff_id) for s in self._lc.dataset.roster])
+            asked["speak"] = f"{asked['speak']} {lead}".rstrip()
+            return asked
         if reason in ("unknown_staff", "staff_not_eligible"):
             return _reply("staff_unavailable", f"I can't do that with {named or 'that technician'}. {lead}", reason=reason)
         snapshot, who = (refusal.detail.get("snapshot"), refusal.detail.get("staff")) if refusal else (None, None)

@@ -34,6 +34,15 @@ _LENGTHS: list[tuple[re.Pattern, Optional[int]]] = [
     ]
 ]
 _HOURS_RE, _MINS_RE = _LENGTHS[-2][0], _LENGTHS[-1][0]
+# Minutes said in words ("sixty minute massage"): a transcript spells a number out as often as it writes digits, and a length that is not understood must never be left behind as if it
+# were part of a service's name.
+_SPOKEN_MINUTES = {
+    "ten": 10, "fifteen": 15, "twenty": 20, "twenty five": 25, "thirty": 30, "thirty five": 35, "forty": 40, "forty five": 45, "fifty": 50, "fifty five": 55,
+    "sixty": 60, "sixty five": 65, "seventy": 70, "seventy five": 75, "eighty": 80, "ninety": 90,
+}
+_SPOKEN_WORD = r"(?:ten|fifteen|(?:twenty|thirty|forty|fifty|sixty|seventy)(?:[\s-]+five)?|eighty|ninety)"
+_SPOKEN_RE = re.compile(rf"\b({_SPOKEN_WORD})\s*-?\s*(?:min|mins|minutes?)\b")
+_SPOKEN_ANY = re.compile(rf"\b{_SPOKEN_WORD}\b")
 _WEEKS = re.compile(r"\b(\d+)\s*-?\s*weeks?\b")
 
 
@@ -57,6 +66,8 @@ def _length_matches(low: str) -> list[tuple[int, int, int]]:
             else:
                 minutes_here = minutes
             found.append((m.start(), m.end(), minutes_here))
+    for m in _SPOKEN_RE.finditer(low):
+        found.append((m.start(), m.end(), _SPOKEN_MINUTES[re.sub(r"[\s-]+", " ", m.group(1))]))
     return [a for a in found if not any(b is not a and b[0] <= a[0] and a[1] <= b[1] and (b[1] - b[0]) > (a[1] - a[0]) for b in found)]
 
 
@@ -72,6 +83,8 @@ def duration_hint(query: str) -> Optional[int]:
     uncovered_half = [m for m in re.finditer(r"\bhalf\b", low_no_weeks) if not any(s <= m.start() and m.end() <= e for s, e, _ in matches)]
     if uncovered_half:
         return None  # "half" in a phrase we do not understand: never guess a shorter length
+    if any(not any(s <= m.start() and m.end() <= e for s, e, _ in matches) for m in _SPOKEN_ANY.finditer(low_no_weeks)):
+        return None  # "thirty or sixty minutes": a second number said in words, so the customer has not chosen
     distinct = {minutes for _s, _e, minutes in matches}
     return distinct.pop() if len(distinct) == 1 and len(matches) == 1 else None
 
@@ -92,7 +105,12 @@ def _strip_lengths(query: str) -> str:
         low = low[:start] + " " + low[end:]
     for pattern in _UNKNOWN_LENGTHS:
         low = pattern.sub(" ", low)
-    return low
+    return _SPOKEN_ANY.sub(" ", low)  # a number said in words that no length phrase took ("thirty or sixty minute massage") is not part of a service's name either
+
+
+def strip_lengths(query: str) -> str:
+    """The customer's words with every length they said removed (lower case, single-spaced): what is left names the service."""
+    return _strip_lengths(query) if isinstance(query, str) else ""
 
 
 def descriptive_label(item: CatalogItem) -> str:

@@ -100,7 +100,7 @@ def test_a_technician_who_does_not_offer_it_is_refused_by_name_not_swapped_and_t
     reply = ask(tools, "Sienna", service=MICRO)
     assert reply["status"] == "staff_unavailable" and reply["reason"] == "staff_not_eligible"
     assert "Sienna doesn't do Microdermabrasion Facial" in reply["speak"]
-    assert "Sienna" not in reply["available_staff"] and set(reply["available_staff"]) <= set(FACIAL_STAFF) and reply["available_staff"]
+    assert "Sienna" not in reply["technicians_on_schedule"] and set(reply["technicians_on_schedule"]) <= set(FACIAL_STAFF) and reply["technicians_on_schedule"]
 
 
 def test_a_facial_technician_is_checked_for_the_full_75_minutes():

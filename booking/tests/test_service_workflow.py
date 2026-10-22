@@ -304,7 +304,7 @@ def test_only_eligible_staff_are_considered(world):
 def test_a_named_technician_who_cannot_do_the_service_is_said_not_swapped(world):
     tools, calendar, *_ = world
     resp = ask(tools, FACIAL, "11:00", staff="Ana")
-    assert resp["status"] == "staff_unavailable" and resp["reason"] == "staff_not_eligible" and resp["available_staff"] == ["Cara"]
+    assert resp["status"] == "staff_unavailable" and resp["reason"] == "staff_not_eligible" and resp["technicians_on_schedule"] == ["Cara"]
     assert "Ana doesn't do HydraFacial 75" in resp["speak"]
     assert calendar.create_calls == []
 

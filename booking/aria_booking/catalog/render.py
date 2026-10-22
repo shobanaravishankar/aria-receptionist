@@ -292,13 +292,18 @@ LIFECYCLE_TOOLS_STATUS = (
 
 def build_lifecycle_tools(availability_tools: dict) -> dict:
     """The availability-only tool file's three read tools (reviewed definitions, descriptions adjusted for a line that can book) plus the five lifecycle tools."""
-    from ..appointments.tool_defs import LIFECYCLE_DESCRIPTIONS, LIFECYCLE_TOOLS
+    from ..appointments.tool_defs import LIFECYCLE_DESCRIPTIONS, LIFECYCLE_EXTRA_PROPERTIES, LIFECYCLE_EXTRA_REQUIRED, LIFECYCLE_TIME_TEXT, LIFECYCLE_TOOLS
 
     kept = []
     for tool in availability_tools["tools"]:
-        tool = dict(tool)
+        tool = json.loads(json.dumps(tool))
         if tool["name"] in LIFECYCLE_DESCRIPTIONS:
             tool["description"] = LIFECYCLE_DESCRIPTIONS[tool["name"]]
+        if tool["name"] in LIFECYCLE_EXTRA_PROPERTIES:
+            tool["parameters"]["properties"].update(json.loads(json.dumps(LIFECYCLE_EXTRA_PROPERTIES[tool["name"]])))
+            tool["parameters"]["required"] = list(tool["parameters"].get("required", [])) + [r for r in LIFECYCLE_EXTRA_REQUIRED.get(tool["name"], []) if r not in tool["parameters"].get("required", [])]
+        if tool["name"] in LIFECYCLE_TIME_TEXT:
+            tool["parameters"]["properties"]["time"]["description"] = LIFECYCLE_TIME_TEXT[tool["name"]]
         kept.append(tool)
     out = {k: v for k, v in availability_tools.items() if k != "tools"}
     out["_status"] = LIFECYCLE_TOOLS_STATUS

@@ -42,7 +42,7 @@ def test_eligibility_by_id_admits_exactly_the_listed_people():
     tools, _ = stack(svc(eligible_staff_ids=frozenset({"1001"})))
     assert ask(tools)["options"][0]["technician"] == "Lily"
     refused = ask(tools, "Maya")
-    assert refused["status"] == "staff_unavailable" and refused["reason"] == "staff_not_eligible" and refused["available_staff"] == ["Lily"]
+    assert refused["status"] == "staff_unavailable" and refused["reason"] == "staff_not_eligible" and refused["technicians_on_schedule"] == ["Lily"]
 
 
 def test_a_rename_does_not_change_who_is_eligible():

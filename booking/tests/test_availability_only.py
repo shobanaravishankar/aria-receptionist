@@ -131,7 +131,7 @@ def test_a_technician_who_is_not_working_that_day_is_said_by_name(tmp_path):
 def test_a_technician_who_does_not_do_the_service_is_not_swapped(tmp_path):
     tools, calendar = make(tmp_path, ["Lily", "Maya"])
     answer = ask(tools, FACIAL, "16:00", staff="Lily")
-    assert answer["status"] == "staff_unavailable" and answer["reason"] == "staff_not_eligible" and answer["available_staff"] == ["Maya"]
+    assert answer["status"] == "staff_unavailable" and answer["reason"] == "staff_not_eligible" and answer["technicians_on_schedule"] == ["Maya"]
 
 
 # ---------------------------------------------------------------- any verified staff identity; ambiguous names are asked

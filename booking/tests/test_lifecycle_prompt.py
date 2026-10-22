@@ -147,12 +147,15 @@ def test_the_tool_file_defines_exactly_the_functions_the_endpoint_serves():
 
 
 def test_every_argument_a_definition_names_is_one_the_tools_read_and_the_required_ones_exist():
+    from aria_booking.voice.tools import WINDOW_ARGS as _WINDOW
+
+    WINDOW_ARGS = set(_WINDOW)
     source = "\n".join((SRC / part).read_text(encoding="utf-8") for part in ("appointments/tools.py", "voice/tools.py", "history/lookup.py"))
     read = set(re.findall(r'args(?:\.get)?\(?\[?"([a-z_]+)"', source)) | set(re.findall(r'for k in \(([^)]*)\)', source) and re.findall(r'"([a-z_]+)"', " ".join(re.findall(r'for k in \(([^)]*)\)', source))))
     for tool in TOOLS["tools"]:
         properties = tool["parameters"]["properties"]
         assert set(tool["parameters"]["required"]) <= set(properties), tool["name"]
-        assert set(properties) <= read | {"confirmation_token", "confirmed"}, (tool["name"], sorted(set(properties) - read))
+        assert set(properties) <= read | WINDOW_ARGS | {"confirmation_token", "confirmed"}, (tool["name"], sorted(set(properties) - read))  # (the start-time bounds are read from a table)
     by_name = {t["name"]: t for t in TOOLS["tools"]}
     assert set(by_name["book_appointment"]["parameters"]["properties"]) >= {"service_id", "date", "time", "client_name", "phone", "confirmation_token", "confirmed"}
     assert set(by_name["cancel_appointment"]["parameters"]["properties"]) >= {"reference", "phone", "reason", "confirmation_token", "confirmed"}

@@ -140,9 +140,10 @@ def test_two_people_with_one_first_name_need_a_question_not_a_guess():
 def test_a_near_miss_name_is_never_silently_a_roster_member():
     tools, *_ = make()
     reply = ask(tools, "Tamzin")
-    assert reply["status"] == "staff_unavailable" and not reply.get("options")
-    assert "Tamsin" not in json.dumps({k: v for k, v in reply.items() if k != "scheduled_staff"}) or "don't see Tamzin" in reply["speak"]
+    assert reply["status"] == "needs_clarification" and reply["reason"] == "unknown_staff" and not reply.get("options")
+    assert reply["closest"] == ["Tamsin"] and "Did you mean Tamsin?" in reply["speak"], "a sound-alike is only ever ASKED about"
     assert "Tamzin" in reply["speak"], "she is told the name was not found, in her own words"
+    assert reply["times_checked"] is False and not reply["ok"]
 
 
 # ---------------------------------------------------------------- missing data and the edges of the dataset

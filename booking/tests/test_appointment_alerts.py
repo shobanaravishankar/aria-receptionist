@@ -100,7 +100,7 @@ def test_the_recipient_is_the_owner_never_the_client_or_anything_a_caller_said(t
     sender = FakeSender()
     env = make_env(tmp_path, sender)
     env.book(name="Ten Digits", phone="+1 212 555 0188")
-    env.book(14, name="Other Caller", phone=WILLA_PHONE, call_id="c2")
+    env.book(14, name="Other Caller", phone=WILLA_PHONE, call_id="c2", name_confirmed=True)  # a name nobody on that number has, spelled out
     assert {to for to, _b, _k in sender.sent} == {OWNER} and len(sender.sent) == 2
 
 

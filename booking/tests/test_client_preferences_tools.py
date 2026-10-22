@@ -167,11 +167,11 @@ def test_a_preference_is_kept_between_calls_and_across_a_restart(tmp_path):
 def test_two_clients_on_one_number_are_told_apart_by_name_and_never_share_a_preference(env):
     assert env.call("get_preferences", {"phone": WILLA[0]})["reason"] == "name_needed", "the number alone cannot settle it"
     env.save(SWEDISH, "Sienna", person=WILLA)
-    assert env.call("get_preferences", env.who(ANSEL, service=SWEDISH))["status"] == "no_preferences", "Ansel does not inherit Willa's"
-    env.save(SWEDISH, "Rowan", person=ANSEL)
+    assert env.call("get_preferences", env.who(ANSEL, service=SWEDISH), "call-ansel")["status"] == "no_preferences", "Ansel does not inherit Willa's"
+    env.save(SWEDISH, "Rowan", person=ANSEL, call_id="call-ansel")
     assert env.call("get_preferences", env.who(WILLA, service=SWEDISH))["preferred"] == "Sienna"
-    assert env.call("get_preferences", env.who(ANSEL, service=SWEDISH))["preferred"] == "Rowan"
-    env.remove(SWEDISH, person=ANSEL)
+    assert env.call("get_preferences", env.who(ANSEL, service=SWEDISH), "call-ansel")["preferred"] == "Rowan"
+    env.remove(SWEDISH, person=ANSEL, call_id="call-ansel")
     assert env.call("get_preferences", env.who(WILLA, service=SWEDISH))["preferred"] == "Sienna"
     wrong = env.call("save_preference", {"phone": WILLA[0], "name": "Someone Else", "service": SWEDISH, "staff": "Sienna"})
     assert wrong["status"] != "confirmation_required" and env.saved(WILLA) == {"massage-swedish-massage": "Sienna"}

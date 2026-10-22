@@ -45,8 +45,8 @@ class Env:
         return getattr(self.tools, route)(call_id, args)
 
     # ---- the one booking path a caller takes: read back, then confirm
-    def book_args(self, hour=16, *, day=TOMORROW, staff="Sienna", name="Mira Quillfeather", phone="+1 212 555 0188", service=SWEDISH_60) -> dict:
-        args = {"service_id": service, "date": day.isoformat(), "time": f"{hour:02d}:00", "client_name": name, "phone": phone}
+    def book_args(self, hour=16, *, day=TOMORROW, staff="Sienna", name="Mira Quillfeather", phone="+1 212 555 0188", service=SWEDISH_60, **extra) -> dict:
+        args = {"service_id": service, "date": day.isoformat(), "time": f"{hour:02d}:00", "client_name": name, "phone": phone, **extra}
         if staff:
             args["staff"] = staff
         return args
@@ -104,7 +104,10 @@ def test_a_household_number_needs_a_name_and_reveals_nothing_until_it_has_one(en
     text = json.dumps(out)
     assert not any(w in text for w in ("Willa", "Ansel", "Facial", "Waxing", "waxing", "Tuesday", "Friday", "Thursday"))
     wrong = env.call("find_appointments", {"phone": WILLA_PHONE, "name": "Someone Else"})
-    assert wrong["status"] == "unable_to_confirm" and "Facial" not in wrong["speak"]
+    assert wrong["status"] == "needs_clarification" and wrong["reason"] == "name_unmatched" and "spell" in wrong["speak"] and "appointments" not in wrong
+    assert not any(w in json.dumps(wrong) for w in ("Willa", "Ansel", "Facial", "Waxing", "waxing")), "the question says nothing about who is on the number"
+    spelled = env.call("find_appointments", {"phone": WILLA_PHONE, "name": "Someone Else", "name_confirmed": True})
+    assert spelled["status"] == "not_found" and spelled["reason"] == "name_not_found" and "Facial" not in spelled["speak"]
 
 
 def test_the_asked_service_is_answered_first_then_the_rest_in_order(env):
@@ -122,7 +125,7 @@ def test_the_asked_service_is_answered_first_then_the_rest_in_order(env):
 def test_all_upcoming_are_listed_chronologically_with_local_times_and_technicians(env):
     out = env.call("find_appointments", {"phone": WILLA_PHONE, "name": WILLA})
     assert out["speak"].startswith("You have 3 upcoming appointments: Head Scalp Massage on Friday, October 16 at 11 AM with Sienna, Full Leg waxing on Tuesday, October 20")
-    other = env.call("find_appointments", {"phone": WILLA_PHONE, "name": ANSEL})
+    other = env.call("find_appointments", {"phone": WILLA_PHONE, "name": ANSEL}, call_id="call-ansel")  # another person on the number is another call
     assert other["count"] == 1 and "Express Facial" in other["speak"] and "Head Scalp" not in other["speak"]
 
 
@@ -274,13 +277,13 @@ def test_changed_details_a_foreign_token_and_an_expired_token_each_get_a_fresh_r
     args = env.book_args()
 
     def fresh() -> str:  # each probe gets its own read-back: a new read-back replaces the call's earlier one
-        return env.call("book_appointment", args)["confirmation_token"]
+        return env.call("book_appointment", {**args, "name_confirmed": True})["confirmation_token"]  # (the name is changed on purpose below: the call is told which one is right)
 
     foreign = env.call("book_appointment", {**args, "confirmed": True, "confirmation_token": fresh()}, call_id="another-call")
     assert foreign["status"] == "confirmation_required" and env.shown() == [], "a token belongs to the call that was read to"
     other_time = env.call("book_appointment", {**env.book_args(17), "confirmed": True, "confirmation_token": fresh()})
     assert other_time["status"] == "confirmation_required" and "5 PM" in other_time["speak"] and env.shown() == []
-    other_name = env.call("book_appointment", {**args, "client_name": "Someone Else", "confirmed": True, "confirmation_token": fresh()})
+    other_name = env.call("book_appointment", {**args, "client_name": "Someone Else", "name_confirmed": True, "confirmed": True, "confirmation_token": fresh()})
     assert other_name["status"] == "confirmation_required" and "Someone Else" in other_name["speak"] and env.shown() == []
     other_phone = env.call("book_appointment", {**args, "phone": "+1 212 555 0100", "confirmed": True, "confirmation_token": fresh()})
     assert other_phone["status"] == "confirmation_required" and env.shown() == []
@@ -475,11 +478,12 @@ def test_the_reference_may_be_spoken_with_spaces_and_any_case(env):
 
 def test_on_a_shared_number_the_name_must_match_the_appointments_client(env):
     willa = cancel_args(env)
-    ansel = env.call("find_appointments", {"phone": WILLA_PHONE, "name": ANSEL})["appointments"][0]["reference"]
+    ansel = env.call("find_appointments", {"phone": WILLA_PHONE, "name": ANSEL}, call_id="call-ansel")["appointments"][0]["reference"]
     no_name = env.call("cancel_appointment", {"reference": ansel, "phone": WILLA_PHONE})
     assert no_name["status"] == "needs_clarification" and no_name["reason"] == "name_needed"
     assert env.call("cancel_appointment", {"reference": ansel, "phone": WILLA_PHONE, "name": WILLA})["status"] == "needs_clarification"
-    assert env.call("cancel_appointment", {"reference": ansel, "phone": WILLA_PHONE, "name": ANSEL})["status"] == "confirmation_required"
+    assert env.call("cancel_appointment", {"reference": ansel, "phone": WILLA_PHONE, "name": ANSEL})["reason"] == "name_changed", "this call settled on Willa: another name is asked about"
+    assert env.call("cancel_appointment", {"reference": ansel, "phone": WILLA_PHONE, "name": ANSEL, "name_confirmed": True})["status"] == "confirmation_required"
     assert willa["reference"] != ansel and env.lc.store.get(ansel).status == CONFIRMED
 
 
@@ -564,7 +568,8 @@ def test_a_stale_move_and_a_named_technician_who_does_not_do_it(env):
     out = env.call("reschedule_appointment", {**args, "confirmed": True, "confirmation_token": first["confirmation_token"]})
     assert out["status"] == "confirmation_required", "the appointment changed, so it is read back again"
     assert env.call("reschedule_appointment", {**move_args(env), "staff": "Priya"})["status"] == "staff_unavailable"
-    assert env.call("reschedule_appointment", {**move_args(env), "staff": "Nobody"})["status"] == "staff_unavailable"
+    nobody = env.call("reschedule_appointment", {**move_args(env), "staff": "Nobody"})
+    assert nobody["status"] == "needs_clarification" and nobody["reason"] == "unknown_staff", "a name nobody has is asked about against the real roster"
 
 
 def test_a_move_uses_another_technician_only_when_the_same_one_cannot(env):

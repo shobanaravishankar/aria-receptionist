@@ -10,6 +10,8 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Mapping, Optional
 
+from ..catalog.lookup import duration_hint, strip_lengths
+
 FEATURED_LIMIT = 3
 
 # category -> the ONE goal question asked after the featured choices (every category the menu has needs one: a test checks)
@@ -51,7 +53,8 @@ LABELS = {
 }
 FILLER = frozenset(
     "what which kinds kind types type sorts sort of do you have offer a an the any options option are there is available services service treatments treatment your "
-    "can i get tell me about show list all different variety varieties choices choice and or for please".split()
+    "can i get tell me about show list all different variety varieties choices choice and or for please "
+    "d ll m ve to like want would love looking book booking appointment appointments schedule need interested".split()  # how a request is worded ("I'd like a massage")
 )
 
 
@@ -64,7 +67,7 @@ def _core(text: str) -> str:
 
 def group_of(query: str) -> Optional[str]:
     """The ONE group a caller is naming as a whole ('what kinds of facials do you have', 'massage', 'head spa'), or None. A specific treatment ('swedish massage') is not a group."""
-    rest = _core(query)
+    rest = _core(strip_lengths(query))  # "a sixty minute massage" is still the group 'massage': the length is kept apart, not allowed to hide the group
     if not rest:
         return None
     hits = [category for category, names in GROUP_WORDS.items() if rest in {_core(n) for n in names}]
@@ -84,11 +87,19 @@ def make_group_answer(catalog, titles: Mapping[str, str], configured: Optional[M
             examples = names[0]
         else:
             examples = ", ".join(names[:-1]) + " or " + names[-1]
-        return {
+        reply = {
             "status": "service_group", "category": category, "featured": names, "question": QUESTIONS[category], "total_kinds": total,
             "speak": f"We have {total} kinds of {LABELS[category]}. For example, {examples}. {QUESTIONS[category]}",
             "instruction": "Say this sentence, then STOP and wait for the caller's answer. Do not list more kinds unless the caller asks for them; then recommend ONE treatment from the menu.",
         }
+        minutes = duration_hint(query)
+        if minutes is not None:  # the caller already gave a length: keep it, but a length does not choose a treatment
+            reply["requested_minutes"] = minutes
+            reply["instruction"] += (
+                f" The caller asked for {minutes} minutes: remember that length, but it does NOT choose a treatment. Do not pick one yourself and do not check the calendar "
+                "until the caller has chosen which treatment they want."
+            )
+        return reply
 
     return answer
 
