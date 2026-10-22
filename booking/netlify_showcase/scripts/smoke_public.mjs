@@ -1,6 +1,10 @@
 // Smoke-test a DEPLOYED showcase (a draft or the live site) the way Retell and a visitor use it. No dependencies: Node 22+ only.
 //
-//   ARIA_RETELL_API_KEY=... ARIA_RETELL_TOOL_TOKEN=... node scripts/smoke_public.mjs https://<the site> [--write] [--record <file.json>] [--after-idle <seconds>]
+//   ARIA_RETELL_API_KEY=... ARIA_RETELL_TOOL_TOKEN=... node scripts/smoke_public.mjs https://<the site> [--write] [--record <file.json>] [--after-idle <seconds>] [--header "Name: value"]...
+//
+// BEFORE anything else it asks /healthz and requires the application's own JSON answer. An address that answers with a login page or any other gate (a private preview, a password) is not the
+// application: it stops with "BLOCKED" (exit 3) and checks nothing, because every "must be refused" check would otherwise pass for the wrong reason (the gate also says 401). `--header` (repeatable)
+// sends an extra request header on every request, for whatever access credential the host supports (a cookie, a token header); its value is never printed.
 //
 // Without --write it only READS: health, authentication, all eleven tools in their read-only paths (a lookup, an availability check, alternatives, a client lookup, a last-visit lookup, the
 // preferences read, and the read-back of a booking / cancellation / move / preference that is never confirmed), the open times, the staff calendar page, input validation. It writes nothing.
@@ -16,9 +20,17 @@ import { createHmac, randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 
 const args = process.argv.slice(2);
-const base = (args.find((a) => !a.startsWith("--") && args[args.indexOf(a) - 1] !== "--record" && args[args.indexOf(a) - 1] !== "--after-idle") ?? "").replace(/\/+$/, "");
+const base = (args.find((a, i) => !a.startsWith("--") && !["--record", "--after-idle", "--header"].includes(args[i - 1])) ?? "").replace(/\/+$/, "");
 const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
 const write = args.includes("--write");
+const extraHeaders = {};
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--header") {
+    const text = args[i + 1] ?? "";
+    const at = text.indexOf(":");
+    if (at > 0) extraHeaders[text.slice(0, at).trim().toLowerCase()] = text.slice(at + 1).trim();
+  }
+}
 const recordFile = flag("--record");
 const idleSeconds = flag("--after-idle") === null ? 0 : Number(flag("--after-idle"));
 const key = process.env.ARIA_RETELL_API_KEY;
@@ -37,11 +49,11 @@ let failures = 0;
 const check = (name, ok, detail = "") => { console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? "  -  " + detail : ""}`); if (!ok) failures += 1; };
 const friendly = (r) => r.status === 200 && typeof r.body?.status === "string" && r.body.status !== "error" && typeof r.body?.speak === "string" && r.body.speak.length > 0; // answered, in words, not an error
 
-const get = async (path, headers = {}) => { const started = Date.now(); const r = await fetch(base + path, { headers }); const text = await r.text(); let body = null; try { body = JSON.parse(text); } catch { /* html */ } return { status: r.status, text, body, ms: Date.now() - started, headers: r.headers }; };
+const get = async (path, headers = {}) => { const started = Date.now(); const r = await fetch(base + path, { headers: { ...extraHeaders, ...headers } }); const text = await r.text(); let body = null; try { body = JSON.parse(text); } catch { /* html */ } return { status: r.status, text, body, ms: Date.now() - started, headers: r.headers }; };
 async function tool(name, toolArgs, call, { sign = true, bearer = true } = {}) {
   const body = JSON.stringify({ name, call: { call_id: call }, args: toolArgs });
   const at = Date.now();
-  const headers = { "content-type": "application/json" };
+  const headers = { ...extraHeaders, "content-type": "application/json" };
   if (sign) headers["x-retell-signature"] = `v=${at},d=${createHmac("sha256", key).update(body).update(String(at)).digest("hex")}`;
   if (bearer) headers.authorization = `Bearer ${token}`;
   const started = Date.now();
@@ -58,6 +70,15 @@ const FAMILY = "Swedish Massage";
 const TECH = "Sienna";
 
 console.log(`run ${run}${write ? " (write paths ON)" : " (read-only)"} against ${base}`);
+
+// ---------------------------------------------------------------- is this the application at all?
+const probe = await get("/healthz").catch((error) => ({ status: 0, body: null, text: String(error.message ?? error).slice(0, 80), headers: new Headers() }));
+if (probe.status !== 200 || probe.body?.status !== "ok") {
+  const kind = /html/i.test(probe.headers.get("content-type") ?? "") || /^\s*</.test(probe.text ?? "") ? "a web page (a login or access gate?)" : probe.status === 0 ? `no answer (${probe.text})` : "something that is not the application's JSON";
+  console.log(`BLOCKED  ${base}/healthz answered ${probe.status} with ${kind}, not the application's {"status":"ok"}.`);
+  console.log("         Nothing was checked: behind a gate, \"must be refused\" checks would pass for the wrong reason. Pass --header for the access credential the host supports, or test an address without the gate.");
+  process.exit(3);
+}
 
 // ---------------------------------------------------------------- health and authentication
 const health = await get("/healthz");

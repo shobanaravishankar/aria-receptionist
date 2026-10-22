@@ -208,3 +208,34 @@ test("the operator's smoke script passes against the real function (twice, with 
   assert.equal(confirmedAfter, confirmedBefore, "every smoke booking was cancelled again");
   assert.equal(Number((await pg.pool.query("select count(*) as n from client_preferences")).rows[0].n), 0, "and every smoke preference was removed");
 });
+
+test("the smoke script stops with BLOCKED (and no false passes) at an address that answers with a login gate, and passes through it with a supported --header", async () => {
+  const gate = createServer(async (req, res) => {
+    if (req.headers["x-test-access"] !== "granted") { // a private-preview gate: HTML for everything, 401 included
+      res.writeHead(401, { "content-type": "text/html" });
+      res.end("<html><title>Login Redirect</title></html>");
+      return;
+    }
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    const response = await api(new Request(`http://127.0.0.1${req.url}`, { method: req.method, headers: req.headers as Record<string, string>, body: req.method === "GET" || req.method === "HEAD" ? undefined : Buffer.concat(chunks) }));
+    res.writeHead(response.status, Object.fromEntries(response.headers));
+    res.end(Buffer.from(await response.arrayBuffer()));
+  });
+  await new Promise<void>((resolve) => gate.listen(0, "127.0.0.1", resolve));
+  const port = (gate.address() as { port: number }).port;
+  const run = promisify(execFile);
+  const script = new URL("../../scripts/smoke_public.mjs", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+  const env = { ...process.env, ARIA_RETELL_API_KEY: KEY, ARIA_RETELL_TOOL_TOKEN: TOKEN };
+  try {
+    const blocked = await run(process.execPath, [script, `http://127.0.0.1:${port}`], { env }).then(() => ({ code: 0, stdout: "" }), (error: any) => ({ code: error.code, stdout: String(error.stdout) }));
+    assert.equal(blocked.code, 3);
+    assert.match(blocked.stdout, /BLOCKED/);
+    assert.ok(!/PASS|FAIL/.test(blocked.stdout), "nothing was checked, so nothing passed or failed");
+    const { stdout } = await run(process.execPath, [script, `http://127.0.0.1:${port}`, "--header", "X-Test-Access: granted"], { env });
+    assert.match(stdout, /all checks passed/, stdout);
+    assert.ok(!stdout.includes("granted"), "a header value is never printed");
+  } finally {
+    gate.close();
+  }
+});
