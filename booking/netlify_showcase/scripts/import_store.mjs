@@ -14,6 +14,8 @@
 //   - after loading, each table is read back from Postgres and its row count and digest are compared with the snapshot's manifest (the digest of the canonical rows, computed the same way in
 //     Python and here): "equal" means every column of every row is what was exported;
 //   - running it again on the same snapshot changes nothing ("already imported", re-verified); it refuses a database that already holds other data unless --replace-existing is given;
+//   - a destructive step (--replace-existing, --undo) first takes the tables exclusively and refuses (after 10 s) if another session is writing, so what it verified is what it changes;
+//     use it only on a quiet database. A dry run keeps no ROW, but a sequence may have moved (a harmless gap in the ids);
 //   - it prints table names, counts and digests only. It reads nothing but the snapshot and the database, sends nothing anywhere and starts no call.
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -36,6 +38,19 @@ export const TABLES = {
 const ORDER = Object.keys(TABLES); // parents before children
 const EMPTYING = [...ORDER].reverse();
 const MARKER = "import:snapshot";
+const LOCKED = [...ORDER, "call_state", "pending_confirmations"];
+
+/** Take the tables BEFORE anything is checked, so what was verified is what is changed: a destructive step (replace, undo) takes them exclusively, a plain import blocks other writers but not readers.
+ * If another session is writing, give up with a plain reason instead of waiting for ever. */
+async function lockTables(db, exclusive) {
+  await db.query("set local lock_timeout = '10s'");
+  try {
+    await db.query(`lock table ${LOCKED.join(", ")} in ${exclusive ? "access exclusive" : "share row exclusive"} mode`);
+  } catch (error) {
+    if (error.code === "55P03") throw Object.assign(new Error("another session is writing to the showcase tables; import, replace or undo only into a QUIET database (no calls, no smoke tests)"), { plain: true });
+    throw error;
+  }
+}
 
 /** JSON with sorted keys and no spaces: the text Python's json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False) makes. */
 export function canonicalJson(value) {
@@ -119,6 +134,7 @@ export async function runImport(db, snapshot, { apply = false, replace = false }
   const report = { ok: false, applied: false, already: false, overall, inserted: {}, problems: [], verified: {}, notes: [] };
   await db.query("begin");
   try {
+    await lockTables(db, replace);
     const marker = (await db.query("select value from meta where key = $1::text", [MARKER])).rows[0];
     if (marker && marker.value.split("|")[0] === overall && !replace) {
       report.already = true;
@@ -175,6 +191,7 @@ export async function undoImport(db, snapshot) {
   const overall = checkSnapshot(snapshot);
   await db.query("begin");
   try {
+    await lockTables(db, true);
     const marker = (await db.query("select value from meta where key = $1::text", [MARKER])).rows[0];
     if (!marker || marker.value.split("|")[0] !== overall) throw Object.assign(new Error("this snapshot was not imported here, so there is nothing to undo"), { plain: true });
     for (const table of ORDER) {

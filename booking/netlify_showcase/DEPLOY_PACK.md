@@ -44,10 +44,12 @@ Do the draft first. A draft deploy has no production-publish charge, but functio
    a. From a **fresh read-only copy** of the local store (made with SQLite's backup API; never the live file): `python netlify_showcase/scripts/export_store.py --db <copy> --out <name>.snapshot.json`
       (prints table names, row counts and digests only; the snapshot is data about people: `*.snapshot.json` is git-ignored; do not commit, post or paste it).
    b. **Dry run** against the Netlify database: `NETLIFY_DB_URL=... node netlify_showcase/scripts/import_store.mjs <name>.snapshot.json`. It does everything in one transaction, checks the snapshot against
-      its own digests first, reads every table back from Postgres and compares row counts and digests with the manifest, then ROLLS BACK. Every line must say PASS and the last must say DRY RUN OK.
+      its own digests first, reads every table back from Postgres and compares row counts and digests with the manifest, then ROLLS BACK (no row is kept; an id sequence may keep a harmless gap). Every line must say PASS and the last must say DRY RUN OK.
       A row the database refuses (for example an overlap) is reported by table and reference only, and nothing is kept.
    c. `--apply` the same command to keep it (it commits only if everything verified). Running it again says "already imported" and changes nothing. A database that already holds other data is
-      refused unless `--replace-existing` is added (it empties the showcase's tables first: it is a fictional demo database).
+      refused unless `--replace-existing` is added (it empties the showcase's tables first: it is a fictional demo database). The initial import is for an EMPTY, QUIET database. Every step takes
+      the tables before it looks at them (a plain import blocks other writers; `--replace-existing` and `--undo` take them exclusively) and gives up after 10 s if another session is writing;
+      do not run replace or undo on a database that has live traffic.
    d. *Way back:* `--undo` (removes the import, only if nothing was added or changed since), or restore the database from a Netlify backup. The importer never sends or touches an alert row.
 5. **Smoke test the draft.** Read-only first: `ARIA_RETELL_API_KEY=... ARIA_RETELL_TOOL_TOKEN=... node scripts/smoke_public.mjs https://<the draft url>`. It exercises all eleven tools in their
    read-only paths, authentication, the calendar reads and input validation. Then with `--write --record smoke-record.json`: one synthetic client ("Smoke Test <letters>", a 555-01xx number, both

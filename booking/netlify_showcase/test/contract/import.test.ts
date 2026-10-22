@@ -138,6 +138,25 @@ describe("import", () => {
     }
   });
 
+  test("a destructive step takes the tables BEFORE it looks at them (so what it verified is what it changes); a dry run takes them too", async () => {
+    const s = snapshot();
+    const seen: string[] = [];
+    const spy = { query: (sql: string, values?: unknown[]) => { seen.push(sql.replace(/\s+/g, " ").trim().slice(0, 60)); return db.query(sql, values); } };
+    await runImport(db, s, { apply: true });
+    seen.length = 0;
+    await undoImport(spy, s);
+    const lock = seen.findIndex((q) => /^lock table .* in access exclusive mode$/.test(q) || q.startsWith("lock table"));
+    const firstLook = seen.findIndex((q) => /^select/.test(q) && !q.startsWith("set local"));
+    assert.ok(lock >= 1 && lock < firstLook, `the lock (${lock}) comes before the first look (${firstLook}): ${seen.slice(0, 4).join(" | ")}`);
+    assert.match(seen[lock], /access exclusive|lock table/);
+    seen.length = 0;
+    await runImport(spy, s, { apply: true, replace: true });
+    assert.ok(seen.findIndex((q) => q.startsWith("lock table")) < seen.findIndex((q) => /^select/.test(q)), "replace locks before it looks, too");
+    seen.length = 0;
+    await runImport(spy, s);
+    assert.ok(seen.some((q) => q.startsWith("lock table")), "and so does a plain import or dry run (share row exclusive: no other writer, readers unaffected)");
+  });
+
   test("undo removes exactly what was imported, and refuses if anything changed since", async () => {
     const s = snapshot();
     await runImport(db, s, { apply: true });
