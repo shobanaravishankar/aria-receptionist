@@ -84,7 +84,8 @@ if (probe.status !== 200 || probe.body?.status !== "ok") {
 const health = await get("/healthz");
 check("healthz answers without the database", health.status === 200, `${health.ms} ms`);
 const demo = await get("/demo/health");
-check("demo health names the demo calendar and may be kept briefly (private)", demo.status === 200 && demo.body?.source === "demo_calendar" && /^private, max-age=\d+$/.test(demo.headers.get("cache-control") ?? ""), JSON.stringify(demo.body?.covers));
+const directives = (demo.headers.get("cache-control") ?? "").split(",").map((d) => d.trim().toLowerCase()).filter(Boolean).sort(); // the host may reorder them ("max-age=60, private")
+check("demo health names the demo calendar and may be kept briefly (private)", demo.status === 200 && demo.body?.source === "demo_calendar" && directives.length === 2 && directives.includes("private") && directives.some((d) => /^max-age=\d+$/.test(d)), JSON.stringify(demo.body?.covers));
 check("an unsigned tool call is refused (401)", (await tool("lookup_service", { query: "swedish massage" }, callId("auth"), { sign: false })).status === 401);
 check("a signed call without the bearer token is refused (401)", (await tool("lookup_service", { query: "swedish massage" }, callId("auth"), { bearer: false })).status === 401);
 const ready = await get("/readyz", { authorization: `Bearer ${token}` });

@@ -175,7 +175,9 @@ test("the operator's smoke script passes against the real function (twice, with 
     for await (const chunk of req) chunks.push(chunk as Buffer);
     const body = Buffer.concat(chunks);
     const response = await api(new Request(`http://127.0.0.1${req.url}`, { method: req.method, headers: req.headers as Record<string, string>, body: req.method === "GET" || req.method === "HEAD" ? undefined : body }));
-    res.writeHead(response.status, Object.fromEntries(response.headers));
+    const headers = Object.fromEntries(response.headers);
+    if (req.url === "/demo/health") headers["cache-control"] = "max-age=60, private"; // the host (Netlify) returns the same two directives in the other order
+    res.writeHead(response.status, headers);
     res.end(Buffer.from(await response.arrayBuffer()));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
