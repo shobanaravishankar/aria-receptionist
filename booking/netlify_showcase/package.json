@@ -4,17 +4,19 @@
   "version": "0.1.0",
   "description": "The Serenity Spa sales showcase on Netlify (static site + Functions + Netlify Database). A TypeScript port of the Python demo backend's logic; see ARCHITECTURE.md.",
   "type": "module",
-  "engines": { "node": ">=22.6" },
+  "engines": {
+    "node": ">=22.6"
+  },
   "scripts": {
     "test": "node --test \"test/**/*.test.ts\"",
     "test:logic": "node --test \"test/logic/*.test.ts\""
   },
   "dependencies": {
-    "@netlify/database": "*",
-    "@netlify/functions": "*"
+    "@netlify/database": "2.0.1",
+    "@netlify/functions": "6.0.3"
   },
   "devDependencies": {
-    "@netlify/database-dev": "*",
-    "pg": "*"
+    "@netlify/database-dev": "1.0.1",
+    "pg": "8.23.1"
   }
 }

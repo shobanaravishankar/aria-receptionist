@@ -23,6 +23,8 @@ LENGTH_PHRASES = [
     "half an hour", "a half hour", "half hour", "an hour and a half", "one and a half hours", "1 and a half hours", "two and a half hours", "2 and a half hours", "1.5 hours",
     "0.5 hours", "0.375 hours", "0.125 hours", "1.25 hr", "3 and a half hours", "four and a half hours", "half a day", "half of an hour", "30 or 60 minutes", "45-minute", "60-minute",
     "90 minute", "1-hour", "an hour or two", "hour and a half", "a half", "half", "ninety minutes", "sixty minutes", "forty five minutes", "20 minutes", "5 minutes", "300 minutes",
+    "sixty minute", "ninety minute", "forty-five minute", "twenty five minutes", "seventy five minute", "fifteen minute", "ten minute", "thirty or sixty minutes", "sixty minute or ninety minute",
+    "sixty ninety", "thirty minutes or an hour", "fifty five minutes", "eighty minutes", "a sixty minute", "I would like sixty minutes", "twenty minutes", "forty minutes",
 ]
 FILLERS = ["", "I'd like to book a {}", "do you offer {}", "how much is a {}", "can I get {} please", "what's the price of {}", "tell me about your {}", "{} appointment", "I want {} for tomorrow", "the {}"]
 WORDS = ["massage", "facial", "wax", "waxing", "lash", "lashes", "brow", "eyebrow", "scrub", "head", "spa", "combo", "couples", "bundle", "membership", "refill", "set", "full", "tinting", "lifting",

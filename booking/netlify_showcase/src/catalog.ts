@@ -79,6 +79,15 @@ const LENGTH_SOURCES: Array<[string, number | null]> = [
 ];
 const LENGTHS = LENGTH_SOURCES.map(([p, minutes]) => ({ pattern: new RegExp(`\\b${p}\\b`, "g"), minutes }));
 const HOURS_INDEX = LENGTHS.length - 2;
+// Minutes said in words ("sixty minute massage"): a transcript spells a number out as often as it writes digits, and a length that is not understood must never be left behind as if it were
+// part of a service's name.
+const SPOKEN_MINUTES: Record<string, number> = {
+  ten: 10, fifteen: 15, twenty: 20, "twenty five": 25, thirty: 30, "thirty five": 35, forty: 40, "forty five": 45, fifty: 50, "fifty five": 55,
+  sixty: 60, "sixty five": 65, seventy: 70, "seventy five": 75, eighty: 80, ninety: 90,
+};
+const SPOKEN_WORD = "(?:ten|fifteen|(?:twenty|thirty|forty|fifty|sixty|seventy)(?:[\\s-]+five)?|eighty|ninety)";
+const SPOKEN_RE = new RegExp(`\\b(${SPOKEN_WORD})\\s*-?\\s*(?:min|mins|minutes?)\\b`, "g");
+const SPOKEN_ANY = new RegExp(`\\b${SPOKEN_WORD}\\b`, "g");
 const WEEKS = /\b(\d+)\s*-?\s*weeks?\b/g;
 
 /** Python's round(): halves go to the even neighbour. */
@@ -114,6 +123,7 @@ function lengthMatches(low: string): LengthMatch[] {
       found.push([m.index!, m.index! + m[0].length, here]);
     }
   });
+  for (const m of low.matchAll(SPOKEN_RE)) found.push([m.index!, m.index! + m[0].length, SPOKEN_MINUTES[m[1].replace(/[\s-]+/g, " ")]]);
   return found.filter((a) => !found.some((b) => b !== a && b[0] <= a[0] && a[1] <= b[1] && b[1] - b[0] > a[1] - a[0]));
 }
 
@@ -127,6 +137,7 @@ export function durationHint(query: unknown): number | null {
   const matches = lengthMatches(lowNoWeeks);
   const uncoveredHalf = [...lowNoWeeks.matchAll(/\bhalf\b/g)].filter((m) => !matches.some(([s, e]) => s <= m.index! && m.index! + m[0].length <= e));
   if (uncoveredHalf.length) return null; // "half" in a phrase we do not understand: never guess a shorter length
+  if ([...lowNoWeeks.matchAll(SPOKEN_ANY)].some((m) => !matches.some(([s, e]) => s <= m.index! && m.index! + m[0].length <= e))) return null; // "thirty or sixty minutes": a second number said in words
   const distinct = new Set(matches.map(([, , minutes]) => minutes));
   return distinct.size === 1 && matches.length === 1 ? [...distinct][0] : null;
 }
@@ -144,7 +155,12 @@ function stripLengths(query: string): string {
   const sorted = lengthMatches(blankWeeks(low)).sort((a, b) => b[0] - a[0] || b[1] - a[1] || b[2] - a[2]);
   for (const [start, end] of sorted) low = low.slice(0, start) + " " + low.slice(end);
   for (const pattern of UNKNOWN_LENGTHS) low = low.replace(pattern, " ");
-  return low;
+  return low.replace(SPOKEN_ANY, " "); // a number said in words that no length phrase took is not part of a service's name either
+}
+
+/** The customer's words with every length they said removed (lower case, single-spaced): what is left names the service. */
+export function withoutLengths(query: unknown): string {
+  return typeof query === "string" ? stripLengths(query) : "";
 }
 
 /** A variant name that says more than the length ('2-week refill', 'initial set'); empty when it is just the length. */
