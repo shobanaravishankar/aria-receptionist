@@ -9,8 +9,8 @@ import { isEligible, staffKey } from "./bookable.ts";
 import type { CallDoc } from "./callState.ts";
 import type { CatalogItem } from "./catalog.ts";
 import { joinNames } from "./speech.ts";
-import { NOTHING, REMOVED, REPLAYED, SAVED, StoreError, UNCHANGED } from "./store.ts";
-import type { Preference } from "./store.ts";
+import { NOTHING, REMOVED, REPLAYED, SAVED, STALE, StoreError, UNCHANGED } from "./store.ts";
+import type { Expected, Preference } from "./store.ts";
 import { LIFECYCLE_OK, LIFECYCLE_ROUTES, LifecycleTools, MAX_CHANGES_PER_CALL } from "./tools.ts";
 import type { ToolOptions } from "./tools.ts";
 import type { DemoStaff } from "./dayplan.ts";
@@ -184,12 +184,12 @@ export class PreferenceTools extends LifecycleTools {
     const pending = args.confirmed === true ? await this.takePending("pref_set", callId, args.confirmation_token) : null;
     if (pending !== null && (["client", "family", "staff"] as const).every((k) => pending.payload[k] === wanted[k])) {
       if (pending.payload.current !== wanted.current) return this.setReadback(callId, wanted, family, person, current, true); // it changed after the read-back: read it back again
-      return this.commitSet(callId, args.confirmation_token, client!, family, person, doc);
+      return this.commitSet(callId, args.confirmation_token, client!, family, person, doc, basisOf(pending.payload));
     }
     return this.setReadback(callId, wanted, family, person, current, false);
   }
   private async setReadback(callId: string, wanted: Record<string, any>, family: Family, person: DemoStaff, current: Preference | null, stale: boolean): Promise<Reply> {
-    const token = await this.newPending("pref_set", callId, wanted);
+    const token = await this.newPending("pref_set", callId, { ...wanted, version: current ? current.version : null }); // the version it was read back at: the write applies to exactly that state
     const lead = stale ? "That has changed since I read it out. " : "";
     const was = current ? this.show(current.staffId) : null;
     const what = current ? `change your preferred technician for ${family.name} from ${was} to ${person.name}` : `save ${person.name} as your preferred technician for ${family.name}`;
@@ -199,16 +199,17 @@ export class PreferenceTools extends LifecycleTools {
         "technician, the same confirmation_token and confirmed=true. Only say it is saved after the tool says so.",
     });
   }
-  private async commitSet(callId: string, token: string, client: { clientId: number }, family: Family, person: DemoStaff, doc: CallDoc): Promise<Reply> {
+  private async commitSet(callId: string, token: string, client: { clientId: number }, family: Family, person: DemoStaff, doc: CallDoc, basis: Expected | null): Promise<Reply> {
     let outcome;
     let now: Preference | null;
     try {
-      outcome = await this.store.preferences.set(client.clientId, family.id, person.staffId, { requestKey: this.tokenKey("pref_set", callId, token) });
+      outcome = await this.store.preferences.set(client.clientId, family.id, person.staffId, { requestKey: this.tokenKey("pref_set", callId, token), expected: basis });
       now = await this.store.preferences.get(client.clientId, family.id);
     } catch (error) {
       if (error instanceof StoreError) return this.unavailable();
       return reply("needs_review", this.contacting("Something went wrong and I can't confirm whether that was saved. Please don't rely on it."), { reason: "exception" });
     }
+    if (outcome.status === STALE) return this.setReadback(callId, { client: client.clientId, family: family.id, staff: person.staffId, current: now ? now.staffId : null }, family, person, now, true); // changed between the check and the write: read it back again
     if (outcome.status === REPLAYED && (now === null || now.staffId !== person.staffId)) { // an earlier confirmation of this very request, since overtaken by a newer one
       const kept = now ? this.show(now.staffId) : null;
       return reply("preference_current", kept ? `Your preferred technician for ${family.name} is now ${kept}.` : `You have no preferred technician saved for ${family.name} now.`, { service: family.name, preferred: kept });
@@ -246,12 +247,12 @@ export class PreferenceTools extends LifecycleTools {
     if (doc.changes >= MAX_CHANGES_PER_CALL) return reply("refused", this.contacting("I can't change any more on this call."), { reason: "too_many_changes" });
     const wanted = { client: client!.clientId, family: family.id, current: current.staffId };
     const pending = args.confirmed === true ? await this.takePending("pref_remove", callId, args.confirmation_token) : null;
-    if (pending !== null && JSON.stringify(sortKeys(pending.payload)) === JSON.stringify(sortKeys(wanted))) return this.commitRemove(callId, args.confirmation_token, client!, family, doc);
+    if (pending !== null && (["client", "family", "current"] as const).every((k) => pending.payload[k] === wanted[k])) return this.commitRemove(callId, args.confirmation_token, client!, family, doc, basisOf(pending.payload));
     if (pending !== null) return this.removeReadback(callId, wanted, family, current, true); // confirmed, but what is saved is not what was read out
     return this.removeReadback(callId, wanted, family, current, false);
   }
   private async removeReadback(callId: string, wanted: Record<string, any>, family: Family, current: Preference, stale: boolean): Promise<Reply> {
-    const token = await this.newPending("pref_remove", callId, wanted);
+    const token = await this.newPending("pref_remove", callId, { ...wanted, version: current.version }); // the version it was read back at: the removal applies to exactly that state
     const lead = stale ? "That has changed since I read it out. " : "";
     return reply("confirmation_required", `${lead}To confirm: remove ${this.show(current.staffId) ?? "your saved technician"} as your preferred technician for ${family.name}. Your appointments won't change. Shall I go ahead?`, {
       confirmation_token: token, service: family.name,
@@ -259,22 +260,28 @@ export class PreferenceTools extends LifecycleTools {
         "the same confirmation_token and confirmed=true. Only say it is removed after the tool says so.",
     });
   }
-  private async commitRemove(callId: string, token: string, client: { clientId: number }, family: Family, doc: CallDoc): Promise<Reply> {
+  private async commitRemove(callId: string, token: string, client: { clientId: number }, family: Family, doc: CallDoc, basis: Expected | null): Promise<Reply> {
     let outcome;
     let gone: boolean;
     try {
-      outcome = await this.store.preferences.remove(client.clientId, family.id, { requestKey: this.tokenKey("pref_remove", callId, token) });
+      outcome = await this.store.preferences.remove(client.clientId, family.id, { requestKey: this.tokenKey("pref_remove", callId, token), expected: basis });
       gone = (await this.store.preferences.get(client.clientId, family.id)) === null;
     } catch (error) {
       if (error instanceof StoreError) return this.unavailable();
       return reply("needs_review", this.contacting("Something went wrong and I can't confirm whether that was removed. Please don't rely on it."), { reason: "exception" });
     }
+    if (outcome.status === STALE && outcome.preference) return this.removeReadback(callId, { client: client.clientId, family: family.id, current: outcome.preference.staffId }, family, outcome.preference, true); // changed between the check and the write: read it back again
     if (![REMOVED, NOTHING, REPLAYED].includes(outcome.status)) return reply("needs_review", this.contacting("I can't confirm that was removed. Please don't rely on it."), { reason: "not_verified" });
     if (outcome.status === REPLAYED && !gone) return reply("preference_current", `You have a preferred technician saved for ${family.name} now, so I haven't removed it.`, { service: family.name }); // an earlier removal, since overtaken by a newer save
     if (!gone) return reply("needs_review", this.contacting("I can't confirm that was removed. Please don't rely on it."), { reason: "not_verified" });
     if (outcome.status === REMOVED) this.countChange(doc);
     return reply("preference_removed", `Done: your preferred technician for ${family.name} is removed. Your appointments haven't changed.`, { service: family.name });
   }
+}
+
+/** The saved preference a read-back was made against (its technician and version), or null when none was saved then. */
+function basisOf(payload: Record<string, any>): Expected | null {
+  return typeof payload.current === "string" && typeof payload.version === "number" ? { staffId: payload.current, version: payload.version } : null;
 }
 
 function sortKeys(o: Record<string, any>): Record<string, any> {

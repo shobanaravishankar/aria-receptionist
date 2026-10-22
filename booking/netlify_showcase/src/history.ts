@@ -8,7 +8,7 @@ import { normalizePhone } from "./phone.ts";
 import { spokenDay } from "./speech.ts";
 import { dateOf, isoDate } from "./time.ts";
 import type { Instant } from "./time.ts";
-import type { CallStore } from "./callState.ts";
+import type { CallDoc, CallStore } from "./callState.ts";
 
 // What a visit's state can be. Only COMPLETED counts as a visit that happened. A past date alone proves nothing.
 export const H_COMPLETED = "completed", H_CANCELLED = "cancelled", H_NO_SHOW = "no_show", H_UPCOMING = "upcoming", H_UNKNOWN = "unknown";
@@ -114,7 +114,7 @@ export class HistoryLookup {
   }
 
   /** `identify(phone, args)` -> (args to use, a reply to give instead) runs AFTER the attempt is counted, so no identity question is ever answered past the limit. */
-  async lastCompletedVisit(callId: string, args: Record<string, any>, identify?: (phone: string, args: Record<string, any>) => Promise<[Record<string, any>, Record<string, any> | null]>): Promise<Record<string, any>> {
+  async lastCompletedVisit(callId: string, args: Record<string, any>, identify?: (phone: string, args: Record<string, any>) => Promise<[Record<string, any>, Record<string, any> | null]>, shared?: CallDoc): Promise<Record<string, any>> {
     args = args ?? {};
     if (typeof callId !== "string" || !callId.trim()) return reply("needs_clarification", "I could not identify this call, so I can't look anything up.", { reason: "no_call_id" });
     const category = this.classifier.categoryOfRequest(typeof args.service_category === "string" ? args.service_category : null);
@@ -127,10 +127,10 @@ export class HistoryLookup {
     if (phone === null) {
       return reply("invalid_phone", "That doesn't sound like a complete phone number. Could you give me the whole number, including the area code?", { reason: "phone_incomplete" });
     }
-    const doc = await this.calls.load(callId);
+    const doc = shared ?? (await this.calls.load(callId)); // inside a tool run the run's own document is used (and saved by the run); alone, the call's stored one
     if (doc.attempts >= this.maxAttempts) return reply("refused", `I can't look up any more numbers on this call. ${CONTACT}`, { reason: "too_many_attempts" });
     doc.attempts += 1;
-    await this.calls.save(callId, doc);
+    if (!shared) await this.calls.save(callId, doc);
     if (identify) {
       const [used, instead] = await identify(phone, args);
       if (instead !== null) return instead;

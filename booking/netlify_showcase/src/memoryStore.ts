@@ -6,8 +6,8 @@ import {
   blockedEndUtc, blockedStartUtc, CANCELLED, COMPLETED, CONFIRMED, endUtc, nameKey, NO_SHOW, ORIGIN_SEED, ORIGIN_TEST, outcome, placementOf, Refused, STATUSES,
 } from "./appointments.ts";
 import type { ClientRecord, NewBooking, Outcome, Placement, StoredAppointment } from "./appointments.ts";
-import { cleanReason, makeReference, NOTHING, REMOVED, REPLAYED, SAVED, StoreError, UNCHANGED } from "./store.ts";
-import type { EventRow, OutboxBuilder, OutboxRow, Preference, PreferenceOutcome, PreferenceStore, Store, Validator } from "./store.ts";
+import { cleanReason, makeReference, NOTHING, REMOVED, REPLAYED, SAVED, STALE, StoreError, UNCHANGED } from "./store.ts";
+import type { EventRow, Expected, OutboxBuilder, OutboxRow, Preference, PreferenceOutcome, PreferenceStore, Store, Validator } from "./store.ts";
 
 interface ClientRow extends ClientRecord {
   nameKey: string;
@@ -336,7 +336,7 @@ class MemoryPreferences implements PreferenceStore {
   async forClient(clientId: number): Promise<Preference[]> {
     return this.rows.filter((p) => p.clientId === clientId).sort((a, b) => (a.familyId < b.familyId ? -1 : a.familyId > b.familyId ? 1 : 0)).map((p) => ({ ...p }));
   }
-  async set(clientId: number, familyId: string, staffId: string, opts: { requestKey?: string | null } = {}): Promise<PreferenceOutcome> {
+  async set(clientId: number, familyId: string, staffId: string, opts: { requestKey?: string | null; expected?: Expected | null } = {}): Promise<PreferenceOutcome> {
     return this.store.serialised(async () => {
       if (!this.store.hasClient(clientId)) throw new StoreError("that client does not exist, so nothing was saved");
       const key = opts.requestKey ?? null;
@@ -344,7 +344,9 @@ class MemoryPreferences implements PreferenceStore {
       const current = this.rows.find((p) => p.clientId === clientId && p.familyId === familyId);
       const now = this.clock();
       let result: PreferenceOutcome;
+      const matches = opts.expected === undefined || (opts.expected === null ? !current : Boolean(current) && current!.staffId === opts.expected.staffId && current!.version === opts.expected.version);
       if (current && current.staffId === staffId) result = { status: UNCHANGED, preference: { ...current }, previous: null };
+      else if (!matches) result = { status: STALE, preference: current ? { ...current } : null, previous: null };
       else if (!current) {
         const row: Preference = { clientId, familyId, staffId, version: 1, createdAt: now, updatedAt: now };
         this.rows.push(row);
@@ -358,13 +360,15 @@ class MemoryPreferences implements PreferenceStore {
       return result;
     });
   }
-  async remove(clientId: number, familyId: string, opts: { requestKey?: string | null } = {}): Promise<PreferenceOutcome> {
+  async remove(clientId: number, familyId: string, opts: { requestKey?: string | null; expected: Expected | null }): Promise<PreferenceOutcome> {
+    if (opts?.expected === undefined) throw new StoreError("a removal must name the preference it removes");
     return this.store.serialised(async () => {
       const key = opts.requestKey ?? null;
       if (key && this.requests.has(`remove|${key}`)) return { status: REPLAYED, preference: null, previous: null };
       const index = this.rows.findIndex((p) => p.clientId === clientId && p.familyId === familyId);
       let result: PreferenceOutcome;
       if (index < 0) result = { status: NOTHING, preference: null, previous: null };
+      else if (opts.expected === null || this.rows[index].staffId !== opts.expected.staffId || this.rows[index].version !== opts.expected.version) result = { status: STALE, preference: { ...this.rows[index] }, previous: null };
       else {
         const [gone] = this.rows.splice(index, 1);
         result = { status: REMOVED, preference: null, previous: gone.staffId };

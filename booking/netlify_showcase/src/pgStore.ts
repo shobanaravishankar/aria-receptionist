@@ -6,10 +6,10 @@
 
 import { CANCELLED, COMPLETED, CONFIRMED, nameKey, NO_SHOW, ORIGIN_SEED, ORIGIN_TEST, outcome, placementOf, Refused, STATUSES } from "./appointments.ts";
 import type { ClientRecord, NewBooking, Outcome, Placement, StoredAppointment } from "./appointments.ts";
-import { cleanReason, makeReference, NOTHING, REMOVED, REPLAYED, SAVED, StoreError, UNCHANGED } from "./store.ts";
-import type { EventRow, OutboxBuilder, OutboxRow, Preference, PreferenceOutcome, PreferenceStore, Store, Validator } from "./store.ts";
+import { cleanReason, makeReference, NOTHING, REMOVED, REPLAYED, SAVED, STALE, StoreError, UNCHANGED } from "./store.ts";
+import type { EventRow, Expected, OutboxBuilder, OutboxRow, Preference, PreferenceOutcome, PreferenceStore, Store, Validator } from "./store.ts";
 import type { CallDoc, CallStore, Pending } from "./callState.ts";
-import { emptyCall } from "./callState.ts";
+import { CallConflict, emptyCall } from "./callState.ts";
 import type { Instant } from "./time.ts";
 
 /** The one thing the store needs from a connection: pg.Pool, the Netlify serverless pool and a pg.Client all have it. */
@@ -406,53 +406,72 @@ class PgPreferences implements PreferenceStore {
   async forClient(clientId: number): Promise<Preference[]> {
     return (await this.db.query("select * from client_preferences where client_id = $1 order by family_id", [clientId])).rows.map(this.toPreference);
   }
-  private async seen(kind: string, key: string | null | undefined): Promise<boolean> {
-    return Boolean(key) && (await this.db.query("select 1 from preference_requests where request_key = $1 and kind = $2", [key, kind])).rows.length > 0;
-  }
-  async set(clientId: number, familyId: string, staffId: string, opts: { requestKey?: string | null } = {}): Promise<PreferenceOutcome> {
+  /* Both writers are ONE statement. The request key is claimed first (insert ... on conflict do nothing), and the preference change and its event only happen if THIS statement claimed it, so
+   * the key and the effect commit together or not at all, and of any number of requests racing on one key exactly one has an effect (the others wait on the key's unique index, then replay).
+   * `expected` is the state the caller confirmed (null: none saved); the change only applies to exactly that state, checked on the row the statement locks, not on an earlier read. */
+  async set(clientId: number, familyId: string, staffId: string, opts: { requestKey?: string | null; expected?: Expected | null } = {}): Promise<PreferenceOutcome> {
     const key = opts.requestKey ?? null;
-    if (await this.seen("set", key)) return { status: REPLAYED, preference: await this.get(clientId, familyId), previous: null };
-    const current = await this.get(clientId, familyId);
-    const now = this.clock();
-    if (current && current.staffId === staffId) {
-      await this.db.query("insert into preference_requests (request_key, kind, client_id, family_id, created_at) select $1::text, 'set', $2::bigint, $3::text, $4::bigint where $1::text is not null on conflict do nothing", [key, clientId, familyId, now]);
-      return { status: UNCHANGED, preference: current, previous: null };
-    }
+    const checked = opts.expected !== undefined;
+    const before = await this.get(clientId, familyId);
+    let row: any;
     try {
-      const done = (
+      row = (
         await this.db.query(
-          `with p as (
-             insert into client_preferences (client_id, family_id, staff_id, version, created_at, updated_at) values ($1::bigint, $2::text, $3::text, 1, $4::bigint, $4::bigint)
-             on conflict (client_id, family_id) do update set staff_id = excluded.staff_id, version = client_preferences.version + 1, updated_at = excluded.updated_at returning *
+          `with k as (
+             insert into preference_requests (request_key, kind, client_id, family_id, created_at) select $5::text, 'set', $1::bigint, $2::text, $4::bigint where $5::text is not null on conflict do nothing returning request_key
+           ), go as (
+             select 1 as one where $5::text is null union all select 1 from k
+           ), i as (
+             insert into client_preferences (client_id, family_id, staff_id, version, created_at, updated_at)
+               select $1::bigint, $2::text, $3::text, 1, $4::bigint, $4::bigint from go where not $6::boolean or $7::text is null
+             on conflict (client_id, family_id) do update set staff_id = excluded.staff_id, version = client_preferences.version + 1, updated_at = excluded.updated_at
+               where not $6::boolean and client_preferences.staff_id is distinct from excluded.staff_id
+             returning *
+           ), u as (
+             update client_preferences set staff_id = $3::text, version = version + 1, updated_at = $4::bigint
+               where client_id = $1::bigint and family_id = $2::text and $6::boolean and $7::text is not null and exists (select 1 from go)
+                 and staff_id = $7::text and version = $8::integer and staff_id <> $3::text
+             returning *
+           ), p as (
+             select * from i union all select * from u
            ), e as (
              insert into preference_events (client_id, family_id, kind, detail, at) select client_id, family_id, 'set', jsonb_build_object('staff', staff_id, 'version', version), $4::bigint from p
-           ), r as (
-             insert into preference_requests (request_key, kind, client_id, family_id, created_at) select $5::text, 'set', $1::bigint, $2::text, $4::bigint from p where $5::text is not null on conflict do nothing
            )
-           select * from p`,
-          [clientId, familyId, staffId, now, key],
+           select (select count(*) from go)::integer as went, (select to_jsonb(p) from p limit 1) as saved`,
+          [clientId, familyId, staffId, this.clock(), key, checked, checked && opts.expected ? opts.expected.staffId : null, checked && opts.expected ? opts.expected.version : null],
         )
-      ).rows;
-      return { status: SAVED, preference: this.toPreference(done[0]), previous: current ? current.staffId : null };
+      ).rows[0];
     } catch (error) {
       if (code(error) === "23503") throw new StoreError("that client does not exist, so nothing was saved");
       throw error;
     }
+    if (Number(row.went) === 0) return { status: REPLAYED, preference: await this.get(clientId, familyId), previous: null };
+    if (row.saved) return { status: SAVED, preference: this.toPreference(row.saved), previous: before ? before.staffId : null };
+    const after = await this.get(clientId, familyId);
+    return after !== null && after.staffId === staffId ? { status: UNCHANGED, preference: after, previous: null } : { status: STALE, preference: after, previous: null };
   }
-  async remove(clientId: number, familyId: string, opts: { requestKey?: string | null } = {}): Promise<PreferenceOutcome> {
+  async remove(clientId: number, familyId: string, opts: { requestKey?: string | null; expected: Expected | null }): Promise<PreferenceOutcome> {
+    if (opts?.expected === undefined) throw new StoreError("a removal must name the preference it removes");
     const key = opts.requestKey ?? null;
-    if (await this.seen("remove", key)) return { status: REPLAYED, preference: null, previous: null };
-    const now = this.clock();
-    const gone = (
+    const row = (
       await this.db.query(
-        `with d as (delete from client_preferences where client_id = $1::bigint and family_id = $2::text returning *),
-              e as (insert into preference_events (client_id, family_id, kind, detail, at) select client_id, family_id, 'remove', jsonb_build_object('staff', staff_id, 'version', version), $3::bigint from d)
-         select staff_id from d`,
-        [clientId, familyId, now],
+        `with k as (
+           insert into preference_requests (request_key, kind, client_id, family_id, created_at) select $4::text, 'remove', $1::bigint, $2::text, $3::bigint where $4::text is not null on conflict do nothing returning request_key
+         ), go as (
+           select 1 as one where $4::text is null union all select 1 from k
+         ), d as (
+           delete from client_preferences where client_id = $1::bigint and family_id = $2::text and exists (select 1 from go) and staff_id = $5::text and version = $6::integer returning *
+         ), e as (
+           insert into preference_events (client_id, family_id, kind, detail, at) select client_id, family_id, 'remove', jsonb_build_object('staff', staff_id, 'version', version), $3::bigint from d
+         )
+         select (select count(*) from go)::integer as went, (select staff_id from d limit 1) as removed`,
+        [clientId, familyId, this.clock(), key, opts.expected ? opts.expected.staffId : null, opts.expected ? opts.expected.version : null],
       )
-    ).rows;
-    await this.db.query("insert into preference_requests (request_key, kind, client_id, family_id, created_at) select $1::text, 'remove', $2::bigint, $3::text, $4::bigint where $1::text is not null on conflict do nothing", [key, clientId, familyId, now]);
-    return gone.length ? { status: REMOVED, preference: null, previous: gone[0].staff_id } : { status: NOTHING, preference: null, previous: null };
+    ).rows[0];
+    if (Number(row.went) === 0) return { status: REPLAYED, preference: null, previous: null };
+    if (row.removed) return { status: REMOVED, preference: null, previous: row.removed };
+    const after = await this.get(clientId, familyId);
+    return after === null ? { status: NOTHING, preference: null, previous: null } : { status: STALE, preference: after, previous: null };
   }
 }
 
@@ -465,14 +484,21 @@ export class PgCallStore implements CallStore {
     this.clock = clock;
   }
   async load(callId: string): Promise<CallDoc> {
-    const found = (await this.db.query("select doc from call_state where call_id = $1", [callId])).rows;
-    return found.length ? { ...emptyCall(), ...found[0].doc } : emptyCall();
+    const found = (await this.db.query("select doc, rev from call_state where call_id = $1", [callId])).rows;
+    return found.length ? { ...emptyCall(), ...found[0].doc, rev: Number(found[0].rev) } : emptyCall();
   }
   async save(callId: string, doc: CallDoc): Promise<void> {
-    await this.db.query(
-      "insert into call_state (call_id, doc, updated_at) values ($1::text, $2::jsonb, $3::bigint) on conflict (call_id) do update set doc = excluded.doc, updated_at = excluded.updated_at",
-      [callId, JSON.stringify(doc), this.clock()],
-    );
+    const { rev, ...rest } = doc;
+    const saved = (
+      await this.db.query(
+        `insert into call_state (call_id, doc, rev, updated_at) values ($1::text, $2::jsonb, $4::integer + 1, $3::bigint)
+         on conflict (call_id) do update set doc = excluded.doc, rev = excluded.rev, updated_at = excluded.updated_at where call_state.rev = $4::integer
+         returning rev`,
+        [callId, JSON.stringify(rest), this.clock(), rev],
+      )
+    ).rows;
+    if (!saved.length) throw new CallConflict(callId);
+    doc.rev = Number(saved[0].rev);
   }
   async putPending(token: string, pending: Pending, now: Instant): Promise<void> {
     await this.db.query(

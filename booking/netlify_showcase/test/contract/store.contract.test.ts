@@ -271,11 +271,58 @@ for (const backend of backends) {
       const changed = await store.preferences.set(client, "massage-swedish-massage", "910006");
       assert.deepEqual([changed.status, changed.preference!.version, changed.previous], ["saved", 2, "910001"]);
       assert.deepEqual((await store.preferences.forClient(client)).map((p) => [p.familyId, p.staffId]), [["massage-swedish-massage", "910006"]]);
-      assert.equal((await store.preferences.remove(client, "massage-swedish-massage", { requestKey: "p2" })).status, "removed");
-      assert.equal((await store.preferences.remove(client, "massage-swedish-massage", { requestKey: "p2" })).status, "replayed");
-      assert.equal((await store.preferences.remove(client, "massage-swedish-massage")).status, "nothing_to_remove");
+      const held = { staffId: "910006", version: 2 };
+      assert.equal((await store.preferences.remove(client, "massage-swedish-massage", { requestKey: "p2", expected: held })).status, "removed");
+      assert.equal((await store.preferences.remove(client, "massage-swedish-massage", { requestKey: "p2", expected: held })).status, "replayed");
+      assert.equal((await store.preferences.remove(client, "massage-swedish-massage", { expected: null })).status, "nothing_to_remove");
+      await assert.rejects(store.preferences.remove(client, "massage-swedish-massage", {} as any), StoreError); // a removal must always say what it removes
       assert.equal(await store.preferences.get(client, "massage-swedish-massage"), null);
       await assert.rejects(store.preferences.set(99999, "x", "910001"), StoreError);
+    });
+
+    test("preferences: a change applies only to the state the caller confirmed (a stale one changes nothing)", async () => {
+      const client = (await store.book(booking())).appointment!.clientId;
+      const family = "massage-swedish-massage";
+      assert.equal((await store.preferences.set(client, family, "910001", { expected: { staffId: "910009", version: 1 } })).status, "stale"); // nothing saved, something else expected
+      assert.equal(await store.preferences.get(client, family), null);
+      assert.equal((await store.preferences.set(client, family, "910001", { expected: null })).status, "saved");
+      assert.equal((await store.preferences.set(client, family, "910006", { expected: null })).status, "stale"); // expected none, but one is saved
+      const moved = await store.preferences.set(client, family, "910006", { requestKey: "m1", expected: { staffId: "910001", version: 1 } });
+      assert.deepEqual([moved.status, moved.preference!.staffId, moved.preference!.version], ["saved", "910006", 2]);
+      const late = await store.preferences.set(client, family, "910008", { requestKey: "m2", expected: { staffId: "910001", version: 1 } }); // confirmed against the old state
+      assert.deepEqual([late.status, late.preference!.staffId], ["stale", "910006"]);
+      assert.equal((await store.preferences.set(client, family, "910008", { requestKey: "m2", expected: { staffId: "910006", version: 2 } })).status, "replayed"); // a stale answer still used its key
+      assert.equal((await store.preferences.get(client, family))!.staffId, "910006");
+      // an old value restored later is a NEW state: the version moved on, so a confirmation of the first one no longer applies
+      await store.preferences.set(client, family, "910001", { expected: { staffId: "910006", version: 2 } });
+      const gone = await store.preferences.remove(client, family, { requestKey: "r1", expected: { staffId: "910001", version: 1 } });
+      assert.deepEqual([gone.status, gone.preference!.staffId, gone.preference!.version], ["stale", "910001", 3]);
+      assert.equal((await store.preferences.remove(client, family, { expected: { staffId: "910001", version: 3 } })).status, "removed");
+    });
+
+    test("preferences: a repeated key never reapplies its change, even after the state moved on or was recreated", async () => {
+      const client = (await store.book(booking())).appointment!.clientId;
+      const family = "massage-swedish-massage";
+      assert.equal((await store.preferences.set(client, family, "910001", { requestKey: "k" })).status, "saved");
+      await store.preferences.set(client, family, "910002");
+      assert.equal((await store.preferences.set(client, family, "910001", { requestKey: "k" })).status, "replayed"); // not an unconditional overwrite
+      assert.equal((await store.preferences.get(client, family))!.staffId, "910002");
+      // a removal, then the SAME technician saved again at the same version: the old removal's retry must replay, not remove it
+      assert.equal((await store.preferences.remove(client, family, { requestKey: "r", expected: { staffId: "910002", version: 2 } })).status, "removed");
+      await store.preferences.set(client, family, "910002");
+      assert.deepEqual([(await store.preferences.get(client, family))!.staffId, (await store.preferences.get(client, family))!.version], ["910002", 1]);
+      assert.equal((await store.preferences.remove(client, family, { requestKey: "r", expected: { staffId: "910002", version: 1 } })).status, "replayed");
+      assert.equal((await store.preferences.get(client, family))!.staffId, "910002");
+    });
+
+    test("preferences: of six racing retries of one confirmation exactly one has an effect", async () => {
+      const client = (await store.book(booking())).appointment!.clientId;
+      const family = "massage-deep-tissue-massage";
+      const results = await Promise.all(Array.from({ length: 6 }, () => store.preferences.set(client, family, "910001", { requestKey: "same", expected: null })));
+      assert.deepEqual(results.map((r) => r.status).sort(), ["replayed", "replayed", "replayed", "replayed", "replayed", "saved"]);
+      assert.equal((await store.preferences.get(client, family))!.version, 1);
+      const removals = await Promise.all(Array.from({ length: 6 }, () => store.preferences.remove(client, family, { requestKey: "same-remove", expected: { staffId: "910001", version: 1 } })));
+      assert.deepEqual(removals.map((r) => r.status).sort(), ["removed", "replayed", "replayed", "replayed", "replayed", "replayed"]);
     });
   });
 }

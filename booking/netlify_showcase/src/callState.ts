@@ -18,8 +18,13 @@ export interface CallDoc {
   attempts: number; // last-visit lookups made on this call
   preferred: number | null; // the start time (minutes since midnight) the caller last asked for in THIS call
   identity: Identity | null;
+  /** The revision this document was loaded at (0: the call has no row yet). A save only succeeds against the revision it was loaded at; see CallConflict. */
+  rev: number;
 }
-export const emptyCall = (): CallDoc => ({ numbers: [], failed: 0, changes: 0, attempts: 0, preferred: null, identity: null });
+export const emptyCall = (): CallDoc => ({ numbers: [], failed: 0, changes: 0, attempts: 0, preferred: null, identity: null, rev: 0 });
+
+/** Another invocation of the same call saved first. Nothing was written; the caller loads again and redoes its step against the newer document. */
+export class CallConflict extends Error {}
 
 export interface Pending {
   kind: string; // book / cancel / reschedule / pref_set / pref_remove
@@ -30,6 +35,7 @@ export interface Pending {
 
 export interface CallStore {
   load(callId: string): Promise<CallDoc>;
+  /** Compare-and-set: succeeds only if nobody saved this call since `doc` was loaded, then moves `doc.rev` on; otherwise throws CallConflict and writes nothing. */
   save(callId: string, doc: CallDoc): Promise<void>;
   /** A new read-back replaces this call's earlier one of the same kind; expired ones are dropped. */
   putPending(token: string, pending: Pending, now: Instant): Promise<void>;
@@ -44,6 +50,8 @@ export class MemoryCallStore implements CallStore {
     return structuredClone(this.calls.get(callId) ?? emptyCall());
   }
   async save(callId: string, doc: CallDoc): Promise<void> {
+    if ((this.calls.get(callId)?.rev ?? 0) !== doc.rev) throw new CallConflict(callId);
+    doc.rev += 1;
     this.calls.set(callId, structuredClone(doc));
   }
   async putPending(token: string, pending: Pending, now: Instant): Promise<void> {

@@ -19,6 +19,7 @@ import type { NewBooking, Outcome, Placement, StoredAppointment } from "./appoin
 import { findSlots, validateSlot } from "./availability.ts";
 import { isEligible, staffKey } from "./bookable.ts";
 import type { BookableService } from "./bookable.ts";
+import { CallConflict } from "./callState.ts";
 import type { CallDoc, CallStore, Pending } from "./callState.ts";
 import { descriptiveLabel, durationHint, SHOWCASE_CATALOG, toPublic, treatmentWords } from "./catalog.ts";
 import type { Catalog, CatalogItem } from "./catalog.ts";
@@ -48,6 +49,7 @@ const SUCCESS_STATUSES = new Set(["booked_verified", "already_booked"]);
 export const LIFECYCLE_OK: ReadonlySet<string> = new Set(["booked_verified", "already_booked", "cancelled", "already_cancelled", "rescheduled", "already_rescheduled", "unchanged", "found"]);
 export const MAX_NUMBERS_PER_CALL = 3; // a caller cannot try number after number to find who is a client
 export const MAX_FAILED_MATCHES_PER_CALL = 5;
+const MAX_CALL_REDOS = 12; // how many times a step may be redone because another invocation of the same call saved first
 export const MAX_CHANGES_PER_CALL = 3;
 export const NAME_MAX = 80;
 export const SHOWN_UPCOMING = 3;
@@ -194,11 +196,29 @@ export class LifecycleTools {
   /** Runs one tool call: the call id is checked, what the call remembers is loaded first and saved after, and the answer is labelled with its source. */
   protected async run(callId: string, work: (doc: CallDoc) => Promise<Reply>): Promise<Reply> {
     if (typeof callId !== "string" || !callId.trim()) return this.labelled(response("needs_clarification", "I could not identify this call, so I can't check the calendar.", { reason: "no_call_id" }));
-    const doc = await this.calls.load(callId);
-    try {
-      return this.branded(this.labelled(await work(doc)));
-    } finally {
-      await this.calls.save(callId, doc);
+    // What the call remembers is saved by compare-and-set. If another invocation of THIS call saved first (parallel tool calls, on any instance), nothing is lost: this one loads the newer
+    // memory and redoes its step against it. Redoing is safe because every write a step makes carries a request key, so it replays instead of repeating.
+    for (let attempt = 1; ; attempt++) {
+      const doc = await this.calls.load(callId);
+      let result: Reply | undefined;
+      let failure: unknown;
+      let failed = false;
+      try {
+        result = this.branded(this.labelled(await work(doc)));
+      } catch (error) {
+        failed = true;
+        failure = error;
+      }
+      try {
+        await this.calls.save(callId, doc);
+      } catch (error) {
+        if (!(error instanceof CallConflict)) throw error;
+        if (attempt >= MAX_CALL_REDOS) throw new StoreError("this call is busy; try again");
+        await new Promise((resolve) => setTimeout(resolve, Math.floor(Math.random() * 15 * attempt)));
+        continue;
+      }
+      if (failed) throw failure;
+      return result!;
     }
   }
   private labelled(r: Reply): Reply {
@@ -1033,11 +1053,8 @@ export class LifecycleTools {
         }
         return [given, null];
       };
-      // the history lookup keeps its own attempt count in the call's document
-      const result = await this.history.lastCompletedVisit(callId, args ?? {}, identify);
-      const fresh = await this.calls.load(callId);
-      doc.attempts = fresh.attempts;
-      return result;
+      // the history lookup counts its attempts in this run's own document
+      return this.history.lastCompletedVisit(callId, args ?? {}, identify, doc);
     });
   }
 

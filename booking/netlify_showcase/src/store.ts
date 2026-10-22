@@ -27,9 +27,11 @@ export interface Preference {
   createdAt: number;
   updatedAt: number;
 }
-export const SAVED = "saved", UNCHANGED = "unchanged", REMOVED = "removed", NOTHING = "nothing_to_remove", REPLAYED = "replayed";
+export const SAVED = "saved", UNCHANGED = "unchanged", REMOVED = "removed", NOTHING = "nothing_to_remove", REPLAYED = "replayed", STALE = "stale";
+/** The saved preference a caller confirmed (its technician and version), or null when none was saved. A change only applies to exactly that state; otherwise the outcome is STALE and nothing changes. */
+export type Expected = { staffId: string; version: number };
 export interface PreferenceOutcome {
-  status: string; // saved / unchanged / removed / nothing_to_remove / replayed
+  status: string; // saved / unchanged / removed / nothing_to_remove / replayed / stale (what is saved is no longer what the caller confirmed: nothing changed)
   preference: Preference | null; // the state AFTER the call (null once removed)
   previous: string | null; // the staff id it held before, for a change
 }
@@ -37,8 +39,11 @@ export interface PreferenceOutcome {
 export interface PreferenceStore {
   get(clientId: number, familyId: string): Promise<Preference | null>;
   forClient(clientId: number): Promise<Preference[]>;
-  set(clientId: number, familyId: string, staffId: string, opts?: { requestKey?: string | null }): Promise<PreferenceOutcome>;
-  remove(clientId: number, familyId: string, opts?: { requestKey?: string | null }): Promise<PreferenceOutcome>;
+  /** One atomic step: the request key and the change commit together, so of any number of requests with one key exactly one has an effect and the rest replay. With `expected` the change
+   * only applies to that exact saved state (null: nothing saved), checked at the write, not on an earlier read; otherwise it answers STALE and changes nothing. */
+  set(clientId: number, familyId: string, staffId: string, opts?: { requestKey?: string | null; expected?: Expected | null }): Promise<PreferenceOutcome>;
+  /** As set, but a removal must always say WHICH saved preference it removes (`expected`), so a retry can never remove a newer choice. */
+  remove(clientId: number, familyId: string, opts: { requestKey?: string | null; expected: Expected | null }): Promise<PreferenceOutcome>;
 }
 
 export interface EventRow {
