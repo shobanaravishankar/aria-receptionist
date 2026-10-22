@@ -169,7 +169,7 @@ test("the readiness check needs the token, because it opens the database", async
 });
 
 
-test("the operator's smoke script passes against the real function, including its write path, and leaves nothing booked", async () => {
+test("the operator's smoke script passes against the real function (twice, with different run ids), exercises every write path, records its own mutations, and leaves nothing booked", async () => {
   const server = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk as Buffer);
@@ -181,16 +181,30 @@ test("the operator's smoke script passes against the real function, including it
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as { port: number }).port;
   const confirmedBefore = Number((await pg.pool.query("select count(*) as n from appointments where status = 'confirmed'")).rows[0].n);
+  const { mkdtemp, readFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const dir = await mkdtemp(`${tmpdir()}/smoke-`);
   try {
     const run = promisify(execFile);
-    const script = new URL("../../scripts/smoke_public.mjs", import.meta.url);
-    const { stdout } = await run(process.execPath, [script.pathname.replace(/^\/([A-Za-z]:)/, "$1"), `http://127.0.0.1:${port}`, "--write"], { env: { ...process.env, ARIA_RETELL_API_KEY: KEY, ARIA_RETELL_TOOL_TOKEN: TOKEN } });
-    assert.match(stdout, /all checks passed/, stdout);
-    assert.ok(!stdout.includes(KEY) && !stdout.includes(TOKEN), "the script prints no secret");
-    assert.equal((stdout.match(/FAIL/g) ?? []).length, 0);
+    const script = new URL("../../scripts/smoke_public.mjs", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+    const runs: string[] = [];
+    for (const n of [1, 2]) {
+      const record = `${dir}/record-${n}.json`;
+      const { stdout } = await run(process.execPath, [script, `http://127.0.0.1:${port}`, "--write", "--record", record], { env: { ...process.env, ARIA_RETELL_API_KEY: KEY, ARIA_RETELL_TOOL_TOKEN: TOKEN } });
+      assert.match(stdout, /all checks passed/, stdout);
+      assert.ok(!stdout.includes(KEY) && !stdout.includes(TOKEN), "the script prints no secret");
+      assert.equal((stdout.match(/FAIL/g) ?? []).length, 0);
+      for (const route of ["lookup_service", "check_slot", "find_alternatives", "find_appointments", "last_completed_visit", "book_appointment", "cancel_appointment", "reschedule_appointment", "get_preferences", "save_preference", "remove_preference"]) assert.ok(stdout.includes(route), `${route} was exercised`);
+      const doc = JSON.parse(await readFile(record, "utf8"));
+      assert.deepEqual(doc.mutations.map((m: any) => m.what), ["booked", "rescheduled", "preference saved", "preference removed", "cancelled"], "every change it made is on its record");
+      runs.push(doc.run);
+    }
+    assert.notEqual(runs[0], runs[1], "each run has its own id");
   } finally {
     server.close();
+    await rm(dir, { recursive: true, force: true });
   }
   const confirmedAfter = Number((await pg.pool.query("select count(*) as n from appointments where status = 'confirmed'")).rows[0].n);
-  assert.equal(confirmedAfter, confirmedBefore, "the smoke booking was cancelled again");
+  assert.equal(confirmedAfter, confirmedBefore, "every smoke booking was cancelled again");
+  assert.equal(Number((await pg.pool.query("select count(*) as n from client_preferences")).rows[0].n), 0, "and every smoke preference was removed");
 });

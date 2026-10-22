@@ -1,8 +1,29 @@
 # Free-Netlify sales showcase: architecture, risks and feasibility
 
-Status: **assessment only. Nothing here is built, deployed, provisioned or paid for.** It answers the request to host the website AND the calendar on the existing free Netlify site, reusable for
-demonstrations to many salons, with Retell voice the only paid service. Everything about Netlify below comes from its own documentation pages (quoted where a number matters) and is marked
-**not stated** where the pages do not say. Nothing about the platform's behaviour has been run: this machine cannot run any of it (section 8).
+> **Where this stands (2026-10-22).** The sections below are the ORIGINAL assessment, kept for the record. The port they describe now exists as a **candidate** in this folder (TypeScript
+> logic held to the Python backend by golden vectors; a Postgres store; the eleven tools; the HTTP surface; the Function; the site-bundle builder; the import; the operator's smoke script).
+> **Nothing has been deployed or run on Netlify.** Where the original text and this box differ, THIS BOX is current:
+>
+> - **Conflicts are refused by the database, not by cells.** Each confirmed appointment carries two generated `int8range` columns with `EXCLUDE USING gist` constraints (per technician: the whole
+>   OCCUPIED time including cleanup; per client: the service time), so no stored row, however it got there (booked, seeded, imported), can overlap another; a reschedule that overlaps its OWN
+>   old time is one `UPDATE`. Every write is ONE statement, so nothing depends on interactive transactions. (The `occupancy` cell table of section 3 does not exist.) Preference writes are one
+>   statement too: the request key is claimed in the same statement as the change, and a change names the saved state the caller confirmed (technician + a never-reused *generation*), so a stale
+>   or retried confirmation changes nothing.
+> - **A call's memory is a row** (`call_state`: numbers tried as digests, failed matches, changes, attempts, identity, the start time last asked for) **saved by compare-and-set** (`rev`).
+>   Every tool step takes a short lease on its call (a field of that row), so steps of one call run one at a time on any instance and the per-call limits are checked before effects. A step that
+>   lost the compare-and-set is redone if it made no effect, and never redone if it did (its changes are folded into the newer memory). If a step is abandoned mid-way (its lease runs out
+>   unreported) the call is **closed**: every later step answers `needs_review / call_interrupted`; nothing is invented and no budget is reset.
+> - **Daily upkeep** is claimed by an expiring lease in `meta` and marked done only AFTER it succeeded; a failed holder releases at once, a dead one is taken over, callers meanwhile wait and are never
+>   served from a half-made day. No scheduled function, no polling, no keep-alive.
+> - **Public reads** are validated before any database is opened (an unknown treatment, a date outside the demo window, a technician nobody has are answered from the fixed schedule and menu);
+>   only answers that need no record may be kept, briefly, by the visitor's own browser (`private, max-age`); everything read from the records is `no-store`.
+> - **The site bundle is same-origin by default**: the page resolves the calendar's address to its own at run time, so one build serves a draft and the live site; polling is call-only (one question
+>   when a view opens, one when a call ends, and Refresh buttons; while a call is live it asks as before).
+> - **The preserved demo data is imported, not re-seeded**: `scripts/export_store.py` (a read-only snapshot of the SQLite store with a manifest of counts and digests) and `scripts/import_store.mjs`
+>   (one transaction; dry run by default; verified table by table by digest; replay-safe; `--undo`). See DEPLOY_PACK.md section 3.
+> - **Evidence so far is local**: the 4,400-request replay of Python-recorded conversations on the in-memory model AND on Postgres (PGlite), store contracts on both backends, races, crash and
+>   recovery cases, the import on a real copy of the preserved store, 130+ Node tests, and mutation checks of each fix. PGlite is an emulator (PostgreSQL 17.5 on WebAssembly, one session at a
+>   time): it shows the SQL and the logic are right, **not** hosted cold resume, the hosted connector, true concurrency or lease timing. Voice behaviour is unproven.
 
 ## 1. Verdict
 
