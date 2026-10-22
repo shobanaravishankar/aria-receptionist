@@ -20,6 +20,7 @@
   var titles = { "calendar": "Open times", "staff-calendar": "Staff calendar" };
   var homeTitle = document.title;
   var data = window.SERENITY_BOOKABLE || { groups: [] };
+  if (!data.calendarOrigin) data.calendarOrigin = window.location.origin;   // a same-origin build leaves it empty: the calendar is on this page's own address
   var watchMs = Math.max(1, Number(data.refreshSeconds) || 5) * 1000;
   // pollMode "call" (a free static host): the page asks "has anything changed?" ONLY while a call with Aria is live (voice.js marks it on the page), and looks afresh when a view opens and
   // once more when the call ends; otherwise the Refresh buttons do it. Left unset the page watches whenever a view is open, as before.

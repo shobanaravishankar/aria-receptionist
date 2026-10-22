@@ -65,9 +65,15 @@ def duration_text(minutes: Optional[int]) -> str:
     return " ".join(p for p in (f"{hours} hr" if hours else "", f"{rest} min" if rest else "") if p)
 
 
+SAME_ORIGIN = "same-origin"  # `origin` value: the calendar and open times are on the page's OWN address, whatever it is, so one build serves a draft and the live site alike
+
+
 def calendar_origin(calendar_port: int, origin: str = "") -> str:
     """Where the demo calendar server is, for the page's open-times requests. On a person's own machine: 'localhost', like every other address this page uses. On a public backend
-    (``origin``, an https origin with no path) that address instead, so nothing in the page points at this machine."""
+    (``origin``, an https origin with no path) that address instead, so nothing in the page points at this machine. ``SAME_ORIGIN``: an empty origin in the page's data, which the page
+    resolves to its own address when it runs, and relative addresses everywhere else."""
+    if origin == SAME_ORIGIN:
+        return ""
     return origin or f"http://localhost:{calendar_port}"
 
 
