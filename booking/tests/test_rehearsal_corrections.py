@@ -453,3 +453,13 @@ def test_sols_three_independent_reproductions(env):
     assert length_only["status"] == "needs_clarification" and "confirmation_token" not in length_only
     wrong_length = env.call("book_appointment", env.book_args(16, service=DEEP_TISSUE_60, service_words="deep tissue massage ninety minutes"), "wrong-length")
     assert wrong_length["status"] == "needs_clarification" and "confirmation_token" not in wrong_length
+
+
+def test_words_that_fit_several_different_treatments_are_asked_about_before_anything_is_checked(env):
+    before = env.counts()
+    reply = env.call("check_slot", {"service_id": "head-spa-head-scalp-massage-30", "date": TOMORROW.isoformat(), "time": "16:00", "service_words": "head scalp"})
+    assert reply["status"] == "needs_clarification" and reply["reason"] == "service_not_chosen" and reply["service_chosen"] is False
+    assert len(reply["families"]) >= 2 and "Several services fit that" in reply["speak"] and not reply.get("options")
+    booked = env.call("book_appointment", {**env.book_args(16, service="head-spa-head-scalp-massage-30"), "service_words": "head scalp"})
+    assert booked["reason"] == "service_not_chosen" and "confirmation_token" not in booked
+    assert env.counts() == before
