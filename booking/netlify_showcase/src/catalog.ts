@@ -163,6 +163,11 @@ export function withoutLengths(query: unknown): string {
   return typeof query === "string" ? stripLengths(query) : "";
 }
 
+/** The words that name a treatment once every length, filler word and bare number is taken out. Empty when the customer has named a length (or nothing) but no treatment. */
+export function treatmentWords(query: unknown): string[] {
+  return typeof query === "string" ? words(stripLengths(query)).filter((w) => !FILLER.has(w) && !/^\d+$/.test(w)) : [];
+}
+
 /** A variant name that says more than the length ('2-week refill', 'initial set'); empty when it is just the length. */
 export function descriptiveLabel(item: CatalogItem): string {
   const label = variantLabel(item);
@@ -212,7 +217,7 @@ export class Catalog {
     const direct = this.get(query.trim());
     if (direct !== null) return resolution("exact", [direct]);
     const hint = durationHint(query);
-    const wanted = words(stripLengths(query)).filter((w) => !FILLER.has(w) && !/^\d+$/.test(w));
+    const wanted = treatmentWords(query);
     if (!wanted.length) return resolution("unknown");
     const wantedSet = new Set(wanted);
     let matching = [...this.families.keys()].filter((name) => isSubset(wantedSet, this.familyWords.get(name)!, this.variantWords.get(name)!));

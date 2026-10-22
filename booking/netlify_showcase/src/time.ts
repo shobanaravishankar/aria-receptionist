@@ -120,3 +120,13 @@ export function minuteOfDay(t: Instant): number {
   const p = localParts(t);
   return p.hour * 60 + p.minute;
 }
+
+/** Python's `datetime.isoformat()` for an aware local time: "2026-10-14T16:00:00-04:00" (seconds always shown, milliseconds only when present). */
+export function isoformat(t: Instant): string {
+  const p = localParts(t);
+  const offset = offsetMinutes(t);
+  const sign = offset < 0 ? "-" : "+";
+  const abs = Math.abs(offset);
+  const ms = ((t % 1000) + 1000) % 1000;
+  return `${pad(p.year, 4)}-${pad(p.month)}-${pad(p.day)}T${pad(p.hour)}:${pad(p.minute)}:${pad(p.second)}${ms ? "." + String(ms).padStart(3, "0") + "000" : ""}${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}
