@@ -119,6 +119,8 @@ test("book and cancel over HTTP: the read-back saves nothing, the yes saves once
 
   const times = await call(new Request(url(`/demo/open-times?service_id=massage-swedish-massage-60&date=${day}&staff=Sienna`)));
   assert.equal(times.body.status, "open");
+  assert.equal(times.headers.get("cache-control"), "no-store", "an answer read from the records is never kept");
+  assert.equal(page.headers.get("cache-control"), "no-store");
   assert.ok(!times.body.times.some((t: any) => t.start === "17:00"), "the booked time is no longer offered");
 
   const cancelArgs = { reference, phone: "+1 212 555 0188", name: "Mira Quillfeather" };

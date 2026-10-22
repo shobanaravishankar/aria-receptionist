@@ -12,8 +12,10 @@ import { PREFERENCE_ROUTES } from "./prefTools.ts";
 import { CALENDAR_PATH, DEMO_LABEL, renderPage } from "./page.ts";
 import { openTimes } from "./openTimes.ts";
 import { dayBounds } from "./dayplan.ts";
-import { CONFIRMED } from "./appointments.ts";
+import { casefold, CONFIRMED } from "./appointments.ts";
 import { COVERAGE_AFTER_DAYS, COVERAGE_BEFORE_DAYS } from "./dataset.ts";
+import type { DemoDataset } from "./dataset.ts";
+import { isEligible } from "./bookable.ts";
 import { addDays, dateOf, isoDate, parseIsoDate } from "./time.ts";
 import type { DateParts, Instant } from "./time.ts";
 import type { World } from "./world.ts";
@@ -38,8 +40,10 @@ export interface HttpResponse {
   body: string;
 }
 export interface AppOptions {
-  /** Opens the world (database, store, tools). Called only after a request has been authenticated or needs data; never for health. */
+  /** Opens the world (database, store, tools). Called only after a request has been authenticated or needs data; never for health, never for a request that is malformed or answerable without records. */
   world: () => Promise<World>;
+  /** The demo's fixed schedule and menu. It needs no database: it lets a request be validated, and answered where no records matter, before one is opened. */
+  dataset: () => DemoDataset;
   apiKey: string | null;
   bearer: string | null;
   now: () => Instant;
@@ -53,6 +57,10 @@ const json = (status: number, data: unknown, extra: Record<string, string> = {})
 });
 const text = (status: number, body: string, extra: Record<string, string> = {}): HttpResponse => ({ status, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", ...extra }, body });
 const failure = (status: number, error: string): HttpResponse => json(status, { status: "error", ok: false, speak: "", error });
+/* Caching: what comes out of the database (open times, the change stamp, the calendar page) is never cached, because a stale answer would show a booked time as open and none of it may be kept
+ * for someone else. What does NOT depend on any record (health, an unknown treatment, a date outside the demo window) may be kept briefly by the browser, so a reload costs nothing.
+ * Only `cache-control`, never a shared (CDN) cache directive: the answer varies with the Origin header. */
+const BRIEFLY = (seconds: number): Record<string, string> => ({ "cache-control": `public, max-age=${seconds}` });
 
 /** True only for a signature in the official form that matches the raw body and is fresh. Never throws. */
 export function verifySignature(rawBody: Uint8Array, header: string | null | undefined, apiKey: string | null, nowMs: number): boolean {
@@ -136,33 +144,49 @@ export async function handle(req: HttpRequest, app: AppOptions): Promise<HttpRes
   if (method !== "GET" && method !== "HEAD") return text(405, "read-only");
   const today = dateOf(app.now());
   if (path === "/demo/health") { // no database: coverage is a fixed window around today
-    return json(200, { source: "demo_calendar", label: DEMO_LABEL, today: isoDate(today), covers: [isoDate(addDays(today, -COVERAGE_BEFORE_DAYS)), isoDate(addDays(today, COVERAGE_AFTER_DAYS))] }, cors());
+    return json(200, { source: "demo_calendar", label: DEMO_LABEL, today: isoDate(today), covers: [isoDate(addDays(today, -COVERAGE_BEFORE_DAYS)), isoDate(addDays(today, COVERAGE_AFTER_DAYS))] }, { ...cors(), ...BRIEFLY(60) });
+  }
+  // Everything below is validated BEFORE a database is opened: a malformed or unanswerable request must never wake it.
+  let openTimesAsk: { serviceId: string; staff: string | null; day: DateParts } | null = null;
+  let pageDay: DateParts | null = null;
+  if (path === OPEN_TIMES_PATH) {
+    const serviceId = req.query.get("service_id") ?? "";
+    const staff = req.query.get("staff") || null;
+    if (!serviceId || serviceId.length > MAX_PARAM || (staff !== null && staff.length > MAX_PARAM)) return json(400, { status: "error", message: "service_id is required" }, cors());
+    let day: DateParts;
+    try {
+      day = parseIsoDate(req.query.get("date") ?? "");
+    } catch {
+      return json(400, { status: "error", message: "date must be YYYY-MM-DD" }, cors());
+    }
+    const dataset = app.dataset();
+    const service = dataset.registry.get(serviceId);
+    const whoDoes = service === null ? [] : dataset.roster.filter((s) => isEligible(service, s.name, s.staffId)).map((s) => casefold(s.name));
+    if (service === null || !service.verified || !dataset.covers(day) || (staff !== null && !whoDoes.includes(casefold(staff.trim())))) { // none of these depends on a record
+      return json(200, openTimes(dataset, serviceId, day, { now: app.now(), staff }), { ...cors(), ...BRIEFLY(300) });
+    }
+    openTimesAsk = { serviceId, staff, day };
+  } else if (path === CALENDAR_PATH) {
+    const wanted = req.query.get("date") ?? "today";
+    try {
+      pageDay = wanted === "today" ? today : parseIsoDate(wanted);
+    } catch {
+      return text(400, "the date must be YYYY-MM-DD or 'today'");
+    }
+    if (!app.dataset().covers(pageDay)) { // the page says plainly that there is no demo data for that date; no record is needed for that
+      return { status: 200, headers: { "content-type": "text/html; charset=utf-8", ...BRIEFLY(300), "x-demo-source": "demo_calendar", "content-security-policy": "frame-ancestors 'self' " + (app.siteOrigins ?? []).join(" ") }, body: method === "HEAD" ? "" : renderPage(app.dataset(), pageDay, []) };
+    }
   }
   try {
     const world = await app.world();
     if (path === CHANGES_PATH) return json(200, { stamp: `${isoDate(today)}|${await world.store.changeStamp()}`, today: isoDate(today) }, cors());
-    if (path === OPEN_TIMES_PATH) {
-      const serviceId = req.query.get("service_id") ?? "";
-      const staff = req.query.get("staff") || null;
-      if (!serviceId || serviceId.length > MAX_PARAM || (staff !== null && staff.length > MAX_PARAM)) return json(400, { status: "error", message: "service_id is required" }, cors());
-      let day: DateParts;
-      try {
-        day = parseIsoDate(req.query.get("date") ?? "");
-      } catch {
-        return json(400, { status: "error", message: "date must be YYYY-MM-DD" }, cors());
-      }
-      const [low, high] = dayBounds(day);
+    if (openTimesAsk !== null) {
+      const [low, high] = dayBounds(openTimesAsk.day);
       const rows = await world.store.between(low, high, { statuses: [CONFIRMED] });
-      return json(200, openTimes(world.dataset, serviceId, day, { now: app.now(), rows, staff }), cors());
+      return json(200, openTimes(world.dataset, openTimesAsk.serviceId, openTimesAsk.day, { now: app.now(), rows, staff: openTimesAsk.staff }), cors());
     }
     // the staff calendar page
-    const wanted = req.query.get("date") ?? "today";
-    let day: DateParts;
-    try {
-      day = wanted === "today" ? today : parseIsoDate(wanted);
-    } catch {
-      return text(400, "the date must be YYYY-MM-DD or 'today'");
-    }
+    const day = pageDay!;
     const [low, high] = dayBounds(day);
     const rows = await world.store.between(low, high, { statuses: [CONFIRMED] });
     // only this site (and any listed) may show this page inside a frame
