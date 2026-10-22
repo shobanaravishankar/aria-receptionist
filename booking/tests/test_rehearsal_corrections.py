@@ -359,3 +359,97 @@ def test_a_bad_bound_is_asked_about(env):
 def test_without_a_bound_nothing_about_the_answer_changes(env):
     plain = alternatives(env, time="17:00")
     assert "window" not in plain and "instruction" not in plain and plain["status"] == "alternatives"
+
+
+# ---------------------------------------------------------------- R-2: the independent review of ce84613 (history limit, a length alone, a named length or variant)
+
+DEEP_TISSUE_90 = "massage-deep-tissue-massage-90"
+
+
+def test_the_history_limit_comes_before_any_identity_answer_and_a_changed_number_does_not_get_round_it(env):
+    ask = {"phone": WILLA_PHONE, "name": WILLA, "service_category": "massage"}
+    for _ in range(3):
+        assert env.call("last_completed_visit", ask, "history-limit")["status"] == "found"
+    assert env.call("last_completed_visit", ask, "history-limit")["status"] == "refused"
+    for other in (
+        {"phone": CEDRIC_PHONE, "name": "Sedric Lowe", "service_category": "massage"},  # unmatched name on another number
+        {"phone": CEDRIC_PHONE, "name": "Cedric Lowe", "service_category": "massage"},  # the right name on another number
+        {"phone": WILLA_PHONE, "name": "Villa Hartwell", "service_category": "massage"},  # an unmatched name on the first number
+    ):
+        reply = env.call("last_completed_visit", other, "history-limit")
+        assert reply["status"] == "refused" and reply["reason"] == "too_many_attempts", reply
+        assert "spell" not in reply["speak"] and "Cedric" not in json.dumps(reply)
+    assert env.call("last_completed_visit", {"phone": CEDRIC_PHONE, "service_category": "massage"}, "another-call")["status"] in ("found", "no_completed_visit")
+
+
+def test_an_unmatched_name_counts_against_the_history_limit_too(env):
+    for _ in range(3):
+        reply = env.call("last_completed_visit", {"phone": WILLA_PHONE, "name": "Villa Hartwell", "service_category": "massage"}, "probe")
+        assert reply["status"] == "needs_clarification" and reply["reason"] == "name_unmatched"
+    assert env.call("last_completed_visit", {"phone": WILLA_PHONE, "name": "Willa Hartwell", "name_confirmed": True, "service_category": "massage"}, "probe")["status"] == "refused"
+
+
+def test_guessing_names_against_a_number_is_bounded_in_every_tool(env):
+    for guess in ("Villa", "Wilma", "Willow", "Wanda", "Wynn"):
+        assert env.call("find_appointments", {"phone": WILLA_PHONE, "name": guess}, "guesser")["reason"] == "name_unmatched"
+    stopped = env.call("find_appointments", {"phone": WILLA_PHONE, "name": WILLA}, "guesser")  # even the right name, once the limit is reached
+    assert stopped["status"] == "refused" and stopped["reason"] == "too_many_attempts" and "appointments" not in stopped
+    again = book_for(env, "Willa Hartwell", call_id="guesser", name_confirmed=True)[1]
+    assert again["status"] == "refused" and again["reason"] == "too_many_attempts"
+    assert env.call("find_appointments", {"phone": WILLA_PHONE, "name": WILLA}, "a-different-call")["status"] == "found"
+
+
+@pytest.mark.parametrize("words", ["sixty minutes", "sixty minute", "a 60 minute", "an hour", "ninety minutes please", "an appointment please"])
+def test_a_length_alone_is_not_a_treatment_and_the_id_does_not_stand_in_for_one(env, words):
+    before = env.counts()
+    for route, args in (
+        ("check_slot", {"service_id": DEEP_TISSUE_60, "date": TOMORROW.isoformat(), "time": "16:00", "service_words": words}),
+        ("find_alternatives", {"service_id": DEEP_TISSUE_60, "date": TOMORROW.isoformat(), "service_words": words}),
+        ("book_appointment", {**env.book_args(16, service=DEEP_TISSUE_60), "service_words": words}),
+    ):
+        reply = env.call(route, args)
+        assert reply["status"] == "needs_clarification" and reply["reason"] == "service_not_chosen" and reply["service_chosen"] is False, (route, words, reply)
+        assert "confirmation_token" not in reply and not reply.get("options") and reply["speak"].startswith("Which treatment would you like")
+    assert env.counts() == before
+
+
+def test_the_lookup_of_a_length_alone_asks_which_treatment(env):
+    reply = lookup(env, "sixty minutes")
+    assert reply["status"] == "needs_clarification" and reply["reason"] == "service_required" and reply["requested_minutes"] == 60
+    assert reply["speak"] == "Which treatment would you like for 1 hour?"
+    assert lookup(env, "zzz")["status"] == "unknown_service", "words that are simply not understood are still 'not on the menu'"
+
+
+def test_a_length_the_caller_named_must_agree_with_the_service_chosen(env):
+    before = env.counts()
+    wrong = env.call("book_appointment", {**env.book_args(16, service=DEEP_TISSUE_60), "service_words": "deep tissue massage ninety minutes"})
+    assert wrong["status"] == "needs_clarification" and wrong["reason"] == "service_mismatch" and "confirmation_token" not in wrong
+    assert "1 hour 30 minutes" in wrong["speak"] and "1 hour" in wrong["speak"], "both lengths are put to the caller"
+    assert env.counts() == before
+    right = env.call("book_appointment", {**env.book_args(16, service=DEEP_TISSUE_90), "service_words": "deep tissue massage ninety minutes"})
+    assert right["status"] == "confirmation_required" and "1 hour 30 minutes" in right["speak"]
+    same = env.call("book_appointment", {**env.book_args(15, service=DEEP_TISSUE_60), "service_words": "deep tissue massage sixty minutes"})
+    assert same["status"] == "confirmation_required"
+    no_length = env.call("book_appointment", {**env.book_args(14, service=DEEP_TISSUE_60), "service_words": "deep tissue massage"})
+    assert no_length["status"] == "confirmation_required", "no length said: any length of that treatment is the caller's to choose later"
+    other_family = env.call("check_slot", {"service_id": DEEP_TISSUE_60, "date": TOMORROW.isoformat(), "time": "16:00", "service_words": "swedish massage thirty minutes"})
+    assert other_family["status"] == "needs_clarification" and other_family["reason"] == "service_mismatch"
+
+
+def test_a_length_the_treatment_does_not_come_in_is_said_and_never_replaced(env):
+    reply = env.call("find_alternatives", {"service_id": DEEP_TISSUE_60, "date": TOMORROW.isoformat(), "service_words": "deep tissue massage forty five minutes"})
+    assert reply["status"] == "needs_clarification" and reply["reason"] == "length_not_offered" and reply["requested_minutes"] == 45
+    assert "I don't have Deep Tissue Massage at 45 minutes" in reply["speak"] and reply["lengths"] == ["30 minutes", "1 hour", "1 hour 30 minutes"]
+    assert not reply.get("options")
+
+
+def test_sols_three_independent_reproductions(env):
+    """The three reproductions from the independent review, as given."""
+    for _ in range(3):
+        assert env.call("last_completed_visit", {"phone": WILLA_PHONE, "name": WILLA, "service_category": "massage"}, "history-limit")["status"] == "found"
+    assert env.call("last_completed_visit", {"phone": WILLA_PHONE, "name": WILLA, "service_category": "massage"}, "history-limit")["status"] == "refused"
+    assert env.call("last_completed_visit", {"phone": CEDRIC_PHONE, "name": "Sedric Lowe", "service_category": "massage"}, "history-limit")["status"] == "refused"
+    length_only = env.call("book_appointment", env.book_args(16, service=DEEP_TISSUE_60, service_words="sixty minutes"), "length-only")
+    assert length_only["status"] == "needs_clarification" and "confirmation_token" not in length_only
+    wrong_length = env.call("book_appointment", env.book_args(16, service=DEEP_TISSUE_60, service_words="deep tissue massage ninety minutes"), "wrong-length")
+    assert wrong_length["status"] == "needs_clarification" and "confirmation_token" not in wrong_length

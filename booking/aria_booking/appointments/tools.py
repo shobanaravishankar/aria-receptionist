@@ -296,6 +296,12 @@ class LifecycleTools(VoiceTools):
                 self._identity.clear()
             self._identity[call_id] = {"phone": phone, "name": spoken, "key": name_key(spoken) if spoken else None, "client_id": client_id}
 
+    def _count_failed(self, call_id: str) -> None:
+        with self._state_lock:
+            if len(self._failed) >= 512:
+                self._failed.clear()
+            self._failed[call_id] = self._failed.get(call_id, 0) + 1
+
     def _identify(self, call_id: str, phone: str, spoken: Optional[str], confirmed: bool, *, booking: bool = False):
         """Which record is meant by this number and this name, in this call: ``(record or None, problem or None, is_new)``.
 
@@ -318,6 +324,10 @@ class LifecycleTools(VoiceTools):
                 ), False
         if not found:
             return None, None, True  # nobody has this number yet
+        with self._state_lock:
+            over = self._failed.get(call_id, 0) >= MAX_FAILED_MATCHES_PER_CALL
+        if over:  # guessing names against a number is bounded like guessing references
+            return None, _reply("refused", self._contacting("I can't look up any more appointments on this call."), reason="too_many_attempts"), False
         if spoken is None:
             choice = HistoryLookup._choose([ClientRef(str(c.client_id), c.name) for c in found], None)
             if isinstance(choice, dict):
@@ -327,6 +337,7 @@ class LifecycleTools(VoiceTools):
         if same:
             return same[0], None, False
         if not confirmed:
+            self._count_failed(call_id)
             return None, _reply(
                 "needs_clarification",
                 "I couldn't match that name to a record on that number. To be sure I get it right, could you spell your first and last name for me, one letter at a time?",
@@ -336,6 +347,7 @@ class LifecycleTools(VoiceTools):
             ), False
         if booking:
             return None, None, True  # spelled out and still nobody's: a new person on a number that is already used
+        self._count_failed(call_id)
         return None, _reply("not_found", self._contacting("I can't find that name on that number."), reason="name_not_found"), False
 
     def _client(self, call_id: str, args: dict):
@@ -454,20 +466,20 @@ class LifecycleTools(VoiceTools):
 
     def _last_visit(self, call_id: str, args: dict) -> dict:
         """The reviewed history answer, after the same identity rules as every other tool: a name that matches nobody on the number is asked about, and what the call settled on stays."""
-        raw = args.get("phone")
-        phone = normalize_phone(raw) if isinstance(raw, str) else None
-        if phone is not None and isinstance(call_id, str) and call_id.strip():
-            spoken = self._spoken_name(args.get("name"))
+        def identify(phone: str, given: dict):
+            spoken = self._spoken_name(given.get("name"))
             try:
-                record, problem, _new = self._identify(call_id, phone, spoken, args.get("name_confirmed") is True)
+                record, problem, _new = self._identify(call_id, phone, spoken, given.get("name_confirmed") is True)
             except StoreError:
-                return self._unavailable()
-            if problem is not None and problem.get("reason") in ("name_unmatched", "name_changed", "name_not_found"):
-                return problem
+                return given, self._unavailable()
+            if problem is not None and problem.get("reason") in ("name_unmatched", "name_changed", "name_not_found", "too_many_attempts"):
+                return given, problem
             if record is not None:
                 self._remember_identity(call_id, phone, spoken, record.client_id)
-                args = {**args, "name": record.name}
-        return self._history.last_completed_visit(call_id, args)
+                return {**given, "name": record.name}, None
+            return given, None
+
+        return self._history.last_completed_visit(call_id, args, identify=identify)
 
     # ---- BOOK ----------------------------------------------------------------------------------------------------
     def book_appointment(self, call_id: str, args: dict) -> dict:

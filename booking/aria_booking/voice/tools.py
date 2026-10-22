@@ -39,7 +39,7 @@ from zoneinfo import ZoneInfo
 from ..availability import find_slots, validate_slot
 from ..booking_service import BookingResult, BookingService, Status
 from ..catalog.bookable import BookableRegistry, BookableService, staff_key
-from ..catalog.lookup import DEFAULT_CATALOG, Catalog, descriptive_label
+from ..catalog.lookup import DEFAULT_CATALOG, Catalog, descriptive_label, duration_hint, treatment_words
 from ..config import Config
 from ..driver import DriverError, SignInRequired
 from ..models import DaySnapshot, ServiceSpec, Slot, add_minutes, to_utc
@@ -396,6 +396,13 @@ class VoiceTools:
         if group is not None:
             data = {k: v for k, v in group.items() if k not in ("status", "speak")}
             return _response("needs_clarification", group["speak"], reason="service_not_chosen", service_chosen=False, **data)
+        hint = duration_hint(words)
+        if not treatment_words(words):  # nothing but a length (or nothing at all): no treatment has been named, and the id must not stand in for one
+            ask = f"Which treatment would you like for {spoken_duration(hint)}?" if hint is not None else "Which treatment would you like?"
+            return _response(
+                "needs_clarification", ask, reason="service_not_chosen", service_chosen=False, **({"requested_minutes": hint} if hint is not None else {}),
+                instruction="The caller has not named a treatment. Ask which one they want and wait; do not pick for them and do not check the calendar yet.",
+            )
         resolution = self.catalog.resolve(words)
         families = list(dict.fromkeys(i.family for i in resolution.items))
         if resolution.kind == "ambiguous":
@@ -404,11 +411,23 @@ class VoiceTools:
                 families=families[:8], instruction="The caller has not chosen one treatment. Ask which one they want and wait; do not pick for them and do not check the calendar yet.",
             )
         chosen = self.catalog.get(service.catalog_item) if service.catalog_item else None
-        if resolution.kind in ("exact", "variants") and chosen is not None and chosen.family not in families:
+        if resolution.kind in ("exact", "variants") and chosen is not None:
+            ids = {i.item_id for i in resolution.items}
+            if chosen.item_id in ids and not (resolution.kind == "variants" and resolution.hint_unmatched):
+                return None  # the words name this very service (a family with several lengths, and no length said, also fits any of its lengths)
+            if resolution.hint_unmatched and chosen.family in families:  # the caller named a length this treatment does not come in
+                lengths = [spoken_duration(i.duration_minutes) for i in resolution.items if i.duration_minutes]
+                return _response(
+                    "needs_clarification", f"I don't have {chosen.family} at {spoken_duration(hint)}. It comes as {join_choices(lengths)}. Which length would you like?",
+                    reason="length_not_offered", service_chosen=False, lengths=lengths, requested_minutes=hint,
+                    instruction="The length the caller asked for is not one this treatment comes in. Say so, ask which of the lengths they want, and wait; never use a different length without their answer.",
+                )
+            shown = families[:3] if resolution.kind == "variants" else [i.name for i in resolution.items[:3]]
+            label = chosen.family if resolution.kind == "variants" else chosen.name
             return _response(
-                "needs_clarification", f"Just to be sure I have the right treatment: did you mean {join_choices(families[:3] + [chosen.family])}?", reason="service_mismatch",
+                "needs_clarification", f"Just to be sure I have the right treatment and length: did you mean {join_choices(shown + [label])}?", reason="service_mismatch",
                 service_chosen=False, families=families[:3],
-                instruction="The service you chose is not the one the caller's words name. Ask which treatment they want and wait; use only the one they choose.",
+                instruction="The service you chose is not the one (or not the length) the caller's words name. Ask which they want and wait; use only the one they choose.",
             )
         return None
 
@@ -774,6 +793,9 @@ class VoiceTools:
         group = self._group_answer(query) if self._group_answer else None
         if group is not None:
             return _response(group.pop("status"), group.pop("speak"), **group)
+        length = duration_hint(query)
+        if length is not None and not treatment_words(query):  # a length and no treatment ("sixty minutes"): ask which treatment
+            return _response("needs_clarification", f"Which treatment would you like for {spoken_duration(length)}?", reason="service_required", requested_minutes=length)
         resolution = self.catalog.resolve(query)
         if resolution.kind == "unknown":
             return _response(

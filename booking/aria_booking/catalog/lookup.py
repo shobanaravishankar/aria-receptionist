@@ -113,6 +113,11 @@ def strip_lengths(query: str) -> str:
     return _strip_lengths(query) if isinstance(query, str) else ""
 
 
+def treatment_words(query: str) -> list[str]:
+    """The words that name a treatment once every length, filler word and bare number is taken out. Empty when the customer has named a length (or nothing) but no treatment."""
+    return [w for w in _words(_strip_lengths(query)) if w not in FILLER and not w.isdigit()] if isinstance(query, str) else []
+
+
 def descriptive_label(item: CatalogItem) -> str:
     """A variant name that says more than the length ('2-week refill', 'initial set'); empty when it is just the length."""
     label = item.variant_label
@@ -149,7 +154,7 @@ class Catalog:
         if direct is not None:
             return Resolution("exact", (direct,))
         hint = duration_hint(query)
-        wanted = [w for w in _words(_strip_lengths(query)) if w not in FILLER and not w.isdigit()]
+        wanted = treatment_words(query)
         if not wanted:
             return Resolution("unknown")
         wanted_set = set(wanted)

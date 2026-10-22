@@ -44,7 +44,8 @@ class HistoryLookup:
         self._attempts: dict[str, int] = {}
         self._lock = threading.Lock()
 
-    def last_completed_visit(self, call_id: str, args: dict) -> dict:
+    def last_completed_visit(self, call_id: str, args: dict, *, identify: Optional[Callable[[str, dict], "tuple[dict, Optional[dict]]"]] = None) -> dict:
+        """``identify(phone, args)`` -> (args to use, a reply to give instead) runs AFTER the attempt is counted, so no identity question is ever answered past the limit."""
         args = args or {}
         if not isinstance(call_id, str) or not call_id.strip():
             return _response("needs_clarification", "I could not identify this call, so I can't look anything up.", reason="no_call_id")
@@ -64,6 +65,10 @@ class HistoryLookup:
             if used >= self._max_attempts:
                 return _response("refused", f"I can't look up any more numbers on this call. {CONTACT}", reason="too_many_attempts")
             self._attempts[call_id] = used + 1
+        if identify is not None:
+            args, reply = identify(phone, args)
+            if reply is not None:
+                return reply
 
         try:
             clients = self._source.find_clients(phone)
