@@ -1,0 +1,758 @@
+{
+  "format": 1,
+  "salon": "Glamour Day Spa",
+  "retrieved_at": "2026-10-24T15:45:25Z",
+  "source_site": "https://www.warrenglamourdayspanj.com",
+  "business": {
+    "address": "24 Mountain Blvd, Warren, NJ 07059",
+    "phones": [
+      "(908) 668-8828",
+      "(908) 636-8199"
+    ],
+    "email": "warrenglamourdayspa@gmail.com",
+    "text_note": "Text us at the number above",
+    "hours": {
+      "MONDAY": "9:30 AM - 8:00 PM",
+      "TUESDAY": "9:30 AM - 8:00 PM",
+      "WEDNESDAY": "9:30 AM - 8:00 PM",
+      "THURSDAY": "9:30 AM - 8:00 PM",
+      "FRIDAY": "9:30 AM - 8:00 PM",
+      "SATURDAY": "9:30 AM - 8:00 PM",
+      "SUNDAY": "9:30 AM - 8:00 PM"
+    },
+    "online_booking_page": "https://www.warrenglamourdayspanj.com/book-online"
+  },
+  "categories": [
+    {
+      "slug": "spa-packages",
+      "title": "Spa Packages",
+      "page": "https://www.warrenglamourdayspanj.com/spa-packages",
+      "about": "Step into a world of serenity with our exclusive spa packages at Glamour Day Spa.",
+      "services": [
+        {
+          "name": "Express Self Care",
+          "description": "Refresh, relax, and recharge in less time with our Express Self-Care Spa Package. Perfect for busy schedules, this treatment combines essential skincare with a calming experience to leave you feeling renewed and glowing.",
+          "options": [
+            "1 hr"
+          ]
+        },
+        {
+          "name": "Full Body Self Care",
+          "description": "Treat yourself to a complete relaxation experience with our Full Body Self-Care Spa Package.",
+          "options": [
+            "2 hr"
+          ]
+        },
+        {
+          "name": "Signature Combo",
+          "description": "Indulge in our Signature Combo Spa Package, a complete wellness experience designed to refresh your skin, relax your body, and restore your natural glow.",
+          "options": [
+            "2 hr"
+          ]
+        },
+        {
+          "name": "Stress Release Combo",
+          "description": "Escape the demands of everyday life with our Stress Relief Combo Spa Package, designed to relax your body, calm your mind, and restore your sense of balance.",
+          "options": [
+            "2 hr"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "facials",
+      "title": "Facials",
+      "page": "https://www.warrenglamourdayspanj.com/facials",
+      "about": "Refresh and rejuvenate your skin with our premium facial treatments at Glamour Day Spa. Our skilled therapists use high-quality products and advanced techniques to deeply cleanse, hydrate, and revitalize your complexion. From anti-aging facials to soothing treatments for sensitive skin, each session is personalized to meet your unique needs.",
+      "services": [
+        {
+          "name": "Express Facial",
+          "description": "A quick yet refreshing treatment in just 30 minutes. Ideal before an event or during your lunch break.",
+          "options": [
+            "30 Mins"
+          ]
+        },
+        {
+          "name": "Signature Facial",
+          "description": "Our Signature Facial is personalized according to your skin type and concerns. Whether your skin is dry, oily, sensitive, or combination, our licensed estheticians will customize the treatment for optimal results.",
+          "options": [
+            "1 hr"
+          ]
+        },
+        {
+          "name": "Gentleman Facial",
+          "description": "Tailored for men’s skin, this treatment deeply cleanses, exfoliates, and hydrates while soothing irritation from shaving and environmental stress. Leaves skin refreshed, balanced, and ready to take on the day.",
+          "options": [
+            "1 hr"
+          ]
+        },
+        {
+          "name": "Acne Skin Facial",
+          "description": "Specially designed to deeply cleanse and decongestant pores, normalize oil production, and calm inflamed skin.",
+          "options": [
+            "1 hr"
+          ]
+        },
+        {
+          "name": "Pigment Facial",
+          "description": "A brightening treatment designed to even skin tone, fade dark spots, and restore a radiant, glowing complexion. Perfect for revitalizing dull or sun-damaged skin.",
+          "options": [
+            "75 mins"
+          ]
+        },
+        {
+          "name": "Oxygen Machines Facial",
+          "description": "A rejuvenating treatment that infuses pure oxygen and nutrients into the skin to boost hydration, brighten your complexion, and leave your face feeling fresh and radiant.",
+          "options": [
+            "75 mins"
+          ]
+        },
+        {
+          "name": "Microdermabrasion Facial",
+          "description": "A powerful exfoliating treatment that resurfaces the skin to reduce fine lines, scars, sun damage, and dullness — revealing a smoother, brighter, more youthful complexion.",
+          "options": [
+            "75 mins"
+          ]
+        },
+        {
+          "name": "GM Collin Algomask Treatment",
+          "description": "This enriched thermo-corrective cooling treatment provides immediate and long-lasting hydration. Designed to minimize the appearance of redness and provide ultimate relief to sensitive skin.",
+          "options": [
+            "75 mins"
+          ]
+        },
+        {
+          "name": "GM Collin Hydro-Lifting Treatment",
+          "description": "A unique clinical treatment, specifically formulated to work on the face and neck, providing intense immediate hydration and giving the skin immediately” lifted appearance “.",
+          "options": [
+            "75 mins"
+          ]
+        },
+        {
+          "name": "GM Collin Collagen Treatment",
+          "description": "An Exclusive highly renowned intensive anti-aging treatment hydrates, rejuvenates , tightens, and reconfigures the skin surface to reduce visible signs of aging.",
+          "options": [
+            "1 hr 30 mins"
+          ]
+        },
+        {
+          "name": "Ultrasonic Firm Up Skin Facial",
+          "description": "This advanced facial uses ultrasonic technology to lift, tone, and rejuvenate the skin. Gentle soundwave vibrations stimulate collagen production, improve elasticity, and enhance product absorption — leaving your complexion firmer, smoother, and more radiant.",
+          "options": [
+            "1 hr 15 mins"
+          ]
+        },
+        {
+          "name": "Black Doll Beauty",
+          "description": "This advanced treatment deeply cleanses, exfoliates, and tightens the skin. It targets acne, enlarged pores, and uneven texture — leaving your complexion smoother, brighter, and flawlessly refreshed.",
+          "options": [
+            "1 hr 15 mins"
+          ]
+        },
+        {
+          "name": "Teen Facial",
+          "description": "Designed specifically for young skin, our Teen Facial deeply cleanses, exfoliates, and hydrates to help combat breakouts and balance oil production. Perfect for learning healthy skincare habits and achieving a fresh, clear glow. What's Included: Gentle cleanse, Skin consultation, Exfoliation, Light extractions, Acne treatment (if needed), Calming mask, Moisturizer, and SPF Benefits: Reduces breakouts, Clears clogged pores, Controls oil production, Builds healthy skincare habits, Boosts confidence",
+          "options": [
+            "45 Mins"
+          ]
+        },
+        {
+          "name": "Facial Lymphatic Drainage Massage",
+          "description": "Experience a gentle, relaxing facial lymphatic drainage treatment designed to help reduce the appearance of puffiness, encourage natural lymphatic flow, and refresh your facial contours.",
+          "options": [
+            "1 hr"
+          ]
+        },
+        {
+          "name": "Back Facial",
+          "description": "Back facials can be beneficial in cleansing those tough-to-reach spots, targeting a variety of skin care needs such as clogged pores, back acne, and dehydrated skin.",
+          "options": [
+            "1 hr"
+          ]
+        },
+        {
+          "name": "Sensitive Skin Facial",
+          "description": "Essential oils cleanse, detoxify, and rejuvenate the skin. Includes deep cleansing, exfoliation, pressure point massage, and a hydrating mask with head, neck, and shoulder massage.",
+          "options": [
+            "1 hr"
+          ]
+        },
+        {
+          "name": "HydraFacial Treatment",
+          "description": "Reveal healthier, smoother, and more radiant skin with HydraFacial® — one of the most popular non-invasive facial treatments available today.",
+          "options": [
+            "75 mins"
+          ]
+        },
+        {
+          "name": "Bio Lifting Tightening Facial",
+          "description": "A rejuvenating treatment that infuses pure oxygen and nutrients into the skin to boost hydration, brighten your complexion, and leave your face feeling fresh and radiant.",
+          "options": [
+            "75 mins"
+          ]
+        },
+        {
+          "name": "Ultra Sound and Photo Rejuvenation",
+          "description": "A high-tech facial using ultrasound waves and light therapy to boost collagen, smooth fine lines, and brighten the skin — leaving your complexion firm, radiant, and refreshed.",
+          "options": [
+            "75 mins"
+          ]
+        },
+        {
+          "name": "GM Collin Oxygenating Treatment",
+          "description": "This revolutionary treatment for all age group designed to clear acne , improve complexion, and breathe life back into dull, fatigued, and stressed skin. Brightens and hydrates to provide a younger -looking skin.",
+          "options": [
+            "75 mins"
+          ]
+        },
+        {
+          "name": "GM Collin Sea \"C\" Spa Treatment",
+          "description": "A powerful antioxidant, anti-aging skin care designed to delay the signs of aging and to revitalize the skin.",
+          "options": [
+            "1 hr 15 mins"
+          ]
+        },
+        {
+          "name": "GM Collin Botinal Treatment",
+          "description": "Innovative and non-invasive, with instant and long-lasting visible results, perfectly describes this treatment. Benefits: Smooths expression lines and wrinkles for an instant radiance boost.",
+          "options": [
+            "1 hr 30 mins"
+          ]
+        },
+        {
+          "name": "LED Light Machine Facial",
+          "description": "A cutting-edge facial that uses LED light therapy to target specific skin concerns — from acne and inflammation to fine lines and dullness. Each light wavelength works deep beneath the surface to rejuvenate, heal, and restore your natural glow.",
+          "options": [
+            "1 hr 15 mins"
+          ]
+        },
+        {
+          "name": "Ulthera Skin Tightening",
+          "description": "A non-surgical lifting treatment that uses focused ultrasound energy to stimulate collagen production deep within the skin. Ulthera helps lift, firm, and tighten areas like the face, neck, and jawline — revealing a smoother, more youthful appearance with no downtime.",
+          "options": [
+            "1 hr 15 mins"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "body-scrub",
+      "title": "Body Scrubs",
+      "page": "https://www.warrenglamourdayspanj.com/body-scrub",
+      "about": "Reveal radiant, silky-smooth skin with Glamour Day Spa’s rejuvenating Body Scrub services.",
+      "services": [
+        {
+          "name": "Lavender Sugar Body Scrub",
+          "description": "This treatment exfoliate your body with a blend of micro buffing beads and micronized bluff and micronized apricot seed powder. Gently polish away dead surface cells and skin-dulling debris to reveal smoother, softer skin beneath.",
+          "options": [
+            "45 Mins"
+          ]
+        },
+        {
+          "name": "Back Polish",
+          "description": "A refreshing treatment that deeply cleanses, exfoliates, and smooths the skin on your back. This polish removes impurities and dead skin cells while restoring softness and radiance — leaving your skin silky, hydrated, and glowing.",
+          "options": [
+            "30 mins"
+          ]
+        },
+        {
+          "name": "Lavender Sugar Body Scrub with Seaweed mask",
+          "description": "Submerge yourself in the world of Deep Sea Therapy and feel the divine power of its healing energy. Seaweed, which has a high mineral content, is applied all over the body to help boost metabolism.",
+          "options": [
+            "1 hr"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "massages",
+      "title": "Massages",
+      "page": "https://www.warrenglamourdayspanj.com/massages",
+      "about": "Unwind, recharge, and restore harmony with our diverse selection of massage therapies at Glamour Day Spa.",
+      "services": [
+        {
+          "name": "Anti-Stress Massage",
+          "description": "A balanced massage that blends Swedish and Deep Tissue techniques to deliver both deep relaxation and effective pain relief, leaving your body restored, relaxed, and renewed.",
+          "options": [
+            "30 Mins",
+            "1 hr",
+            "1 hr 30 Mins"
+          ]
+        },
+        {
+          "name": "Deep Tissue Massage",
+          "description": "Deep tissue massage is designed for those who need more than light relaxation—it targets chronic tension and tight, overworked muscles.",
+          "options": [
+            "30 Mins",
+            "1 hr",
+            "1 hr 30 Mins"
+          ]
+        },
+        {
+          "name": "Hot Stone Massage",
+          "description": "A hot stone massage uses warm, smooth stones to gently melt away tension and relax tight muscles. The comforting heat helps improve circulation, softens stiff areas, and allows your therapist to work more deeply without added pressure.",
+          "options": [
+            "30 Mins",
+            "1 hr",
+            "1 hr 30 Mins"
+          ]
+        },
+        {
+          "name": "Prenatal Massage",
+          "description": "A prenatal massage is a calming, therapeutic treatment designed to ease common pregnancy discomforts, improve circulation, and promote relaxation for both mom and baby. With the support of extra pillows and gentle positioning, this service ensures complete comfort and safety throughout the 2nd and 3rd trimesters, helping you feel relaxed, supported, and refreshed.",
+          "options": [
+            "1 hr"
+          ]
+        },
+        {
+          "name": "Lymphatic Drainage Massage with Wood Therapy",
+          "description": "Wood therapy uses specially designed wooden tools to help relax tight muscles, break down stubborn fat and cellulite, tone and sculpt the body, and stimulate healthy circulation.",
+          "options": [
+            "1 hr",
+            "1 hr 30 Mins"
+          ]
+        },
+        {
+          "name": "Breast Enhancing Treatment",
+          "description": "A natural, non-surgical treatment that enhances the size, shape, and firmness of the breasts.",
+          "options": [
+            "30 Mins"
+          ]
+        },
+        {
+          "name": "Swedish Massage",
+          "description": "A Swedish massage uses smooth, flowing strokes and soothing oils to gently release muscle tension, improve circulation, and promote deep, full-body relaxation.",
+          "options": [
+            "30 Mins",
+            "1 hr",
+            "1 hr 30 Mins"
+          ]
+        },
+        {
+          "name": "Aromatherapy Massage",
+          "description": "Aromatherapy massage combines the soothing techniques of a Swedish massage with the therapeutic benefits of essential oils.",
+          "options": [
+            "30 Mins",
+            "1 hr",
+            "1 hr 30 Mins"
+          ]
+        },
+        {
+          "name": "Reflexology Massage",
+          "description": "Reflexology uses gentle, targeted pressure on specific points of the feet, hands, or ears to encourage deep relaxation, improve circulation, reduce stress, and support the body’s natural balance.",
+          "options": [
+            "30 Mins",
+            "1 hr",
+            "1 hr 30 Mins"
+          ]
+        },
+        {
+          "name": "Lymphatic Drainage Massage",
+          "description": "A gentle, rhythmic massage that activates the lymphatic system to help flush out toxins, reduce swelling, and improve circulation.",
+          "options": [
+            "1 hr",
+            "1 hr 30 Mins"
+          ]
+        },
+        {
+          "name": "Meridian Massage",
+          "description": "Meridian Health therapy stimulates the body’s energy channels to help clear toxins, balance the flow of qi and blood, relieve symptoms, and support overall wellness.",
+          "options": [
+            "1 hr 30 Mins"
+          ]
+        },
+        {
+          "name": "Abdominal Massage",
+          "description": "A soothing treatment using special herbal oils to relax the abdominal muscles, ease discomfort, and support healthy digestion. This gentle therapy helps relieve issues such as bloating and constipation, promoting a calmer, more balanced digestive system.",
+          "options": [
+            "30 Mins"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "eyelash-extensions",
+      "title": "Eyelash Extensions",
+      "page": "https://www.warrenglamourdayspanj.com/eyelash-extensions",
+      "about": "Enhance your natural beauty with our luxurious eyelash services at Glamour Day Spa.",
+      "services": [
+        {
+          "name": "Classic Full Set",
+          "description": "A classic full set applies one extension to each of your natural lashes, giving you a natural yet beautifully enhanced look with added length and curl.",
+          "options": [
+            "100p | 1 hr",
+            "2 Weeks Refill",
+            "3 Weeks Refill"
+          ]
+        },
+        {
+          "name": "Glamour Full Set",
+          "description": "A Glamour Full Set delivers a bold, dramatic lash look with maximum fullness and intensity. Using dense, carefully crafted volume fans, this style creates a striking, glamorous effect that stands out while still maintaining a soft, lightweight feel.",
+          "options": [
+            "1 hr 15 mins",
+            "2 Week Refill | 1 hr",
+            "3 Week Refill | 1 hr",
+            "4 Week Refill | 1 hr 15 mins"
+          ]
+        },
+        {
+          "name": "Eyelash Tinting",
+          "description": "Eyelash tinting is a quick, painless treatment that darkens your natural lashes from root to tip. Using a safe, gentle dye, this service enhances the depth and definition of your lashes—making them look fuller and more noticeable without mascara.",
+          "options": [
+            "30 mins"
+          ]
+        },
+        {
+          "name": "Eyebrow Tinting",
+          "description": "Eyebrow tinting is a quick and gentle treatment that adds color and definition to your natural brows. Using a safe, semi-permanent dye, this service enhances the shape, fills in lighter areas, and creates a more polished, fuller appearance.",
+          "options": [
+            "30 mins"
+          ]
+        },
+        {
+          "name": "Natural Full Set",
+          "description": "A natural full set enhances your lashes with a soft, subtle boost that mimics your own lashes—just longer, neater, and slightly fuller.",
+          "options": [
+            "1 hr 15 mins",
+            "2 Week Refill | 1 hr",
+            "3 Week Refill | 1 hr",
+            "4 Week Refill | 1 hr 15 mins"
+          ]
+        },
+        {
+          "name": "Hybrid 3D / 5D Full Set",
+          "description": "A Hybrid 3D/5D full set blends classic individual extensions with 3D–5D volume fans to create a beautifully textured, fuller look. This style offers the perfect balance between natural and dramatic, adding both definition and soft volume.",
+          "options": [
+            "1 hr 30 mins",
+            "2 Week Refill | 1 hr",
+            "3 Week Refill | 1 hr",
+            "4 Week Refill | 1 hr 15 mins"
+          ]
+        },
+        {
+          "name": "Eyelash Lifting",
+          "description": "Eyelash lifting is a semi-permanent treatment that gently curls and lifts your natural lashes from the base, giving them a longer, more open and lifted appearance.",
+          "options": [
+            "45 mins"
+          ]
+        },
+        {
+          "name": "Eyelash Removal",
+          "description": "Eyelash removal is a safe and gentle process used to dissolve and remove existing lash extensions without damaging your natural lashes. A professional-grade remover is applied to break down the adhesive, allowing the extensions to slide off comfortably.",
+          "options": [
+            "45 mins"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "head-spa",
+      "title": "Head Spa",
+      "page": "https://www.warrenglamourdayspanj.com/scalp-treatments",
+      "about": "Revitalize your scalp and restore balance with Glamour Day Spa’s luxurious Head Scalp services.",
+      "services": [
+        {
+          "name": "Head Scalp Massage",
+          "description": "The Head Scalp Massage is a calming, therapeutic treatment designed to melt away stress and revitalized the senses.",
+          "options": [
+            "30 Mins"
+          ]
+        },
+        {
+          "name": "Head Scalp Detoxification with Mini Facial",
+          "description": "The Head Scalp Detoxification with Mini Facial is a restorative treatment designed to cleanse, refresh, and deeply rejuvenate both the scalp and skin.",
+          "options": [
+            "1 hr 15 Mins"
+          ]
+        },
+        {
+          "name": "Head Scalp Detoxification",
+          "description": "The Head Scalp Detoxification treatment is a deeply refreshing experience designed to cleanse, soothe, and rejuvenate the scalp while promoting full-body relaxation.",
+          "options": [
+            "1 hr"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "waxing",
+      "title": "Waxing",
+      "page": "https://www.warrenglamourdayspanj.com/waxing",
+      "about": "Experience smooth, glowing skin with our professional waxing services at Glamour Day Spa. Our expertly trained estheticians use high-quality wax to provide gentle, effective hair removal for both men and women.",
+      "services": [
+        {
+          "name": "Eyebrows",
+          "description": "",
+          "options": [
+            "15 mins"
+          ]
+        },
+        {
+          "name": "Full Face",
+          "description": "",
+          "options": [
+            "30 mins"
+          ]
+        },
+        {
+          "name": "Half Arm",
+          "description": "",
+          "options": [
+            "20 mins"
+          ]
+        },
+        {
+          "name": "Upper Back",
+          "description": "",
+          "options": [
+            "15 mins"
+          ]
+        },
+        {
+          "name": "Full Leg",
+          "description": "",
+          "options": [
+            "40 mins"
+          ]
+        },
+        {
+          "name": "Brazilian Line (Women Only)",
+          "description": "",
+          "options": [
+            "30 mins"
+          ]
+        },
+        {
+          "name": "Lip",
+          "description": "",
+          "options": [
+            "15 mins"
+          ]
+        },
+        {
+          "name": "Stomach",
+          "description": "",
+          "options": [
+            "15 mins"
+          ]
+        },
+        {
+          "name": "Under Arm",
+          "description": "",
+          "options": [
+            "15 mins"
+          ]
+        },
+        {
+          "name": "Full Back",
+          "description": "",
+          "options": [
+            "20 mins"
+          ]
+        },
+        {
+          "name": "Toes",
+          "description": "",
+          "options": [
+            "10 mins"
+          ]
+        },
+        {
+          "name": "Chin",
+          "description": "",
+          "options": [
+            "15 mins"
+          ]
+        },
+        {
+          "name": "Chest",
+          "description": "",
+          "options": [
+            "15 mins"
+          ]
+        },
+        {
+          "name": "Full Arm",
+          "description": "",
+          "options": [
+            "30 mins"
+          ]
+        },
+        {
+          "name": "Half Leg",
+          "description": "",
+          "options": [
+            "25 mins"
+          ]
+        },
+        {
+          "name": "Bikini Line (Women Only)",
+          "description": "",
+          "options": [
+            "20 mins"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "permanent-makeup",
+      "title": "Permanent Makeup",
+      "page": "https://www.warrenglamourdayspanj.com/permanent-makeup",
+      "about": "Enhance your natural beauty with Glamour Day Spa’s expert permanent makeup services.",
+      "services": [
+        {
+          "name": "Ombre Powder Brows",
+          "description": "Ombre powder brows are a semi-permanent cosmetic tattoo technique that uses a digital machine to create a soft, shaded, powder-makeup effect.",
+          "options": [
+            "2 hr"
+          ]
+        },
+        {
+          "name": "Ombre Powder Brow Refill",
+          "description": "An ombre powder brow refill is a maintenance session designed to refresh and enhance your existing ombre brows. During this appointment, pigment is added to areas that may have faded over time, restoring the soft gradient effect and overall definition.",
+          "options": [
+            "1 hr 30 mins"
+          ]
+        },
+        {
+          "name": "Lip Blush Permament",
+          "description": "Lip blush is a semi-permanent makeup treatment that enhances the lips by depositing pigment to create a soft, natural wash of color. The process begins with a consultation to select the ideal shade and shape, followed by numbing to ensure comfort.",
+          "options": [
+            "30 mins"
+          ]
+        },
+        {
+          "name": "Microblading",
+          "description": "Microblading is a semi-permanent eyebrow treatment that uses a handheld tool with a small blade to create precise, hair-like strokes in sparse or thinning areas.",
+          "options": [
+            "2 hr 30 mins"
+          ]
+        },
+        {
+          "name": "Eyeliner",
+          "description": "Permanent eyeliner, also called an eyeliner tattoo, involves implanting pigment along the lash line to create a long-lasting makeup effect that typically lasts 1–3 years.",
+          "options": [
+            "2 hr"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "couple-packages",
+      "title": "Couple Packages",
+      "page": "https://www.warrenglamourdayspanj.com/couples-packages",
+      "about": "Share a moment of bliss with our luxurious couples packages at Glamour Day Spa.",
+      "services": [
+        {
+          "name": "Couples Massage",
+          "description": "Indulge in the ultimate romantic escape with our signature couples massage, designed to help you unwind and reconnect on a deeper level. Enjoy synchronized, soothing strokes that melt away tension, improve circulation, and rejuvenate your entire body.",
+          "options": [
+            "1hr"
+          ]
+        },
+        {
+          "name": "Couples Signature Facials",
+          "description": "Experience a revitalizing facial that deeply cleanses, exfoliates, and purifies the skin, followed by gentle steaming, precise extractions, and a nourishing hydrating mask.",
+          "options": [
+            "1hr"
+          ]
+        },
+        {
+          "name": "Couples Hot Stone Massage",
+          "description": "Celebrate love with our exclusive spa experience designed for pure indulgence. Begin with a deeply therapeutic 60-minute deep tissue massage enhanced with warm, soothing hot stones to melt away tension.",
+          "options": [
+            "1hr"
+          ]
+        }
+      ]
+    }
+  ],
+  "membership_packages": [
+    "Glamour 5 Visit Package",
+    "Glamour 10 Visit Package"
+  ],
+  "gift_card": "The site sells an eGift Card online.",
+  "not_stated": [
+    "cancellation policy",
+    "late-arrival policy",
+    "deposits",
+    "age rules",
+    "parking",
+    "staff names",
+    "specific new-client offers",
+    "pregnancy guidance beyond what a service description says"
+  ],
+  "sources": [
+    {
+      "slug": "contact",
+      "url": "https://www.warrenglamourdayspanj.com/contact-us",
+      "sha256": "9633896f73eacccc5e77b4aacb7d4c79083560d64532e88c1164a82c9ea74a50"
+    },
+    {
+      "slug": "spa-packages",
+      "url": "https://www.warrenglamourdayspanj.com/spa-packages",
+      "sha256": "7bf0caf8e58b2b2a33f950f7bad5a1a1eb873d6498898214d67efbb4f3d56a04"
+    },
+    {
+      "slug": "facials",
+      "url": "https://www.warrenglamourdayspanj.com/facials",
+      "sha256": "94b9e4387920921ec321f63f76485034373dd9dd548670b55c88aea112082cd7"
+    },
+    {
+      "slug": "body-scrub",
+      "url": "https://www.warrenglamourdayspanj.com/body-scrub",
+      "sha256": "ea62c111ecfafae51f95a4389aadb4ad0caee6147b023b143b78e0ea500718e4"
+    },
+    {
+      "slug": "massages",
+      "url": "https://www.warrenglamourdayspanj.com/massages",
+      "sha256": "659ea39d1a16e2ca0841d76743628ccdee8bc0ac906bc38949119db3abcb6029"
+    },
+    {
+      "slug": "eyelash-extensions",
+      "url": "https://www.warrenglamourdayspanj.com/eyelash-extensions",
+      "sha256": "e013bd28eecb681360e0fe642d3891f67cf144513bf48ee4f5f75e0e80fde965"
+    },
+    {
+      "slug": "head-spa",
+      "url": "https://www.warrenglamourdayspanj.com/scalp-treatments",
+      "sha256": "21fac9053b9b5cb4ad9ca7d52df3a640b632c69cb9599cb2b88feb6550e3571c"
+    },
+    {
+      "slug": "waxing",
+      "url": "https://www.warrenglamourdayspanj.com/waxing",
+      "sha256": "b7364cee6d4c179bacf174a3ab0ac5d26f055bea9de22b66f0134d633e987015"
+    },
+    {
+      "slug": "permanent-makeup",
+      "url": "https://www.warrenglamourdayspanj.com/permanent-makeup",
+      "sha256": "f518b308a15f7de34eeb29d90e601ce0b2b3b2a939d6afe56062a9de79a4eee3"
+    },
+    {
+      "slug": "couple-packages",
+      "url": "https://www.warrenglamourdayspanj.com/couples-packages",
+      "sha256": "ff4e22b432109208533ddafcecfc84d03ab1db985fd4b9738eb4e3e44fa9f620"
+    },
+    {
+      "slug": "memberships",
+      "url": "https://www.warrenglamourdayspanj.com/memberships",
+      "sha256": "d363e8aad6bc2859f87727b5d0d815c672a9ebd97f2da93eb392419c139d01c1"
+    },
+    {
+      "slug": "gift-card",
+      "url": "https://www.warrenglamourdayspanj.com/gift-card",
+      "sha256": "e2dad1507b077b5f64d9ffe3716745c827b31338ffdb5b431c6d5e44ec1a7904"
+    },
+    {
+      "slug": "book-online",
+      "url": "https://www.warrenglamourdayspanj.com/book-online",
+      "sha256": "84c43a98b4382b906297d5dba3ec8d63a622dd28f4c96a61235b04e579a3829b"
+    },
+    {
+      "slug": "home",
+      "url": "https://www.warrenglamourdayspanj.com/",
+      "sha256": "e282fd7929110fb509b13b0fcfd95af7015dbd779855bd9b17ed72061f9d6fb8"
+    }
+  ],
+  "dropped_instruction_like_text": []
+}

@@ -1,0 +1,51 @@
+{
+  "_note": "A specification for the operator to review and create. No key, token or id is in it. Both agents use ONE response engine (the same prompt) so voice and chat answer from the same reviewed information. Nothing here has been created.",
+  "prompt_sha256": "6f56df746cd4b4b5d917b93d8b2c15de76850266fbb1b9994d69c97df31f49b5",
+  "response_engine": {
+    "type": "retell-llm",
+    "model": "gpt-4.1",
+    "model_note": "gpt-4.1-mini is listed at a lower rate (see COSTS.md); choose after a supervised comparison",
+    "begin_message": "Hello, this is Aria, the virtual assistant for Glamour Day Spa. How can I help?",
+    "general_tools": [
+      {
+        "type": "end_call",
+        "name": "end_call",
+        "description": "End the call when the visitor says goodbye or is finished."
+      }
+    ],
+    "custom_tools": []
+  },
+  "voice_agent": {
+    "name": "Glamour Day Spa website assistant (voice)",
+    "language": [
+      "en-US",
+      "es-419",
+      "zh-CN"
+    ],
+    "voice_note": "same voice as the approved demo unless the owner chooses otherwise",
+    "max_call_duration_ms": 300000,
+    "end_call_after_silence_ms": 20000,
+    "allow_user_dtmf": false,
+    "data_storage": "per the operator's retention decision; the page tells visitors that Retell may retain the call"
+  },
+  "chat_agent": {
+    "name": "Glamour Day Spa website assistant (chat)",
+    "note": "created from the same response engine; typed replies are plain text"
+  },
+  "public_key_domains_needed": [
+    "the hosted page's hostname (and the owner's site, only if the snippet is later embedded there)"
+  ],
+  "tools_forbidden": [
+    "book_appointment",
+    "cancel_appointment",
+    "reschedule_appointment",
+    "find_appointments",
+    "check_slot",
+    "find_alternatives",
+    "last_completed_visit",
+    "get_preferences",
+    "save_preference",
+    "remove_preference",
+    "lookup_service"
+  ]
+}

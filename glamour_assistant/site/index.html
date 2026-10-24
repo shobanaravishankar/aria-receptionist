@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glamour Day Spa - Aria, virtual salon assistant</title>
+<meta name="description" content="Ask Aria, Glamour Day Spa's virtual assistant in Warren, NJ, about services, hours and location. Type your question or talk to Aria.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main class="shell">
+  <header class="top">
+    <h1>Glamour Day Spa</h1>
+    <p class="where">24 Mountain Blvd, Warren, NJ 07059 &middot; Open daily 9:30 AM &ndash; 8:00 PM</p>
+  </header>
+
+  <section class="assistant" aria-labelledby="who-name" data-testid="assistant">
+    <div class="who">
+      <img class="portrait" id="portrait" src="assets/portrait.svg" alt="Portrait representing Aria, the virtual assistant" width="96" height="96" data-testid="portrait">
+      <div class="who__text">
+        <p class="who__name" id="who-name">Aria</p>
+        <p class="who__role">virtual salon assistant</p>
+      </div>
+    </div>
+
+    <div class="log" id="log" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation with Aria" tabindex="0" data-testid="log"></div>
+    <p class="status" id="status" role="status" aria-live="polite" data-testid="status"></p>
+
+    <form class="composer" id="form" autocomplete="off" data-testid="composer">
+      <label class="sr" for="text">Type your question</label>
+      <input class="composer__input" id="text" name="text" type="text" maxlength="500" placeholder="Type your question" enterkeyhint="send" data-testid="text">
+      <button class="btn btn--send" id="send" type="submit" data-testid="send">Send</button>
+    </form>
+
+    <div class="voice">
+      <button class="btn btn--talk" id="talk" type="button" data-testid="talk" aria-pressed="false">Talk to Aria</button>
+      <p class="voice__hint" id="voice-hint">Your browser will ask for microphone access when you press the button.</p>
+    </div>
+
+    <p class="fine">
+      Aria is an AI assistant, not a person. Please do not share health, payment or other sensitive details. Voice calls and chats may be recorded and kept by the service provider.
+      Aria cannot book appointments: use <a id="book-link" href="https://www.warrenglamourdayspanj.com/book-online" rel="noopener">Book Online</a> or call
+      <a id="phone-link" href="tel:+19086688828">(908) 668-8828</a>.
+    </p>
+  </section>
+</main>
+<script src="config.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

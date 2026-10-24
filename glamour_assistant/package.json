@@ -1,0 +1,9 @@
+{
+  "name": "glamour-day-spa-information-assistant",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A hosted, information-only voice and typed-chat assistant for Glamour Day Spa (Warren, NJ). No dependencies.",
+  "type": "module",
+  "engines": { "node": ">=22.6" },
+  "scripts": { "test": "node --test \"test/**/*.test.ts\"" }
+}

@@ -1,0 +1,8 @@
+# Glamour Day Spa information assistant: an isolated Netlify project folder. The page is built into a new folder by scripts/build_site.py and published from there
+# (`netlify deploy --dir <built folder> --functions netlify/functions`); the one Function is the typed-chat relay. Nothing here touches the Serenity demo's configuration.
+[build]
+  publish = "site"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
