@@ -176,6 +176,26 @@ def join_first_letter(parts: list[str]) -> list[str]:
     return parts
 
 
+LABELS = re.compile(r"(?<![A-Za-z])((?:What['\u2019]s )?Included?|Includes?|Benefits?|Ideal for|Best for|Recommended for|Please note|Notes?)\s*:", re.I)
+LABEL_KEY = {"included": "included", "include": "included", "includes": "included", "what's included": "included", "benefit": "benefits", "benefits": "benefits", "ideal for": "ideal_for",
+             "best for": "ideal_for", "recommended for": "ideal_for", "note": "notes", "notes": "notes", "please note": "notes"}
+
+
+def split_sections(text: str) -> tuple[str, dict[str, str]]:
+    """The text before its first label ("What's Included:", "Benefits:", ...) and each labelled part, in the page's order. Nothing is cut: it is the same words, just in their places."""
+    text = " ".join(text.split())
+    marks = list(LABELS.finditer(text))
+    if not marks:
+        return text, {}
+    sections: dict[str, str] = {}
+    for i, mark in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+        key = LABEL_KEY.get(mark.group(1).lower().replace("\u2019", "'"), "notes")
+        value = text[mark.end():end].strip(" ;")
+        sections[key] = (sections[key] + " " + value).strip() if key in sections else value
+    return text[: marks[0].start()].strip(), sections
+
+
 def first_sentences(text: str, limit: int = 260) -> str:
     """The opening of a description (about `limit` characters, whole sentences), PLUS any later sentence that states a safety or eligibility fact (a trimester, women only, ...)."""
     text = " ".join(text.split())
@@ -224,7 +244,10 @@ def services_from_items(items: list[dict], dropped: list[str]) -> list[dict]:
                 kept.append(t)
         name = " ".join(title_parts)
         kept = join_first_letter(kept)
-        services.append({"name": name, "description": first_sentences(" ".join(kept)) if kept else "", "options": [o for o in options if o]})
+        description, sections = split_sections(" ".join(kept)) if kept else ("", {})   # the WHOLE of what the page says about it: nothing is shortened (brevity is the assistant's job when it answers)
+        service = {"name": name, "description": description, "options": [o for o in options if o]}
+        service.update(sections)
+        services.append(service)
     return services
 
 
@@ -258,14 +281,17 @@ def build_facts(parsed: dict[str, dict], *, retrieved_at: str, previous: dict | 
         services = services_from_items(page["items"], dropped)
         if not services:
             raise Refused(f"{slug}: no services found (the page layout may have changed)")
-        intro = next((t for t in page["main"][1:] if len(t) > 80 and not INSTRUCTION_LIKE.search(t)), "")
-        categories.append({"slug": slug, "title": CATEGORY_TITLES[slug], "page": SITE + dict((s, p) for s, p, _ in PAGES)[slug], "about": first_sentences(intro, 220), "services": services})
+        # everything the page says before its service list (the introduction and notes that apply to every service in it, such as what every facial includes)
+        cut = page["main"].index("Our Services") if "Our Services" in page["main"] else len(page["main"])
+        intro = [t for t in page["main"][1:cut] if t.strip() and not INSTRUCTION_LIKE.search(t)]
+        dropped.extend(t[:80] for t in page["main"][1:cut] if INSTRUCTION_LIKE.search(t))
+        categories.append({"slug": slug, "title": CATEGORY_TITLES[slug], "page": SITE + dict((s, p) for s, p, _ in PAGES)[slug], "intro": intro, "services": services})
 
     memberships = [s["name"] for s in services_from_items(parsed["memberships"]["items"], dropped) if s["name"].lower().startswith("glamour")]
     gift = any("gift card" in t.lower() for t in parsed["gift-card"]["main"] + [parsed["gift-card"]["title"]])
     sources = [{"slug": s, "url": SITE + p, "sha256": hashlib.sha256("\n".join(parsed[s]["main"] + parsed[s]["footer"]).encode("utf-8")).hexdigest()} for s, p, _ in PAGES]
     facts = {
-        "format": 1, "salon": "Glamour Day Spa", "retrieved_at": retrieved_at, "source_site": SITE,
+        "format": 2, "salon": "Glamour Day Spa", "retrieved_at": retrieved_at, "source_site": SITE,
         "business": {"address": business["address"], "phones": business["phones"], "email": business["email"], "text_note": business["text_note"], "hours": business["hours"],
                      "online_booking_page": SITE + "/book-online"},
         "categories": categories,
@@ -307,9 +333,13 @@ def summarize_changes(old: dict | None, new: dict) -> list[str]:
     for key in sorted(before.keys() - after.keys()):
         lines.append(f"service removed: {key[0]} / {key[1]}")
     for key in sorted(before.keys() & after.keys()):
-        for field in ("options", "description"):
-            if before[key][field] != after[key][field]:
+        for field in sorted((before[key].keys() | after[key].keys()) - {"name"}):
+            if before[key].get(field) != after[key].get(field):
                 lines.append(f"{field} changed: {key[0]} / {key[1]}")
+    old_intro = {c["title"]: c["intro"] for c in old["categories"]}
+    for c in new["categories"]:
+        if old_intro.get(c["title"]) != c["intro"]:
+            lines.append(f"introduction or notes changed: {c['title']}")
     for field in ("membership_packages", "gift_card", "not_stated"):
         if old.get(field) != new.get(field):
             lines.append(f"{field} changed")

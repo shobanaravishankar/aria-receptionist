@@ -12,6 +12,8 @@ const el = (id) => document.getElementById(id);
 const logEl = el("log"), statusEl = el("status"), formEl = el("form"), inputEl = el("text"), sendBtn = el("send"), talkBtn = el("talk"), hintEl = el("voice-hint");
 const SITE_URL = /https:\/\/www\.warrenglamourdayspanj\.com\/[A-Za-z0-9\-_/]*/g;
 const FALLBACK = `I can't answer that right now. Please call the salon at ${PHONE} or use the Book Online page on the website.`;
+const CHAT_TIMEOUT_MS = Number.isFinite(cfg.chatTimeoutMs) ? cfg.chatTimeoutMs : 30000;   // longer than the relay's own limit for the provider (20 s), so the relay's answer wins when there is one
+const TIMEOUT_TEXT = `That is taking longer than it should, and I can't tell whether my answer was lost. Please try again in a moment, or call the salon at ${PHONE}.`;
 
 /* ---------------------------------------------------------------- the conversation area */
 function linkify(parent, text) {
@@ -50,10 +52,21 @@ function setStatus(state, text) {
 /* ---------------------------------------------------------------- typed chat */
 const chat = { token: null, busy: false };
 async function api(path, body) {
-  const response = await fetch(`${cfg.chatApi || "api/chat"}/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), credentials: "omit", cache: "no-store" });
-  let data = null;
-  try { data = await response.json(); } catch (_) { /* not JSON */ }
-  return { status: response.status, data };
+  // A deadline on the whole exchange (connecting, waiting and reading the answer). When it passes the request is abandoned and the visitor is told so: nothing waits for ever, and
+  // nothing is sent again by itself (a completion that is only late may have been paid for, so a repeat is the visitor's choice).
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${cfg.chatApi || "api/chat"}/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), credentials: "omit", cache: "no-store", signal: controller.signal });
+    let data = null;
+    try { data = await response.json(); } catch (_) { /* not JSON */ }
+    return { status: response.status, data };
+  } catch (error) {
+    if (controller.signal.aborted) throw Object.assign(new Error("timeout"), { userMessage: TIMEOUT_TEXT, code: "timeout" });
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 const refusal = (r) => Object.assign(new Error("chat"), { userMessage: (r && r.data && typeof r.data.message === "string" && r.data.message) || FALLBACK, code: r && r.data && r.data.error });
 
@@ -105,7 +118,7 @@ formEl.addEventListener("submit", (event) => {
 });
 
 /* ---------------------------------------------------------------- voice */
-const voice = { state: "idle", client: null, call: null, run: null, nodes: [] };   // idle | loading | connecting | live | ended | error
+const voice = { state: "idle", client: null, call: null, run: null, nodes: new Map() };   // idle | loading | connecting | live | ended | error
 function setVoice(state) {
   voice.state = state;
   const active = state === "loading" || state === "connecting" || state === "live";
@@ -126,7 +139,7 @@ async function startVoice() {
   }
   const mine = { over: false };
   voice.run = mine;
-  voice.nodes = [];
+  voice.nodes = new Map();
   setVoice("loading");
   setStatus("connecting", "Connecting to Aria...");
   try {
@@ -190,18 +203,23 @@ function failVoice(mine, err) {
     ? "I couldn't use your microphone. Please allow microphone access in your browser, or type your question here, or call the salon at " + PHONE + "."
     : "I couldn't connect the call. Please try again, type your question here, or call the salon at " + PHONE + ".", { error: true });
 }
-/* The transcript of the call, in the same conversation area. The shape is [{ role, content }, ...] (the whole call so far) or a single such object; each line has its own place, so an updated
- * transcript replaces earlier lines instead of repeating them. */
+/* The transcript of the call, in the same conversation area. The shape is [{ role, content, ... }, ...] (the whole call so far) or a single such object. ONLY spoken lines are shown: what the
+ * visitor said (role "user") and what Aria said (role "agent"). The SDK's transcript can also carry tool results, injected notes and other items that have text: none of those is speech and none is
+ * shown. Each line keeps one place under a stable key (its own id when it has one, else its position in the array), so an updated transcript replaces earlier lines instead of repeating them. */
+const SPOKEN = { user: "you", agent: "aria" };
 function showTranscript(t) {
   const lines = Array.isArray(t) ? t : t && typeof t === "object" ? [t] : [];
-  lines.forEach((line, i) => {
+  lines.forEach((line, index) => {
     if (!line || typeof line.content !== "string" || !line.content.trim()) return;
-    const who = line.role === "user" ? "you" : "aria";
-    let node = voice.nodes[i];
+    const who = SPOKEN[line.role];
+    if (!who) return;   // not speech
+    const key = String(line.message_id || line.id || `i${index}`);
+    let node = voice.nodes.get(key);
     if (!node) {
       node = addMessage(who, "", { tag: "By voice" });
-      voice.nodes[i] = node;
+      voice.nodes.set(key, node);
     }
+    node.className = `msg msg--${who}`;
     node.replaceChildren();
     const tag = document.createElement("span");
     tag.className = "msg__tag";

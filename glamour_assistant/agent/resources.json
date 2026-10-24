@@ -1,6 +1,6 @@
 {
   "_note": "A specification for the operator to review and create. No key, token or id is in it. Both agents use ONE response engine (the same prompt) so voice and chat answer from the same reviewed information. Nothing here has been created.",
-  "prompt_sha256": "6f56df746cd4b4b5d917b93d8b2c15de76850266fbb1b9994d69c97df31f49b5",
+  "prompt_sha256": "9b7c40c1b81c961782495d93a32df89a3dd8df7ebbc4e1086dcec1fb3a93454b",
   "response_engine": {
     "type": "retell-llm",
     "model": "gpt-4.1",

@@ -4,14 +4,16 @@
  * customer's chat agent, passes each typed message on, and returns only the agent's words. It keeps no database and no log of message content.
  *
  * Session = a signed token (HMAC-SHA-256 under a key derived from the Retell key; nothing else to configure) holding the Retell chat id, an expiry and the number of messages so far. Each reply
- * carries the next token. A token cannot be forged or edited; it expires; and a chat is capped at MAX_MESSAGES (a replay of an OLD token could still re-send within the lifetime: the real
- * ceilings are the token lifetime, the per-visitor rate limit below, and Retell's own limits; none of this is an enforceable spending cap, see COSTS.md).
+ * carries the next token. A token cannot be forged or edited, and it EXPIRES: that expiry, the length limit on each message and the proper-origin check are enforced by the server.
+ * The "number of messages so far" is NOT enforceable: the relay keeps no state, so the same token can be replayed within its lifetime (an old n=0 token is accepted again and again), and two
+ * requests carrying the same n can both reach the provider. MAX_MESSAGES therefore only ends the conversation of a visitor who follows the tokens in order; it is a cooperative limit on one chat's
+ * flow, never a cap on messages or on spend. What actually bounds use: the token lifetime, the per-visitor rate limits below (per warm instance, best effort) and Retell's own limits. See COSTS.md.
  *
  * Every provider failure becomes a short, truthful, non-technical answer that points to the phone number; no provider text, key, id or stack ever reaches the visitor. */
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
-export const MAX_MESSAGES = 20; // typed messages per chat
+export const MAX_MESSAGES = 20; // a COOPERATIVE limit on one chat's flow (see the note below): not a cap on messages or on spend
 export const MAX_TEXT = 500; // characters per typed message
 export const MAX_BODY = 4096; // bytes of a request body
 export const TOKEN_TTL_MS = 30 * 60_000; // a chat lasts at most half an hour
@@ -159,7 +161,7 @@ export async function handle(req: ChatRequest, env: Env, deps: Deps): Promise<Ch
   const text = clean(body.text);
   if (!text) return reply(400, { ok: false, error: "text_required" });
   if (Array.from(text).length > MAX_TEXT) return reply(413, { ok: false, error: "message_too_long", message: `Please keep each message under ${MAX_TEXT} characters.` });
-  if (claims.n >= MAX_MESSAGES) return reply(429, { ok: false, error: "chat_full", message: `This chat has reached its limit of ${MAX_MESSAGES} messages. Please start a new chat, or call the salon at ${env.SALON_PHONE ?? DEFAULT_PHONE}.` });
+  if (claims.n >= MAX_MESSAGES) return reply(429, { ok: false, error: "chat_full", message: `This chat has gone on long enough. Please start a new chat, or call the salon at ${env.SALON_PHONE ?? DEFAULT_PHONE}.` });
   if (!allow(req.ip, "messages", now)) return sorry(env, 429, "slow_down", { "retry-after": "60" });
 
   const done = await provider(env, deps, "/create-chat-completion", { chat_id: claims.c, content: text });

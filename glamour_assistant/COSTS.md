@@ -15,6 +15,8 @@ applied to a stated assumption; the real invoice depends on the configuration ac
 | Hosting (Netlify Free) | 300 credits/month, a hard stop that pauses the team's sites | chat relay requests are tiny: a web request is 2 credits per 10,000 and compute is negligible | **$0 added** |
 | Owner SMS (phase 2, NOT built) | $20/month per number + $0.01/SMS, plus one-time brand ($4 low-volume or $45 standard) and campaign ($15) fees; approval usually 2-3 weeks | from the SMS page; the shared-number option is limited to preset templates during PHONE calls and is not a verified answer for website alerts | **not part of the first release** |
 
+The prompt carries the salon's full service detail (about 36,000 characters, roughly 9,000 tokens), so that follow-up questions can be answered from the website's own words; the pricing page states NO prompt-length surcharge or threshold (nothing was found), but a longer prompt can add a little latency per turn: a point for the supervised test to watch.
+
 Worked examples (planning only): 100 two-minute website calls = 200 min = **$23.00** (gpt-4.1) or **$16.60** (mini). 300 typed conversations of 4 AI answers = 1,200 messages = **$18.00** (gpt-4.1) or
 **$4.80** (mini). Voice dominates: a typed conversation of four answers (about $0.06) costs about a quarter of a two-minute call ($0.23).
 
@@ -34,7 +36,10 @@ Nothing is rerun when unchanged. Burst capacity is NOT used and the quota is NOT
 | Control | What it is | Enforceable? |
 |---|---|---|
 | Call length: `max_call_duration_ms` = 5 minutes, end after 20 s of silence (agent configuration) | caps one call | **yes**, by Retell, per call |
-| Typed chat: 20 messages per chat, 500 characters per message, 30-minute chat lifetime, at most 6 chat starts and 40 messages per visitor in any 10 minutes (per warm instance) | caps one chat and one visitor on one instance | chat length and size: **yes**. Per-visitor rates: **best effort only** (kept in memory per instance, not shared) |
+| Typed chat: 500 characters per message | the server refuses a longer one before it reaches the provider | **yes**, by the relay, on every request |
+| Typed chat: a session token that expires after 30 minutes | the relay refuses a token that is forged, edited, from another key or expired | **yes**, by the relay, on every request (a chat that Retell has opened is not closed by this; it just cannot be continued through the relay after the token expires) |
+| Typed chat: "20 messages per chat" | the token carries a count and a visitor who follows the tokens in order is told the chat has gone on long enough | **NO. A cooperative flow limit only, not a cap on messages or on spend.** The relay keeps no state, so an old token can be replayed within its 30 minutes (an n=0 token was accepted 21 times in an independent test) and two simultaneous requests with the same count both reach the provider. A true cap needs a shared atomic counter (a database or store), which would be new infrastructure and is not part of this release |
+| Typed chat: at most 6 chat starts and 40 messages per visitor in any 10 minutes | slows one visitor on one instance | **best effort only**: kept in memory per warm instance, not shared between instances, lost when an instance is replaced |
 | Total spend per day or month | the relay has no database and does not count | **no.** The only hard ceiling Retell offers that I could verify is the account balance: if the owner's workspace runs on a prepaid balance with auto-recharge OFF, an empty balance stops all calls and chats. The operator should verify this setting; I could not |
 | Dashboard usage alerts / the operator's weekly read of the usage | a warning | **warning only** |
 | Burst concurrency (observed ENABLED at 60; calls above 20 would carry a $0.10/min surcharge) | would allow more simultaneous calls at an extra price | it **raises** exposure; the operator should decide whether to turn it off for this release. I changed nothing |

@@ -28,7 +28,7 @@ Nothing starts by itself: no microphone, no call and no chat session until the v
 | Part | Where | Notes |
 |---|---|---|
 | The page | `site/` (built into a new folder by `scripts/build_site.py`) | static; relative addresses only, so one build serves a draft and the live address; the approved portrait is passed at build time and never committed |
-| Typed chat | `src/chat.ts`, `netlify/functions/chat.mts` | no dependencies; the Retell secret key is a server-side environment variable; sessions are signed tokens; no message is stored or logged |
+| Typed chat | `src/chat.ts`, `netlify/functions/chat.mts` | no dependencies; the Retell secret key is a server-side environment variable; sessions are signed, expiring tokens; each message is length-checked; no message is stored or logged. The "20 messages" counter is a cooperative flow limit, NOT a cap (the relay keeps no state: see COSTS.md) |
 | Voice | the Retell browser SDK with the PUBLIC key (as the demo does), `site/app.js` | transcript lines are shown in the same conversation area; typed chat and a call are separate conversations and the page says so |
 | Knowledge | `knowledge/refresh.py` -> `knowledge/facts.json` | deterministic extraction; page text is data, never obeyed; no prices kept; the last verified facts survive a failed refresh; every page's sha256 is recorded |
 | Putting it on the salon site | `EMBED.md` | a link, or an iframe snippet for Fiona; not needed for the first release |

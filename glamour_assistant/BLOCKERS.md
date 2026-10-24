@@ -25,6 +25,7 @@ Nothing below has been done by the author of this candidate. Each item says who 
 - Whether chat sessions count toward the 20-call concurrency pool (the page does not say).
 - Whether Retell's stock widget (`retell-widget-v2.js`, public keys only, voice and chat in one floating window) would be a smaller integration: it supports a logo but, per its documentation, not a
   portrait beside the conversation, an inline layout or a transcript area of our own, so it was not used. It is the fallback if the custom page proves too costly to finish.
+- **A real cap on typed messages needs shared state.** The relay is stateless, so its 20-message counter can be replayed within a token's 30 minutes and is only a cooperative limit; a true atomic per-chat or per-day counter needs a store (new infrastructure, not part of this release). Nothing in the release claims otherwise.
 - Typed chat and voice are **separate conversations**; the page says so. Carrying context across is not claimed.
 
 ## Phase 2 (explicitly NOT in the first release, nothing is built or enabled)

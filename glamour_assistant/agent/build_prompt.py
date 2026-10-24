@@ -32,7 +32,7 @@ Reply in the language the visitor uses: English, Spanish or Mandarin Chinese. If
 
 ## How to answer
 
-- Be brief: one or two short sentences, then at most one question. Do not read long descriptions unless asked. Do not repeat yourself or add routine closing offers.
+- Be brief: one or two short sentences, then at most one question. The salon information below is complete so that you can answer a follow-up (what a service includes, who it is for); give only what was asked, and do not read long descriptions unless asked. Do not repeat yourself or add routine closing offers.
 - Answer ONLY from the salon information below. If it is not below, say plainly that you do not have that information and give the phone number. Never guess, never invent a service, a length, an offer, a policy, a person or a time.
 - You cannot book, change, cancel, hold or check availability for any appointment, and you cannot take payments or send messages. Booking is done on the salon's Book Online page or by phone. Never say that anything has been booked, reserved, held, changed, cancelled, noted, or passed to staff, and never offer to call back, notify or follow up: you cannot.
 - Do not state prices, fees, discounts, package prices or gift card amounts, even if asked, and do not estimate. Say that the salon's website lists them and offer the phone number.
@@ -69,12 +69,15 @@ def knowledge(facts: dict) -> str:
     lines += ["", "Services by category (lengths are as listed on the website; a service can have several):", ""]
     for category in facts["categories"]:
         lines.append(f"### {category['title']}")
-        if category["about"]:
-            lines.append(first_sentences(category["about"], 160))
+        for block in category["intro"]:
+            lines.append(block)
         for service in category["services"]:
             options = "; ".join(service["options"]) if service["options"] else ""
-            description = first_sentences(service["description"], 150) if service["description"] else ""
-            lines.append("- " + service["name"] + (f" ({options})" if options else "") + (f": {description}" if description else ""))
+            parts = [service["description"]] if service["description"] else []
+            for key, label in (("included", "Included"), ("ideal_for", "Ideal for"), ("benefits", "Benefits"), ("notes", "Notes")):
+                if service.get(key):
+                    parts.append(f"{label}: {service[key]}")
+            lines.append("- " + service["name"] + (f" ({options})" if options else "") + (": " + " ".join(parts) if parts else ""))
         lines.append("")
     lines += ["## Not stated on the website (say you do not have this and offer the phone number)", "",
               "; ".join(facts["not_stated"]) + ".", ""]

@@ -86,7 +86,7 @@ describe("a typed chat", () => {
     }
   });
 
-  test("a chat is capped at its message limit, then asks for a new one", async () => {
+  test("the cooperative flow limit: a visitor who follows the tokens in order is asked to start a new chat after 20 messages", async () => {
     let token = json(await start()).token as string;
     for (let i = 0; i < MAX_MESSAGES; i++) {
       const r = await say(token, `q${i}`, "198.51.100.7");
@@ -98,6 +98,35 @@ describe("a typed chat", () => {
     assert.equal(full.status, 429);
     assert.equal(json(full).error, "chat_full");
     assert.match(json(full).message, /new chat|\(908\) 668-8828/);
+  });
+});
+
+describe("what the 20-message counter is NOT (a documented limitation, tested so it cannot be mistaken for a cap)", () => {
+  test("an OLD session token can be replayed within its lifetime: the counter is a cooperative flow limit, not a cap on messages or spend", async () => {
+    const first = json(await start()).token as string;   // n = 0
+    let accepted = 0;
+    for (let i = 0; i < MAX_MESSAGES + 1; i++) {
+      const r = await say(first, `replay ${i}`, "198.51.100.77");
+      if (r.status === 200) accepted += 1;
+      resetLimits();   // (the per-visitor limit is a separate, best-effort control)
+    }
+    assert.equal(accepted, MAX_MESSAGES + 1, "the same n=0 token was accepted past the 20-message mark: the relay keeps no state, so it cannot refuse a replay");
+  });
+
+  test("two simultaneous requests carrying the same count both reach the provider", async () => {
+    let token = json(await start()).token as string;
+    for (let i = 0; i < MAX_MESSAGES - 1; i++) { token = json(await say(token, `q${i}`, "198.51.100.78")).token; resetLimits(); }   // n = 19
+    const before = calls.filter((c) => c.path === "/create-chat-completion").length;
+    const both = await Promise.all([say(token, "last one A", "198.51.100.79"), say(token, "last one B", "198.51.100.80")]);
+    assert.deepEqual(both.map((r) => r.status), [200, 200]);
+    assert.equal(calls.filter((c) => c.path === "/create-chat-completion").length, before + 2);
+  });
+
+  test("what IS enforced on every request: the length of a message, the expiry of the token, and the origin", async () => {
+    const token = json(await start()).token as string;
+    assert.equal((await say(token, "x".repeat(MAX_TEXT + 1))).status, 413);
+    assert.equal((await say(token, "hello", undefined, NOW + TOKEN_TTL_MS + 1)).status, 401);
+    assert.equal((await handle(post("/api/chat/message", { token, text: "hi" }, { headers: { origin: "https://evil.example", "content-type": "application/json" } }), env(), deps())).status, 403);
   });
 });
 

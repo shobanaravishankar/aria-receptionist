@@ -11,8 +11,11 @@ on the candidate that will be deployed, by people, with a timed stop and a cost 
 | Twenty-five typed visitors at once (five times the requirement) | same | passes |
 | A flood from one visitor is cut off by the per-visitor limit and does not block or mix up the others | same | passes |
 | Unique per-session authorization: forged, edited, expired, other-key and malformed session tokens are refused; refused requests never reach the provider | same | passes |
+| Replay of a session token: **documented, not prevented.** The relay keeps no state, so an old token is accepted again within its 30 minutes and the "20 messages" counter is a cooperative flow limit, not a cap (shown by tests that replay a token past the mark and send two requests with the same count) | `test/chat.test.ts` | the limitation is asserted, not hidden |
 | Duplicate submission: a repeated Enter or click, or a second question sent while one is on its way, sends nothing and loses nothing typed | `booking/tests/test_glamour_page.py` | passes |
 | Retry behaviour: a failed answer keeps what was typed and works on the next press; an expired chat is replaced and the question answered; a full chat opens a fresh one | same | passes |
+| A chat connection that never answers (to the relay, or from the relay): the page gives up at its own deadline, restores Send, keeps the question, says truthfully that it cannot tell whether the answer was lost, and never sends again by itself | `test_glamour_page.py` | passes |
+| Voice transcript: only spoken lines (user, agent) are shown; tool results, injected notes and node transitions are never shown as speech; updates keep their place | same | passes |
 | Provider-full / rate-limit / payment / server error / malformed reply / no answer at all (timeout): each becomes a short answer with the phone number, no provider text, no key, no id; simulated, never by opening real calls | `test/chat.test.ts`, page tests | passes |
 | Five voice sessions at once (five pages, five stub calls started together): one call each, no second call from a repeated click, a late event from an older call cannot touch a newer one, transcript lines stay in their own page | `test_glamour_page.py` | passes |
 | Mixed: five pages each with a typed question in flight AND a voice call started | same | passes |

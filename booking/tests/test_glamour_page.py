@@ -27,7 +27,7 @@ SDK_STUB = (
     " createWebCall(o) { window.__created++; window.__options.push(o); window.__hooks = o.hooks; return { end() { window.__ended++; }, startAudioPlayback() {} }; } }"
 )
 CONFIG = ("window.GLAMOUR = {retellPublicKey: 'public_key_test', voiceAgentId: 'agent_voice_test', voiceAgentVersion: null, chatApi: 'api/chat', salonPhone: '(908) 668-8828',"
-          " bookOnline: 'https://www.warrenglamourdayspanj.com/book-online', sdkUrl: '" + SDK_URL + "', greeting: 'Hi, I am Aria. Ask me about services, hours or location.'};")
+          " bookOnline: 'https://www.warrenglamourdayspanj.com/book-online', sdkUrl: '" + SDK_URL + "', greeting: 'Hi, I am Aria. Ask me about services, hours or location.', chatTimeoutMs: 900};")
 PHONE = "(908) 668-8828"
 
 
@@ -50,6 +50,8 @@ class Relay(BaseHTTPRequestHandler):
             cls.log.append((self.path, body))
         time.sleep(random.uniform(0.02, 0.15))
         mode = cls.mode
+        if mode.get("hang") and (self.path.endswith("/message") or mode.get("hang") == "all"):
+            time.sleep(2.5)   # longer than the page's (shortened) deadline, shorter than the server's patience
         if self.path.endswith("/start"):
             if mode.get("start_fail"):
                 return self.send(502, {"ok": False, "error": "unavailable", "message": f"I can't answer that right now. Please call the salon at {PHONE} or use the Book Online page on the website."})
@@ -235,6 +237,76 @@ def test_a_failed_answer_says_so_plainly_with_the_phone_number_keeps_what_was_ty
     assert not any("traceback" in t.lower() or "provider" in t.lower() for t in log)
 
 
+def test_a_chat_connection_that_never_answers_gives_up_tells_the_truth_keeps_the_question_and_never_retries_by_itself(driver, page_url):
+    def work(page):
+        Relay.mode = {"hang": True}
+        page.fill('[data-testid="text"]', "Do you do waxing?")
+        page.click('[data-testid="send"]')
+        wait_text(page, "can't tell whether my answer was lost", 8.0)
+        state = {
+            "send_disabled": page.locator('[data-testid="send"]').is_disabled(), "typing": page.locator("#log .msg__tag", has_text="Aria is typing").count(),
+            "kept": page.input_value('[data-testid="text"]'), "log": texts(page), "busy": page.get_attribute("#form", "aria-busy"),
+        }
+        page.wait_for_timeout(1500)   # nothing is sent again by itself
+        state["requests_after_wait"] = [p for p, _ in Relay.log]
+        Relay.mode = {}
+        page.click('[data-testid="send"]')   # the visitor's own choice to ask again
+        wait_text(page, "[tok-1] Do you do waxing?")
+        state["after"] = [p for p, _ in Relay.log]
+        return state
+
+    state = run(driver, page_url, work)
+    assert state["send_disabled"] is False and state["typing"] == 0 and state["busy"] == "false", "the box works again"
+    assert state["kept"] == "Do you do waxing?", "the question is kept"
+    assert any("longer than it should" in t and PHONE in t for t in state["log"]), "a short truthful failure with the phone number"
+    assert state["requests_after_wait"] == ["/api/chat/start", "/api/chat/message"], "no automatic second completion"
+    assert state["after"].count("/api/chat/message") == 2
+
+
+def test_a_start_that_never_answers_also_gives_up_and_does_not_start_a_second_chat_by_itself(driver, page_url):
+    def work(page):
+        Relay.mode = {"hang": "all"}
+        page.fill('[data-testid="text"]', "hours?")
+        page.click('[data-testid="send"]')
+        wait_text(page, "longer than it should", 8.0)
+        page.wait_for_timeout(1500)
+        return page.locator('[data-testid="send"]').is_disabled(), page.input_value('[data-testid="text"]'), [p for p, _ in Relay.log]
+
+    disabled, kept, requests = run(driver, page_url, work)
+    assert disabled is False and kept == "hours?"
+    assert requests == ["/api/chat/start"]
+
+
+def test_a_voice_transcript_shows_only_spoken_lines_never_tool_results_or_injected_notes_and_updates_keep_their_place(driver, page_url):
+    def work(page):
+        page.click('[data-testid="talk"]')
+        page.wait_for_function("() => window.__created === 1")
+        page.evaluate("() => window.__hooks.onStatus('live')")
+        page.evaluate("""() => window.__hooks.onTranscript([
+            {role: 'user', content: 'What are your hours?', message_id: 'u1'},
+            {role: 'tool_call_result', content: 'INTERNAL_TEST_RESULT', message_id: 't1'},
+            {role: 'injected', content: 'INTERNAL_TEST_NOTE', message_id: 'i1'},
+            {role: 'node_transition', content: 'INTERNAL_TEST_NODE', message_id: 'n1'},
+            {role: 'agent', content: 'We are open daily', message_id: 'a1'}])""")
+        page.evaluate("""() => window.__hooks.onTranscript([
+            {role: 'user', content: 'What are your hours?', message_id: 'u1'},
+            {role: 'tool_call_result', content: 'INTERNAL_TEST_RESULT', message_id: 't1'},
+            {role: 'agent', content: 'We are open daily from nine thirty to eight.', message_id: 'a1'},
+            {role: 'user', content: 'Thank you', message_id: 'u2'}])""")
+        page.evaluate("""() => window.__hooks.onTranscript({role: 'agent', content: 'You are welcome.', message_id: 'a2'})""")
+        before = page.evaluate("() => [...document.querySelectorAll('#log .msg')].map(m => m.className)")
+        page.evaluate("""() => window.__hooks.onTranscript({role: 'agent', content: 'Thank you, anything else?', message_id: 'u2'})""")   # the same line, now attributed to Aria
+        after = page.evaluate("() => [...document.querySelectorAll('#log .msg')].map(m => m.className)")
+        assert after[-2] == "msg msg--aria" and before[-2] == "msg msg--you", (before, after)
+        return texts(page), before
+
+    log, classes = run(driver, page_url, work)
+    voice = [t for t in log if "By voice" in t]
+    assert voice == ["By voiceWhat are your hours?", "By voiceWe are open daily from nine thirty to eight.", "By voiceThank you, anything else?", "By voiceYou are welcome."]
+    assert not any("INTERNAL_TEST" in t for t in log), "tool results, injected notes and node transitions are not speech"
+    assert [c for c in classes if "msg--you" in c or "msg--aria" in c][-4:] == ["msg msg--you", "msg msg--aria", "msg msg--you", "msg msg--aria"], "each spoken line keeps its own side"
+
+
 def test_when_the_relay_is_down_from_the_start_the_visitor_still_gets_the_phone_number(driver, page_url):
     Relay.mode = {"start_fail": True}
     log = run(driver, page_url, lambda page: (page.fill('[data-testid="text"]', "hi"), page.click('[data-testid="send"]'), wait_text(page, "call the salon"), texts(page))[-1])
@@ -381,7 +453,7 @@ def test_five_pages_at_once_each_chat_and_each_call_without_mixing(driver, page_
             p.click('[data-testid="talk"]')
         results = []
         for i, p in enumerate(pages):
-            wait_text(p, f"visitor {i} asks about massage")
+            wait_text(p, f"] visitor {i} asks about massage")   # the ANSWER, not just the visitor's own words
             p.wait_for_function("() => window.__created === 1")
             p.evaluate(f"() => {{ window.__hooks.onStatus('live'); window.__hooks.onTranscript([{{role:'user',content:'voice of visitor {i}'}}]); }}")
             results.append((texts(p), p.evaluate("window.__created"), p.locator('[data-testid="talk"]').inner_text()))
