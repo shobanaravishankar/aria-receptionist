@@ -55,3 +55,14 @@ supervised test is for (TEST_PLAN.md).
 
 Everything on Retell and Netlify: that the chat agent and voice agent can share one response engine, the shape of the SDK's transcript events, voice quality in Spanish and Mandarin, translation of
 treatment words in practice, latency, the content-security policy against the real SDK (it ships report-only), and cost in practice. See BLOCKERS.md and COSTS.md.
+
+## Declared missing features (not silently dropped, not described as working)
+
+| Requested | State in this candidate |
+|---|---|
+| **Daily / periodic refresh of the knowledge** (a requested product requirement) | **Not automatic.** The first candidate's facts were refreshed by hand (`knowledge/refresh.py`, a live run on 2026-10-24; a second live `--check` reproduced identical facts). What exists: the refresh and its change summary, and `.github/workflows/glamour-knowledge-check.yml`, a daily CHECK that only reads the salon's public pages and opens or updates one GitHub issue when something changed or the check failed. That workflow is INERT until it is merged to the repository's default branch, and it never commits, never changes the fact sheet or the prompt, and never touches Retell. **What is still missing: applying an approved change to the live response engine on a schedule**; that stays a manual, reviewed operator step. Both channels will always use the same reviewed version. |
+| Owner SMS for unanswered questions | **Deferred by Shobana; not built.** Needs an approved sender (see COSTS.md). No page text or answer implies that staff were notified. |
+| Collecting a name, callback number and question | **Not built** (phase 2, with the owner's permission flow and a verified destination). |
+| Weekly reports | **Not built** (phase 2). |
+| A second salon | **Not started**; its identity is unknown. Facts and reports must stay separate per salon. |
+| The booking destination | **Unverified.** The salon's own Book Online page is a Wix Bookings page, not Booksy; the assistant names that page and the phone. The correct Booksy address, if bookings go there, must be supplied and verified before it is mentioned. |

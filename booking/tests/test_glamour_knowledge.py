@@ -216,3 +216,34 @@ def test_the_page_builder_writes_the_settings_the_headers_and_the_portrait_and_r
             build_site.main(args)
     with pytest.raises(SystemExit):
         build_site.main(["--out", str(out), "--public-key", "public_key_abc", "--voice-agent-id", "agent_0123456789abcdef"])  # not empty
+
+
+# ---------------------------------------------------------------- the change summary the daily check reports
+def test_the_change_summary_names_what_a_reviewer_must_look_at_and_nothing_else(tmp_path):
+    (tmp_path / "a").mkdir()
+    old, _ = facts_from(pages_dir(tmp_path / "a"))
+    new = json.loads(json.dumps(old))
+    new["business"]["phones"] = ["(908) 111-2222"]
+    new["business"]["hours"]["SUNDAY"] = "10:00 AM - 6:00 PM"
+    massages = next(c for c in new["categories"] if c["slug"] == "massages")
+    massages["services"][0]["options"] = ["30 Mins"]
+    massages["services"].append({"name": "Cupping", "description": "", "options": []})
+    removed = massages["services"].pop(1)
+    new["sources"][0]["sha256"] = "0" * 64
+    lines = refresh.summarize_changes(old, new)
+    assert any(line.startswith("business phones changed") for line in lines) and any(line.startswith("business hours changed") for line in lines)
+    assert "service added: Massages / Cupping" in lines and f"service removed: Massages / {removed['name']}" in lines
+    assert any(line.startswith("options changed: Massages / Swedish Massage") for line in lines)
+    assert not any("sha256" in line for line in lines)
+    assert refresh.summarize_changes(None, new) == ["there are no earlier verified facts: this is the first extraction"]
+    quiet = json.loads(json.dumps(old))
+    quiet["sources"][0]["sha256"] = "f" * 64
+    assert refresh.comparable(quiet) == refresh.comparable(old), "a page whose text changed without changing a fact is not a change"
+
+
+def test_the_daily_check_workflow_only_reads_and_reports(tmp_path):
+    text = (Path(__file__).resolve().parents[2] / ".github" / "workflows" / "glamour-knowledge-check.yml").read_text(encoding="utf-8")
+    assert "contents: read" in text and "issues: write" in text and "pull-requests" not in text and "contents: write" not in text
+    assert "refresh.py --check" in text and "--out" not in text, "it compares; it never writes the fact sheet"
+    assert "secrets." not in text and "RETELL" not in text, "no secret of ours is involved"
+    assert "git push" not in text and "git commit" not in text

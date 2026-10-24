@@ -289,7 +289,31 @@ def refresh(*, from_dir: Path | None, previous: dict | None) -> tuple[dict, list
 
 
 def comparable(facts: dict) -> dict:
-    return {k: v for k, v in facts.items() if k != "retrieved_at"}
+    return {k: v for k, v in facts.items() if k not in ("retrieved_at", "sources")}  # the page hashes alone (layout churn) are not a change in what the assistant says
+
+
+def summarize_changes(old: dict | None, new: dict) -> list[str]:
+    """What a reviewer needs to see: contact facts, hours, services added or removed, and descriptions or lengths that changed. No prices exist in the facts, so none appears."""
+    if old is None:
+        return ["there are no earlier verified facts: this is the first extraction"]
+    lines: list[str] = []
+    for field in ("address", "phones", "email", "text_note", "hours", "online_booking_page"):
+        if old["business"].get(field) != new["business"].get(field):
+            lines.append(f"business {field} changed: {old['business'].get(field)!r} -> {new['business'].get(field)!r}")
+    flat = lambda facts: {(c["title"], s["name"]): s for c in facts["categories"] for s in c["services"]}
+    before, after = flat(old), flat(new)
+    for key in sorted(after.keys() - before.keys()):
+        lines.append(f"service added: {key[0]} / {key[1]}")
+    for key in sorted(before.keys() - after.keys()):
+        lines.append(f"service removed: {key[0]} / {key[1]}")
+    for key in sorted(before.keys() & after.keys()):
+        for field in ("options", "description"):
+            if before[key][field] != after[key][field]:
+                lines.append(f"{field} changed: {key[0]} / {key[1]}")
+    for field in ("membership_packages", "gift_card", "not_stated"):
+        if old.get(field) != new.get(field):
+            lines.append(f"{field} changed")
+    return lines or ["the page text changed in a way that does not alter what the assistant says"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -306,7 +330,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     changed = previous is None or comparable(previous) != comparable(facts)
     if args.check:
-        print("CHANGED: the live pages differ from the verified facts" if changed else "unchanged")
+        if changed:
+            print("CHANGED: the live pages differ from the verified facts")
+            for line in summarize_changes(previous, facts):
+                print("  - " + line)
+        else:
+            print("unchanged")
         return 1 if changed else 0
     if not changed:
         print("unchanged; the verified facts were left as they are")

@@ -1,0 +1,40 @@
+# Glamour Day Spa information assistant: a daily CHECK that the salon's public website still says what the verified fact sheet says.
+# It only READS the salon's allow-listed public pages and then opens or updates ONE GitHub issue when something changed or the check could not run. It never commits, never opens a pull request,
+# never changes the fact sheet, the prompt or any Retell resource: a person reviews the change, runs the refresh, and the operator applies an approved prompt. It uses no secret of ours.
+# This file does nothing until it is merged to the repository's default branch (GitHub runs scheduled workflows only from there).
+name: Glamour knowledge check
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compare the live pages with the verified facts
+        id: check
+        run: |
+          set +e
+          python glamour_assistant/knowledge/refresh.py --check > check.txt 2>&1
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+          cat check.txt
+      - name: Open or update the review issue when the facts changed or the check failed
+        if: steps.check.outputs.code != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Glamour Day Spa: the knowledge check needs a person"
+          { echo "The daily check found a difference or could not run. Nothing was changed. Run \`python glamour_assistant/knowledge/refresh.py\`, review the diff of \`facts.json\`, rebuild the prompt, and have the operator apply it."; echo; echo '```'; head -c 3000 check.txt; echo '```'; } > body.md
+          existing=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then gh issue comment "$existing" --body-file body.md; else gh issue create --title "$title" --body-file body.md; fi
