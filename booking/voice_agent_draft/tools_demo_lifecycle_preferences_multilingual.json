@@ -1,0 +1,534 @@
+{
+  "_status": "SIMULATED-LIFECYCLE demo tools with PREFERRED TECHNICIANS (demo only, opt-in): find, book, move and cancel appointments and keep a preferred technician per service in the PROTOTYPE calendar only. There is no function for the live Booksy calendar. DRAFT FOR REVIEW. Not imported into Retell, not deployed.",
+  "_notes": [
+    "Replace <YOUR-TUNNEL-HOST> with the public HTTPS host of the tunnel Shobana starts herself. Retell blocks localhost and private addresses.",
+    "Set the bearer token (ARIA_RETELL_TOOL_TOKEN) in the Retell dashboard header value, never in this file.",
+    "Timeouts are ESTIMATES. A live calendar read takes seconds to tens of seconds; measure before relying on them. lookup_service is local and fast.",
+    "max_retry is 0 on purpose: the server is idempotent, but a retry of a slow browser action only adds delay.",
+    "Do NOT use 'payload: args only'. The server needs the call object (call_id) to bind options and confirmations to one call.",
+    "service_id values come ONLY from the prompt's 'What can be booked online right now' list or from lookup_service. The server validates them against its own allowlist and takes length, price and the Booksy service name from there, never from these arguments."
+  ],
+  "tools": [
+    {
+      "name": "lookup_service",
+      "description": "Look up a salon service from the caller's own words (for example 'swedish massage 60 minutes' or 'facial'). Returns the website's listed length and price and a short description, whether it can be booked online, or asks you to choose between several matching services or lengths. This is LOCAL information only: it never checks the calendar. Use it when you are unsure which service the caller means; do not call it merely to restate something already in your knowledge section.",
+      "url": "https://<YOUR-TUNNEL-HOST>/tools/lookup_service",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer <set in the Retell dashboard>"
+      },
+      "timeout_ms": 5000,
+      "max_retry": 0,
+      "speak_during_execution": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The service as the caller said it, in their words, including a length if they gave one. For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "check_slot",
+      "description": "Check whether the caller's requested date and start time is OPEN for the FULL chosen service, and with which technician. Call this when the caller wants an appointment or asks about availability, never for a service, price or product question. Always call it before saying anything about availability. If the time is not open it explains why (closed, service would run past closing, already taken, too soon, named technician booked) and returns up to three genuinely open alternatives, each with the service, its length and the technician. This only CHECKS: nothing is booked, held or changed (use book_appointment to book). Never state availability from your own knowledge.",
+      "url": "https://<YOUR-TUNNEL-HOST>/tools/check_slot",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer <set in the Retell dashboard>"
+      },
+      "timeout_ms": 20000,
+      "max_retry": 0,
+      "speak_during_execution": true,
+      "execution_message_description": "Say ONE short sentence, once, as the check starts: 'One moment while I check <technician>'s availability.' if the caller already named a technician, 'One moment while I check availability for <service>.' if only the service is known, otherwise 'One moment while I check availability.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "The canonical service_id of the service the caller chose, exactly as listed under 'What can be booked online right now' or returned by lookup_service. Never invent or alter one."
+          },
+          "date": {
+            "type": "string",
+            "description": "The requested day as YYYY-MM-DD in the salon's time zone (America/New_York). Resolve words like 'tomorrow' or 'next Tuesday' yourself using the current date, and if it is ambiguous ask the caller first."
+          },
+          "time": {
+            "type": "string",
+            "description": "The requested START time in 24-hour HH:MM (for example 14:30). Appointments start on the quarter hour. If the caller said an ambiguous time such as 'at 3', ask whether they mean morning or afternoon before calling."
+          },
+          "staff": {
+            "type": "string",
+            "description": "Optional. The technician's name ONLY if the caller asked for a particular person. Omit it otherwise."
+          },
+          "service_words": {
+            "type": "string",
+            "description": "The treatment EXACTLY as the caller said it, in their own words and nothing else (no names, dates or times), for example 'a sixty minute massage' or 'deep tissue'. Never replace it with the name of a service you chose. If it only names a group (massage, facial) or only a length, the tool asks the caller which treatment, so do not pick one for them. For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+          }
+        },
+        "required": [
+          "service_id",
+          "date",
+          "time",
+          "service_words"
+        ]
+      }
+    },
+    {
+      "name": "find_alternatives",
+      "description": "List up to three genuinely open times for the chosen service on a day (and optionally a preferred start time), each with the service, its length and the technician. Use when the caller has no specific time, or asks for other times. When the caller asks for something LATER or EARLIER than a time (for example 'a later time than my 3:45'), pass the bound with the starting_* fields: only starts inside it, on that day, are returned. This only CHECKS: nothing is booked, held or changed. Call only on appointment or availability intent.",
+      "url": "https://<YOUR-TUNNEL-HOST>/tools/find_alternatives",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer <set in the Retell dashboard>"
+      },
+      "timeout_ms": 20000,
+      "max_retry": 0,
+      "speak_during_execution": true,
+      "execution_message_description": "Say ONE short sentence, once, as the search starts: 'One moment while I look for other times with <technician>.' if the caller named a technician, otherwise 'One moment while I look for other times.' Never guess a name the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "The canonical service_id of the service the caller chose, exactly as listed or returned by lookup_service."
+          },
+          "date": {
+            "type": "string",
+            "description": "The first day to search from, YYYY-MM-DD."
+          },
+          "time": {
+            "type": "string",
+            "description": "Optional preferred START time in 24-hour HH:MM: which times to list first. It is only a preference and NEVER a limit: for 'later than', 'after', 'earlier than' or 'before' use the starting_* fields instead. If you leave it out, the time the caller last asked for in this call is kept."
+          },
+          "staff": {
+            "type": "string",
+            "description": "Optional. The technician's name ONLY if the caller asked for a particular person."
+          },
+          "any_time": {
+            "type": "boolean",
+            "description": "Optional. Send true ONLY if the caller says any time works, to drop the time they asked for earlier in this call. Leave it out otherwise: when you omit `time`, the server keeps the time the caller last asked for in THIS call, so do not guess one."
+          },
+          "service_words": {
+            "type": "string",
+            "description": "The treatment EXACTLY as the caller said it, in their own words and nothing else (no names, dates or times), for example 'a sixty minute massage' or 'deep tissue'. Never replace it with the name of a service you chose. If it only names a group (massage, facial) or only a length, the tool asks the caller which treatment, so do not pick one for them. For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+          },
+          "starting_at_or_after": {
+            "type": "string",
+            "description": "Optional. A START-time bound for that ONE day, 24-hour HH:MM, for when the caller asks for a time later or earlier than something. Times outside it are never returned, and no other day is searched. INCLUSIVE: 'at 5 or later', 'from 5 on'. The time itself is allowed."
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Optional. A START-time bound for that ONE day, 24-hour HH:MM, for when the caller asks for a time later or earlier than something. Times outside it are never returned, and no other day is searched. EXCLUSIVE: 'later than my 3:45', 'after 5'. The time itself is NOT allowed."
+          },
+          "starting_at_or_before": {
+            "type": "string",
+            "description": "Optional. A START-time bound for that ONE day, 24-hour HH:MM, for when the caller asks for a time later or earlier than something. Times outside it are never returned, and no other day is searched. INCLUSIVE: 'by 5', 'no later than 5'. The time itself is allowed."
+          },
+          "starting_before": {
+            "type": "string",
+            "description": "Optional. A START-time bound for that ONE day, 24-hour HH:MM, for when the caller asks for a time later or earlier than something. Times outside it are never returned, and no other day is searched. EXCLUSIVE: 'before 5', 'earlier than my 3:45'. The time itself is NOT allowed."
+          }
+        },
+        "required": [
+          "service_id",
+          "date",
+          "service_words"
+        ]
+      }
+    },
+    {
+      "name": "find_appointments",
+      "description": "Look up a caller's UPCOMING appointments by their complete phone number (a prototype record match, not proof of identity). Use it when the caller asks when their appointment is, what appointments they have, or before cancelling or moving one. Pass `service` in the caller's own words when they asked about one kind of appointment: the answer then leads with that one and briefly mentions the rest. It returns each appointment's `reference` and `version` (keep them for a cancel or a move) and a `speak` sentence to give. This only LOOKS: it changes nothing. If it asks for the full name, the number is on more than one record: ask for the name.",
+      "url": "https://<YOUR-TUNNEL-HOST>/tools/find_appointments",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer <set in the Retell dashboard>"
+      },
+      "timeout_ms": 10000,
+      "max_retry": 0,
+      "speak_during_execution": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "The caller's COMPLETE phone number including the area code, exactly as they said it. Ask for it if you do not have it. Never complete, guess or repeat it back aloud."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional. The caller's full name, ONLY when the tool has asked for it because the number matches more than one record."
+          },
+          "service": {
+            "type": "string",
+            "description": "Optional. The kind of appointment the caller asked about, in their own words (for example waxing, my massage, a facial). For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+          },
+          "name_confirmed": {
+            "type": "boolean",
+            "description": "Optional. Send true ONLY after this tool asked the caller to spell or choose their name and they did: it says the name you are sending is exactly as the caller spelled or confirmed it. Never send it on a first attempt."
+          }
+        },
+        "required": [
+          "phone"
+        ]
+      },
+      "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I look that up.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts."
+    },
+    {
+      "name": "last_completed_visit",
+      "description": "Answer 'when was my last <lash / massage / facial / waxing / head spa> appointment?' for a caller who gives their complete phone number. It reports only the most recent COMPLETED visit of that kind (never a cancelled, missed or upcoming one) and says plainly when it cannot confirm. This only LOOKS: it changes nothing.",
+      "url": "https://<YOUR-TUNNEL-HOST>/tools/last_completed_visit",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer <set in the Retell dashboard>"
+      },
+      "timeout_ms": 10000,
+      "max_retry": 0,
+      "speak_during_execution": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_category": {
+            "type": "string",
+            "description": "The kind of appointment, as the caller said it (lashes, massage, facial, waxing, head spa...). For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+          },
+          "phone": {
+            "type": "string",
+            "description": "The caller's COMPLETE phone number including the area code, exactly as they said it. Ask for it if you do not have it. Never complete, guess or repeat it back aloud."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional. The caller's full name, ONLY when the tool has asked for it because the number matches more than one record."
+          },
+          "include_technician": {
+            "type": "boolean",
+            "description": "Send true ONLY if the caller asked who the visit was with."
+          },
+          "name_confirmed": {
+            "type": "boolean",
+            "description": "Optional. Send true ONLY after this tool asked the caller to spell or choose their name and they did: it says the name you are sending is exactly as the caller spelled or confirmed it. Never send it on a first attempt."
+          }
+        },
+        "required": [
+          "service_category",
+          "phone"
+        ]
+      },
+      "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I look that up.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts."
+    },
+    {
+      "name": "book_appointment",
+      "description": "Book an appointment in the prototype calendar, in TWO steps. Call it first with the chosen service, day, time, the caller's full name and complete phone number (and `staff` only if they asked for someone): it saves NOTHING and returns `confirmation_required` with one sentence and a `confirmation_token`. Read the sentence to the caller; only after a clear yes call it again with exactly the same details, the token and confirmed true. It is booked only if the result is `booked_verified` or `already_booked` with ok true. If the time was just taken it says so and offers real alternatives: nothing was booked. Never call it again just because it is slow.",
+      "url": "https://<YOUR-TUNNEL-HOST>/tools/book_appointment",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer <set in the Retell dashboard>"
+      },
+      "timeout_ms": 20000,
+      "max_retry": 0,
+      "speak_during_execution": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "description": "The canonical service_id exactly as listed under 'What you can check and book right now' or returned by lookup_service. Never invent or alter one."
+          },
+          "date": {
+            "type": "string",
+            "description": "The day as YYYY-MM-DD in the salon's time zone (America/New_York). Resolve words like 'tomorrow' or 'next Tuesday' yourself using the current date; if ambiguous, ask first."
+          },
+          "time": {
+            "type": "string",
+            "description": "The START time in 24-hour HH:MM, on the quarter hour. If the caller said an ambiguous time such as 'at 3', ask whether they mean morning or afternoon first."
+          },
+          "staff": {
+            "type": "string",
+            "description": "Optional. The technician's name ONLY if the caller asked for a particular person."
+          },
+          "client_name": {
+            "type": "string",
+            "description": "The caller's full name for the booking, as they said it. If the tool asks them to spell it, send the spelling."
+          },
+          "phone": {
+            "type": "string",
+            "description": "The caller's COMPLETE phone number including the area code, exactly as they said it. Ask for it if you do not have it. Never complete, guess or repeat it back aloud."
+          },
+          "name_confirmed": {
+            "type": "boolean",
+            "description": "Optional. Send true ONLY after this tool asked the caller to spell or choose their name and they did: it says the name you are sending is exactly as the caller spelled or confirmed it. Never send it on a first attempt."
+          },
+          "service_words": {
+            "type": "string",
+            "description": "The treatment EXACTLY as the caller said it, in their own words and nothing else (no names, dates or times), for example 'a sixty minute massage' or 'deep tissue'. Never replace it with the name of a service you chose. If it only names a group (massage, facial) or only a length, the tool asks the caller which treatment, so do not pick one for them. For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+          },
+          "confirmation_token": {
+            "type": "string",
+            "description": "From the read-back this tool just returned. Send it only together with confirmed true, after the caller clearly said yes to that read-back."
+          },
+          "confirmed": {
+            "type": "boolean",
+            "description": "Send true ONLY after the caller clearly said yes to the sentence the previous call returned. Never send it on the first call."
+          }
+        },
+        "required": [
+          "service_id",
+          "service_words",
+          "date",
+          "time",
+          "client_name",
+          "phone"
+        ]
+      },
+      "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I check that.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts."
+    },
+    {
+      "name": "cancel_appointment",
+      "description": "Cancel ONE upcoming appointment in the prototype calendar, in TWO steps. First call it with the appointment's `reference` (from find_appointments) and the caller's complete phone number: it saves nothing and returns `confirmation_required` with one sentence and a token. Read it; only after a clear yes call it again with the same details, the token, confirmed true, and `reason` if the caller gave one. The reason is optional and cancelling never depends on choosing another time. It is cancelled only if the result is `cancelled` or `already_cancelled` with ok true. Never mention a fee or policy.",
+      "url": "https://<YOUR-TUNNEL-HOST>/tools/cancel_appointment",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer <set in the Retell dashboard>"
+      },
+      "timeout_ms": 20000,
+      "max_retry": 0,
+      "speak_during_execution": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "description": "The appointment's reference exactly as find_appointments returned it. Never invent one and do not read it aloud unless the caller asks."
+          },
+          "phone": {
+            "type": "string",
+            "description": "The caller's COMPLETE phone number including the area code, exactly as they said it. Ask for it if you do not have it. Never complete, guess or repeat it back aloud."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional. The caller's full name, ONLY when the tool has asked for it because the number matches more than one record."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional. Why they are cancelling, in a few words, if they chose to say. Never press for it."
+          },
+          "name_confirmed": {
+            "type": "boolean",
+            "description": "Optional. Send true ONLY after this tool asked the caller to spell or choose their name and they did: it says the name you are sending is exactly as the caller spelled or confirmed it. Never send it on a first attempt."
+          },
+          "confirmation_token": {
+            "type": "string",
+            "description": "From the read-back this tool just returned. Send it only together with confirmed true, after the caller clearly said yes to that read-back."
+          },
+          "confirmed": {
+            "type": "boolean",
+            "description": "Send true ONLY after the caller clearly said yes to the sentence the previous call returned. Never send it on the first call."
+          }
+        },
+        "required": [
+          "reference",
+          "phone"
+        ]
+      },
+      "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I look at that.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts."
+    },
+    {
+      "name": "reschedule_appointment",
+      "description": "Move ONE upcoming appointment to a new day and time in the prototype calendar, in TWO steps. First call it with the appointment's `reference`, the caller's complete phone number and the new date and time (and `staff` only if they asked for someone): it saves nothing and returns `confirmation_required` with one sentence naming the old and the new time and a token. Read it; only after a clear yes call it again with the same details, the token and confirmed true. It is moved only if the result is `rescheduled` or `already_rescheduled` with ok true; if the new time is not available the original appointment stays exactly as it was and the tool offers real alternatives.",
+      "url": "https://<YOUR-TUNNEL-HOST>/tools/reschedule_appointment",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer <set in the Retell dashboard>"
+      },
+      "timeout_ms": 20000,
+      "max_retry": 0,
+      "speak_during_execution": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "description": "The appointment's reference exactly as find_appointments returned it. Never invent one and do not read it aloud unless the caller asks."
+          },
+          "phone": {
+            "type": "string",
+            "description": "The caller's COMPLETE phone number including the area code, exactly as they said it. Ask for it if you do not have it. Never complete, guess or repeat it back aloud."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional. The caller's full name, ONLY when the tool has asked for it because the number matches more than one record."
+          },
+          "date": {
+            "type": "string",
+            "description": "The NEW day as YYYY-MM-DD in the salon's time zone (America/New_York). Resolve words like 'tomorrow' or 'next Tuesday' yourself using the current date; if ambiguous, ask first."
+          },
+          "time": {
+            "type": "string",
+            "description": "The NEW START time in 24-hour HH:MM, on the quarter hour. If the caller said an ambiguous time such as 'at 3', ask whether they mean morning or afternoon first."
+          },
+          "staff": {
+            "type": "string",
+            "description": "Optional. The technician's name ONLY if the caller asked for a particular person; otherwise the same technician is tried first."
+          },
+          "name_confirmed": {
+            "type": "boolean",
+            "description": "Optional. Send true ONLY after this tool asked the caller to spell or choose their name and they did: it says the name you are sending is exactly as the caller spelled or confirmed it. Never send it on a first attempt."
+          },
+          "confirmation_token": {
+            "type": "string",
+            "description": "From the read-back this tool just returned. Send it only together with confirmed true, after the caller clearly said yes to that read-back."
+          },
+          "confirmed": {
+            "type": "boolean",
+            "description": "Send true ONLY after the caller clearly said yes to the sentence the previous call returned. Never send it on the first call."
+          }
+        },
+        "required": [
+          "reference",
+          "phone",
+          "date",
+          "time"
+        ]
+      },
+      "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I check that.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts."
+    },
+    {
+      "name": "get_preferences",
+      "description": "Look up a returning client's saved PREFERRED TECHNICIANS by their complete phone number (a prototype record match, not proof of identity). Use it when the caller asks who their usual technician is or what is saved, and before offering a technician to a caller who is booking a service and did not name one. Pass `service` to ask about one service. A preference is only who the client would like: it never guarantees a time. This only LOOKS: it changes nothing. If it asks for the full name, the number is on more than one record: ask for the name.",
+      "url": "https://<YOUR-TUNNEL-HOST>/tools/get_preferences",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer <set in the Retell dashboard>"
+      },
+      "timeout_ms": 10000,
+      "max_retry": 0,
+      "speak_during_execution": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "The caller's COMPLETE phone number including the area code, exactly as they said it. Ask for it if you do not have it. Never complete, guess or repeat it back aloud."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional. The caller's full name, ONLY when the tool has asked for it because the number matches more than one record."
+          },
+          "name_confirmed": {
+            "type": "boolean",
+            "description": "Optional. Send true ONLY after this tool asked the caller to spell or choose their name and they did: it says the name you are sending is exactly as the caller spelled or confirmed it. Never send it on a first attempt."
+          },
+          "service": {
+            "type": "string",
+            "description": "Optional. One service, in the caller's own words, to ask about just that one. ONE service, in the caller's own words (for example Swedish Massage, Signature Facial). A preference is kept per service, never for a whole group such as 'massage' or 'facial': if the caller only named a group, ask which one. For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+          }
+        },
+        "required": [
+          "phone"
+        ]
+      },
+      "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I look that up.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts."
+    },
+    {
+      "name": "save_preference",
+      "description": "Save, or change, the caller's preferred technician for ONE service in the prototype calendar, in TWO steps, and ONLY when the caller asks for it in their own words. Call it first with their complete phone number, the service and the technician: it saves NOTHING and returns `confirmation_required` with one sentence and a `confirmation_token`. Read the sentence to the caller; only after a clear yes call it again with exactly the same details, the token and confirmed true. It is saved only if the result is `preference_saved` or `preference_unchanged` with ok true. If it asks which service or which technician, ask the caller. It never changes an existing appointment.",
+      "url": "https://<YOUR-TUNNEL-HOST>/tools/save_preference",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer <set in the Retell dashboard>"
+      },
+      "timeout_ms": 20000,
+      "max_retry": 0,
+      "speak_during_execution": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "The caller's COMPLETE phone number including the area code, exactly as they said it. Ask for it if you do not have it. Never complete, guess or repeat it back aloud."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional. The caller's full name, ONLY when the tool has asked for it because the number matches more than one record."
+          },
+          "name_confirmed": {
+            "type": "boolean",
+            "description": "Optional. Send true ONLY after this tool asked the caller to spell or choose their name and they did: it says the name you are sending is exactly as the caller spelled or confirmed it. Never send it on a first attempt."
+          },
+          "service": {
+            "type": "string",
+            "description": "ONE service, in the caller's own words (for example Swedish Massage, Signature Facial). A preference is kept per service, never for a whole group such as 'massage' or 'facial': if the caller only named a group, ask which one. For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+          },
+          "staff": {
+            "type": "string",
+            "description": "The technician's name, exactly as the caller said it. Never guess or substitute one."
+          },
+          "confirmation_token": {
+            "type": "string",
+            "description": "From the read-back this tool just returned. Send it only together with confirmed true, after the caller clearly said yes to that read-back."
+          },
+          "confirmed": {
+            "type": "boolean",
+            "description": "Send true ONLY after the caller clearly said yes to the sentence the previous call returned. Never send it on the first call."
+          }
+        },
+        "required": [
+          "phone",
+          "service",
+          "staff"
+        ]
+      },
+      "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I check that.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts."
+    },
+    {
+      "name": "remove_preference",
+      "description": "Remove the caller's saved preferred technician for ONE service, in TWO steps, and ONLY when the caller asks for it. Call it first with their complete phone number and the service: it removes NOTHING and returns `confirmation_required` with one sentence and a `confirmation_token`. Read it; only after a clear yes call it again with the same details, the token and confirmed true. It is removed only if the result is `preference_removed` with ok true. It never changes an existing appointment.",
+      "url": "https://<YOUR-TUNNEL-HOST>/tools/remove_preference",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer <set in the Retell dashboard>"
+      },
+      "timeout_ms": 20000,
+      "max_retry": 0,
+      "speak_during_execution": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "The caller's COMPLETE phone number including the area code, exactly as they said it. Ask for it if you do not have it. Never complete, guess or repeat it back aloud."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional. The caller's full name, ONLY when the tool has asked for it because the number matches more than one record."
+          },
+          "name_confirmed": {
+            "type": "boolean",
+            "description": "Optional. Send true ONLY after this tool asked the caller to spell or choose their name and they did: it says the name you are sending is exactly as the caller spelled or confirmed it. Never send it on a first attempt."
+          },
+          "service": {
+            "type": "string",
+            "description": "ONE service, in the caller's own words (for example Swedish Massage, Signature Facial). A preference is kept per service, never for a whole group such as 'massage' or 'facial': if the caller only named a group, ask which one. For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+          },
+          "confirmation_token": {
+            "type": "string",
+            "description": "From the read-back this tool just returned. Send it only together with confirmed true, after the caller clearly said yes to that read-back."
+          },
+          "confirmed": {
+            "type": "boolean",
+            "description": "Send true ONLY after the caller clearly said yes to the sentence the previous call returned. Never send it on the first call."
+          }
+        },
+        "required": [
+          "phone",
+          "service"
+        ]
+      },
+      "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I check that.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts."
+    }
+  ],
+  "_variant": "multilingual: English, Spanish and Mandarin Chinese (user-authorized 2026-10-22); descriptions only, see render.build_multilingual_tools"
+}

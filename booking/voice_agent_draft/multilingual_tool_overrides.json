@@ -1,0 +1,68 @@
+{
+  "lookup_service": {
+    "execution_message_description": null,
+    "parameter_descriptions": {
+      "query": "The service as the caller said it, in their words, including a length if they gave one. For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+    }
+  },
+  "check_slot": {
+    "execution_message_description": "Say ONE short sentence, once, as the check starts: 'One moment while I check <technician>'s availability.' if the caller already named a technician, 'One moment while I check availability for <service>.' if only the service is known, otherwise 'One moment while I check availability.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts.",
+    "parameter_descriptions": {
+      "service_words": "The treatment EXACTLY as the caller said it, in their own words and nothing else (no names, dates or times), for example 'a sixty minute massage' or 'deep tissue'. Never replace it with the name of a service you chose. If it only names a group (massage, facial) or only a length, the tool asks the caller which treatment, so do not pick one for them. For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+    }
+  },
+  "find_alternatives": {
+    "execution_message_description": "Say ONE short sentence, once, as the search starts: 'One moment while I look for other times with <technician>.' if the caller named a technician, otherwise 'One moment while I look for other times.' Never guess a name the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts.",
+    "parameter_descriptions": {
+      "service_words": "The treatment EXACTLY as the caller said it, in their own words and nothing else (no names, dates or times), for example 'a sixty minute massage' or 'deep tissue'. Never replace it with the name of a service you chose. If it only names a group (massage, facial) or only a length, the tool asks the caller which treatment, so do not pick one for them. For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+    }
+  },
+  "find_appointments": {
+    "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I look that up.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts.",
+    "parameter_descriptions": {
+      "service": "Optional. The kind of appointment the caller asked about, in their own words (for example waxing, my massage, a facial). For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+    }
+  },
+  "last_completed_visit": {
+    "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I look that up.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts.",
+    "parameter_descriptions": {
+      "service_category": "The kind of appointment, as the caller said it (lashes, massage, facial, waxing, head spa...). For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+    }
+  },
+  "book_appointment": {
+    "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I check that.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts.",
+    "parameter_descriptions": {
+      "service_words": "The treatment EXACTLY as the caller said it, in their own words and nothing else (no names, dates or times), for example 'a sixty minute massage' or 'deep tissue'. Never replace it with the name of a service you chose. If it only names a group (massage, facial) or only a length, the tool asks the caller which treatment, so do not pick one for them. For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+    }
+  },
+  "cancel_appointment": {
+    "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I look at that.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts.",
+    "parameter_descriptions": {}
+  },
+  "reschedule_appointment": {
+    "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I check that.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts.",
+    "parameter_descriptions": {}
+  },
+  "get_preferences": {
+    "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I look that up.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts.",
+    "parameter_descriptions": {
+      "service": "Optional. One service, in the caller's own words, to ask about just that one. ONE service, in the caller's own words (for example Swedish Massage, Signature Facial). A preference is kept per service, never for a whole group such as 'massage' or 'facial': if the caller only named a group, ask which one. For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+    }
+  },
+  "save_preference": {
+    "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I check that.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts.",
+    "parameter_descriptions": {
+      "service": "ONE service, in the caller's own words (for example Swedish Massage, Signature Facial). A preference is kept per service, never for a whole group such as 'massage' or 'facial': if the caller only named a group, ask which one. For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+    }
+  },
+  "remove_preference": {
+    "execution_message_description": "Say ONE short sentence, once, as the lookup starts: 'One moment while I check that.' Never guess a name or service the caller has not given. Give no estimate of how long it will take, do not repeat or extend it, add nothing else, and use no filler such as um or uh. Deliver this same brief message in the caller's currently selected English, Spanish, or Mandarin language, preserving all names and facts.",
+    "parameter_descriptions": {
+      "service": "ONE service, in the caller's own words (for example Swedish Massage, Signature Facial). A preference is kept per service, never for a whole group such as 'massage' or 'facial': if the caller only named a group, ask which one. For Spanish or Mandarin speech, use a faithful English translation of only the caller's treatment words, preserving ambiguity and duration. Never translate person names or invent a treatment."
+    }
+  },
+  "end_call": {
+    "execution_message_description": null,
+    "parameter_descriptions": {}
+  }
+}

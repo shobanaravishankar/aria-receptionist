@@ -74,3 +74,24 @@ equal to the English prompt plus that section, and keeps every English prompt un
   `en-US` and `es-ES`; whether the current voice supports Spanish must be confirmed before applying). That is an agent-level setting, not part of the LLM prompt that `agent_ops` updates in
   place, so it is a bounded operator change made and read back by the operator after review, together with a rollback snapshot. Without it, and without a supervised call, treat the
   Spanish segment as unverified.
+
+## User-authorized live variants of 2026-10-22 (kept in source; nothing here is applied by this repository)
+
+On 2026-10-22 the owner of the test agent applied, at Shobana's explicit request and read back, two narrow runtime updates to the same owned agent (version 0, same voice, model, opening
+rules, call cap, eleven tools and endpoints). Both are preserved here as GENERATED files that a test rebuilds and compares, by sha256, with the digest recorded when each was applied
+(the prompt as sent = the file from `## Who you are` plus the operator's session-clock section, LF line endings). Version history, oldest first:
+
+| Variant | File | Applied | sha256 of the prompt as sent |
+|---|---|---|---|
+| English only (the released text) | `prompt_demo_lifecycle_preferences.md` | before 10:47 | built by `agent_ops.expected_prompt` |
+| English, Spanish, Mandarin Chinese | `prompt_demo_lifecycle_preferences_multilingual.md` + `tools_demo_lifecycle_preferences_multilingual.json` | 10:47 EDT | `f73eac68...5a69` (superseded as the live text) |
+| ... plus brief replies and no spoken prices (**live since 11:38 EDT**) | `prompt_demo_lifecycle_preferences_multilingual_brief.md` + the same multilingual tools file | 11:38 EDT | `e73c9d83...3175d` |
+| Menu-only Spanish mini-demonstration (never applied; narrower alternative) | `prompt_demo_lifecycle_preferences_spanish.md` | not applied | n/a |
+
+- **The multilingual tools file** is the committed lifecycle-with-preferences tools plus appended wording only (each spoken waiting message also says to speak it in the caller's language;
+  each treatment-words argument says to translate only the caller's treatment words faithfully into English). `multilingual_tool_overrides.json` is the live descriptions exactly as the owner
+  recorded them; a test checks the builder reproduces them field for field and that nothing else about any tool (name, address, schema, requirement, timeout, flag) differs.
+- **Never overwrite the active prompt with an earlier text** (the English-only prompt, the menu-only Spanish variant, or the multilingual-only prompt). The operator applies and reads back; the
+  repository only keeps the text and proves it equals what was applied.
+- **What none of this proves:** speech recognition, spoken Spanish or Mandarin, faithful translation of treatment words in practice, transactions in those languages, or that the model keeps
+  its answers short and omits prices. Those need supervised calls.
