@@ -143,6 +143,13 @@ async function startVoice() {
   setVoice("loading");
   setStatus("connecting", "Connecting to Aria...");
   try {
+    // Ask for the microphone FIRST, on this very click: a refusal is found and explained before any call is created or paid for. The SDK opens its own microphone later;
+    // this only asks the permission (and lets go of the microphone at once).
+    if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      if (mine.over) return;   // cancelled while the browser was asking
+    }
     const mod = await import(cfg.sdkUrl);
     if (mine.over) return;   // cancelled while the SDK loaded
     const RetellClient = mod.RetellClient || (mod.default && mod.default.RetellClient);

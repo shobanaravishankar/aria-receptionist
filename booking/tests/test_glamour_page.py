@@ -121,7 +121,15 @@ def driver(tmp_path_factory, channel):
     drv.close()
 
 
+MIC_STUB = (
+    "window.__mic = 0; window.__micStopped = 0; window.__micDeny = false;"
+    "navigator.mediaDevices.getUserMedia = async (c) => { window.__mic++; if (window.__micDeny) { const e = new Error('Permission denied'); e.name = 'NotAllowedError'; throw e; }"
+    " return { getTracks: () => [{ stop() { window.__micStopped++; } }] }; };"
+)
+
+
 def open_page(page, url, *, width=1280, height=900):
+    page.add_init_script(MIC_STUB)   # the browser's real microphone prompt cannot be answered headlessly: this stands in for it and counts how often it is asked
     page.route(SDK_URL, lambda route: route.fulfill(status=200, content_type="application/javascript", headers={"access-control-allow-origin": "*"}, body=SDK_STUB))
     page.set_viewport_size({"width": width, "height": height})
     page.goto("about:blank")
@@ -154,12 +162,13 @@ def test_loading_the_page_starts_nothing_and_shows_the_portrait_the_label_and_th
         page.wait_for_timeout(600)
         return {
             "log": texts(page), "created": page.evaluate("window.__created"), "sdk": page.evaluate("typeof window.__key"), "portrait": page.locator('[data-testid="portrait"]').is_visible(),
-            "who": page.locator(".who").inner_text(), "talk": page.locator('[data-testid="talk"]').inner_text(), "voice": page.evaluate("document.documentElement.dataset.voice"),
+            "who": page.locator(".who").inner_text(), "talk": page.locator('[data-testid="talk"]').inner_text(), "voice": page.evaluate("document.documentElement.dataset.voice"), "mic": page.evaluate("window.__mic"),
         }
 
     out = run(driver, page_url, work)
     assert Relay.log == [], "no chat session was started on load"
     assert out["created"] in (0, None) and out["sdk"] == "undefined", "the voice SDK was not even loaded, let alone a call made"
+    assert out["mic"] == 0, "the microphone was not even asked for"
     assert out["log"] == ["Hi, I am Aria. Ask me about services, hours or location."]
     assert out["portrait"] and "Aria" in out["who"] and "virtual salon assistant" in out["who"]
     assert out["talk"] == "Talk to Aria" and out["voice"] == "idle"
@@ -379,6 +388,25 @@ def test_talk_to_aria_makes_exactly_one_call_with_the_voice_agent_and_a_second_c
     assert first == "Cancel" and created == 1 and ended == 1 and label == "Talk to Aria"
     assert json.loads(options) == [["agent_voice_test", True]]
     assert Relay.log == [], "voice never touches the chat relay"
+
+
+def test_the_microphone_is_asked_for_on_the_click_and_let_go_of_at_once_and_a_refusal_creates_no_call(driver, page_url):
+    def work(page):
+        page.click('[data-testid="talk"]')
+        page.wait_for_function("() => window.__created === 1")
+        allowed = (page.evaluate("window.__mic"), page.evaluate("window.__micStopped"))
+        page.click('[data-testid="talk"]')  # cancel
+        page.wait_for_function("() => window.__ended === 1")
+        page.evaluate("() => { window.__micDeny = true; }")
+        page.click('[data-testid="talk"]')
+        wait_text(page, "couldn't use your microphone")
+        page.wait_for_timeout(300)
+        return allowed, page.evaluate("window.__mic"), page.evaluate("window.__created"), page.locator('[data-testid="talk"]').inner_text(), page.locator('[data-testid="status"]').inner_text()
+
+    allowed, asked, created, label, status = run(driver, page_url, work)
+    assert allowed == (1, 1), "asked once, and the microphone let go of at once"
+    assert asked == 2 and created == 1, "the refusal came before any call was created: no second call exists"
+    assert label == "Talk to Aria" and "microphone" in status.lower()
 
 
 def test_a_live_call_shows_listening_speaking_and_transcript_lines_in_the_conversation_then_ends(driver, page_url):
