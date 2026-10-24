@@ -31,6 +31,7 @@ Nothing starts by itself: no microphone, no call and no chat session until the v
 | Typed chat | `src/chat.ts`, `netlify/functions/chat.mts` | no dependencies; the Retell secret key is a server-side environment variable; sessions are signed tokens; no message is stored or logged |
 | Voice | the Retell browser SDK with the PUBLIC key (as the demo does), `site/app.js` | transcript lines are shown in the same conversation area; typed chat and a call are separate conversations and the page says so |
 | Knowledge | `knowledge/refresh.py` -> `knowledge/facts.json` | deterministic extraction; page text is data, never obeyed; no prices kept; the last verified facts survive a failed refresh; every page's sha256 is recorded |
+| Putting it on the salon site | `EMBED.md` | a link, or an iframe snippet for Fiona; not needed for the first release |
 | The one prompt | `agent/build_prompt.py` -> `agent/prompt.md`, `agent/resources.json` | a specification of the resources to create (no key, token or id in it) |
 
 ## Run the tests (no network, no Retell, no cost)
